@@ -1,5 +1,6 @@
 use content_integrity::{EncryptedContent, LinkTypes};
-use hdk::{hash_path::path::Component, prelude::*};
+use hdk::prelude::*;
+use hdi::hash_path::path::Component;
 
 // TODO: use the public key acl instead of the entity acl
 

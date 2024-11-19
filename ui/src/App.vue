@@ -38,7 +38,9 @@ export default defineComponent({
 </template>
 <script lang="ts">
 import { defineComponent, computed } from 'vue';
-import { AppAgentClient, AppAgentWebsocket } from '@holochain/client';
+import WebSdk from "@holo-host/web-sdk";
+import type { AgentState } from "@holo-host/web-sdk";
+import { AppClient, AppWebsocket, HolochainError } from '@holochain/client';
 import '@material/mwc-circular-progress';
 
 export default defineComponent({
@@ -46,19 +48,41 @@ export default defineComponent({
     // Add your subcomponents here
   },
   data(): {
-    client: AppAgentClient | undefined;
+    client: any;
     loading: boolean;
+    error: HolochainError | undefined;
+    IS_HOLO: boolean;
   } {
     return {
       client: undefined,
       loading: true,
+      error: undefined,
+      IS_HOLO: ["true", "1", "t"].includes(import.meta.env.VITE_APP_IS_HOLO?.toLowerCase()),
     };
   },
   async mounted() {
     // We pass an unused string as the url because it will dynamically be replaced in launcher environments
-    this.client = await AppAgentWebsocket.connect(new URL('https://UNUSED'), 'humm-earth-core-happ');
-
-    this.loading = false;
+    try {
+      this.loading = true;
+      if (this.IS_HOLO) {
+        const client: WebSdk = await WebSdk.connect({
+          chaperoneUrl: import.meta.env.VITE_APP_CHAPERONE_URL,
+          authFormCustomization: {
+            appName: "humm-earth-core-happ",
+          },
+        });
+        client.on("agent-state", (agent_state: AgentState) => {
+          this.loading = !agent_state.isAvailable;
+        });
+        this.client = client;
+      } else {
+        this.client = await AppWebsocket.connect();
+      }
+    } catch (e) {
+      this.error = e as HolochainError;
+    } finally {
+      this.loading = false;
+    }
   },
   provide() {
     return {

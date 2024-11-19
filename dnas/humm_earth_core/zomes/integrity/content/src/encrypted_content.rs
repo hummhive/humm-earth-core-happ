@@ -39,8 +39,6 @@ pub fn validate_create_encrypted_content(
 pub fn validate_update_encrypted_content(
     _action: Update,
     _encrypted_content: EncryptedContent,
-    _original_action: EntryCreationAction,
-    _original_encrypted_content: EncryptedContent,
 ) -> ExternResult<ValidateCallbackResult> {
     Ok(ValidateCallbackResult::Valid)
 }

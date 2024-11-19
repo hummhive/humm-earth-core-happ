@@ -1,5 +1,6 @@
 use content_integrity::*;
-use hdk::{hash_path::path::Component, prelude::*};
+use hdk::prelude::*;
+use hdi::hash_path::path::Component;
 use zome_utils::*;
 
 use crate::{
@@ -172,7 +173,8 @@ pub fn list_by_dynamic_link(
         Component::from(input.content_type),
         Component::from(input.dynamic_link.clone()),
     ]);
-    let links = get_links(path.path_entry_hash()?, LinkTypes::Dynamic, None)?;
+    let get_links_input = GetLinksInputBuilder::try_new(path.path_entry_hash()?, LinkTypes::Dynamic)?.build();
+    let links = get_links(get_links_input)?;
     let hashes: Vec<ActionHash> = links
         .into_iter()
         .map(|link| link.target.into_action_hash())
@@ -193,8 +195,8 @@ pub fn list_by_hive_link(input: ListByHiveInput) -> ExternResult<Vec<EncryptedCo
         Component::from(input.hive_id),
         Component::from(input.content_type),
     ]);
-
-    let links = get_links(path.path_entry_hash()?, LinkTypes::Hive, None)?;
+    let get_links_input = GetLinksInputBuilder::try_new(path.path_entry_hash()?, LinkTypes::Hive)?.build();
+    let links = get_links(get_links_input)?;
     let hashes: Vec<ActionHash> = links
         .into_iter()
         .map(|link| link.target.into_action_hash())
@@ -217,8 +219,9 @@ pub fn get_by_content_id_link(
         Component::from(input.hive_id.clone()),
         Component::from(input.content_id.clone()),
     ]);
-
-    let links = get_links(path.path_entry_hash()?, LinkTypes::HummContentId, None)?;
+    
+    let get_links_input = GetLinksInputBuilder::try_new(path.path_entry_hash()?, LinkTypes::HummContentId)?.build();
+    let links = get_links(get_links_input)?;
 
     let hashes: Vec<ActionHash> = links
         .into_iter()
@@ -258,11 +261,12 @@ pub fn list_by_acl_link(input: ListByAclInput) -> ExternResult<Vec<EncryptedCont
         Component::from(input.content_type),
         Component::from(input.entity_id.clone()),
     ]);
+
     let links = match input.acl_role.as_str() {
-        "Owner" => get_links(path.path_entry_hash()?, LinkTypes::HummContentOwner, None)?,
-        "Admin" => get_links(path.path_entry_hash()?, LinkTypes::HummContentAdmin, None)?,
-        "Writer" => get_links(path.path_entry_hash()?, LinkTypes::HummContentWriter, None)?,
-        "Reader" => get_links(path.path_entry_hash()?, LinkTypes::HummContentReader, None)?,
+        "Owner" => get_links(GetLinksInputBuilder::try_new(path.path_entry_hash()?, LinkTypes::HummContentOwner)?.build())?,
+        "Admin" => get_links(GetLinksInputBuilder::try_new(path.path_entry_hash()?, LinkTypes::HummContentAdmin)?.build())?,
+        "Writer" => get_links(GetLinksInputBuilder::try_new(path.path_entry_hash()?, LinkTypes::HummContentWriter)?.build())?,
+        "Reader" => get_links(GetLinksInputBuilder::try_new(path.path_entry_hash()?, LinkTypes::HummContentReader)?.build())?,
         _ => {
             return Err(wasm_error!(WasmErrorInner::Guest(String::from(
                 "Invalid acl_role"
@@ -290,7 +294,7 @@ pub fn list_by_author(input: ListByAuthorInput) -> ExternResult<Vec<EncryptedCon
         Component::from(input.content_type),
     ]);
 
-    let links = get_links(path.path_entry_hash()?, LinkTypes::Hive, None)?;
+    let links = get_links(GetLinksInputBuilder::try_new(path.path_entry_hash()?, LinkTypes::Hive)?.build())?;
     let hashes: Vec<ActionHash> = links
         .into_iter()
         .map(|link| link.target.into_action_hash())
@@ -314,11 +318,9 @@ pub fn update_encrypted_content(
         input.previous_encrypted_content_hash.clone(),
         &input.updated_encrypted_content,
     )?;
-    let original_hash_link = get_links(
-        input.previous_encrypted_content_hash.clone(),
-        LinkTypes::OriginalHashPointer,
-        None,
-    )?;
+
+    let original_hash_link = get_links(GetLinksInputBuilder::try_new(input.previous_encrypted_content_hash.clone(), LinkTypes::OriginalHashPointer)?.build())?;
+
     if original_hash_link.is_empty() {
         return Err(wasm_error!(WasmErrorInner::Guest(format!(
             "Could not find the hash of the original EncryptedContent that is trying to be updated"

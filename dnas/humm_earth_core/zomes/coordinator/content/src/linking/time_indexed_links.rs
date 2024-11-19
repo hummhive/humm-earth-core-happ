@@ -1,12 +1,13 @@
 use std::vec;
 
 use content_integrity::*;
-use hdk::{hash_path::path::Component, prelude::*};
+use hdk::prelude::*;
+use hdi::hash_path::path::Component;
 use time_indexing::*;
 
 pub fn time_index_encrypted_content(ah: ActionHash, content_type: &str) -> ExternResult<TypedPath> {
     let agent_info = agent_info()?;
-    let time = get(ah.clone(), GetOptions::content())?
+    let time = get(ah.clone(), GetOptions::default())?
         .unwrap()
         .action()
         .timestamp();

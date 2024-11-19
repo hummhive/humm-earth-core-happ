@@ -21,7 +21,7 @@
 <script lang="ts">
 import { defineComponent, inject, toRaw, ComputedRef } from 'vue';
 import { decode } from '@msgpack/msgpack';
-import { AppAgentClient, NewEntryAction, Record, AgentPubKey, EntryHash, ActionHash } from '@holochain/client';
+import { AppClient, NewEntryAction, Record, AgentPubKey, EntryHash, ActionHash } from '@holochain/client';
 import '@material/mwc-circular-progress';
 import EncryptedContentDetail from './EncryptedContentDetail.vue';
 import { ContentSignal } from './types';
@@ -76,7 +76,7 @@ export default defineComponent({
     }
   },
   setup() {
-    const client = (inject('client') as ComputedRef<AppAgentClient>).value;
+    const client = (inject('client') as ComputedRef<AppClient>).value;
     return {
       client,
     };

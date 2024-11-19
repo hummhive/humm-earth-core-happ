@@ -32,7 +32,7 @@
 <script lang="ts">
 import { defineComponent, inject, ComputedRef } from 'vue';
 import { decode } from '@msgpack/msgpack';
-import { AppAgentClient, Record, AgentPubKey, EntryHash, ActionHash, DnaHash } from '@holochain/client';
+import { AppClient, Record, AgentPubKey, EntryHash, ActionHash, DnaHash } from '@holochain/client';
 import { EncryptedContent } from './types';
 import '@material/mwc-circular-progress';
 import '@material/mwc-icon-button';
@@ -105,7 +105,7 @@ export default defineComponent({
   },
   emits: ['encrypted-content-deleted'],
   setup() {
-    const client = (inject('client') as ComputedRef<AppAgentClient>).value;
+    const client = (inject('client') as ComputedRef<AppClient>).value;
     return {
       client
     };
