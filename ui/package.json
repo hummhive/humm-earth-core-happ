@@ -5,11 +5,12 @@
     "start": "vite --port $UI_PORT --clearScreen false",
     "build": "vue-tsc --noEmit && vite build",
     "preview": "vite preview",
-    "package": "npm run build && cd dist && bestzip ../dist.zip *"
+    "package": "npm run build && cd dist && bestzip ../dist.zip *",
+    "serve:local": "VITE_APP_IS_HOLO='true' VITE_APP_CHAPERONE_URL='http://localhost:24274' vite"
   },
   "dependencies": {
     "@holo-host/web-sdk": "^0.6.20-prerelease",
-    "@holochain/client": "0.18.0-dev.2",
+    "@holochain/client": "0.18.0",
     "@material/mwc-button": "^0.27.0",
     "@material/mwc-checkbox": "^0.27.0",
     "@material/mwc-circular-progress": "^0.27.0",
