@@ -4,8 +4,33 @@ pub mod linking;
 use content_integrity::*;
 use hdk::prelude::*;
 pub use linking::*;
+
+pub fn set_cap_tokens() -> ExternResult<()> {
+    let mut fns = BTreeSet::new();
+    fns.insert((zome_info()?.name, "get_encrypted_content".into()));
+    fns.insert((zome_info()?.name, "get_many_encrypted_conten".into()));
+    fns.insert((
+        zome_info()?.name,
+        "get_encrypted_content_by_time_and_author".into(),
+    ));
+    fns.insert((zome_info()?.name, "list_by_dynamic_link".into()));
+    fns.insert((zome_info()?.name, "list_by_hive_link".into()));
+    fns.insert((zome_info()?.name, "get_by_content_id_link".into()));
+    fns.insert((zome_info()?.name, "list_by_acl_link".into()));
+    fns.insert((zome_info()?.name, "list_by_author".into()));
+
+    let functions = GrantedFunctions::Listed(fns);
+    create_cap_grant(CapGrantEntry {
+        tag: "".into(),
+        access: CapAccess::Unrestricted,
+        functions,
+    })?;
+    Ok(())
+}
+
 #[hdk_extern]
 pub fn init(_: ()) -> ExternResult<InitCallbackResult> {
+    set_cap_tokens()?;
     Ok(InitCallbackResult::Pass)
 }
 #[derive(Serialize, Deserialize, Debug)]
