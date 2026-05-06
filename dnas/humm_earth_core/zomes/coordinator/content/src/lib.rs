@@ -3,10 +3,11 @@ pub mod linking;
 
 use content_integrity::*;
 use hdk::prelude::*;
+use std::collections::HashSet;
 pub use linking::*;
 
 pub fn set_cap_tokens() -> ExternResult<()> {
-    let mut fns = BTreeSet::new();
+    let mut fns = HashSet::new();
     fns.insert((zome_info()?.name, "get_encrypted_content".into()));
     fns.insert((zome_info()?.name, "get_many_encrypted_conten".into()));
     fns.insert((
@@ -77,7 +78,7 @@ fn signal_action(action: SignedActionHashed) -> ExternResult<()> {
             Ok(())
         }
         Action::DeleteLink(delete_link) => {
-            let record = get(delete_link.link_add_address.clone(), GetOptions::default())?.ok_or(
+            let record = get(delete_link.link_add_address.clone(), GetOptions { strategy: GetStrategy::Network })?.ok_or(
                 wasm_error!(WasmErrorInner::Guest(
                     "Failed to fetch CreateLink action".to_string()
                 )),
@@ -131,7 +132,7 @@ fn signal_action(action: SignedActionHashed) -> ExternResult<()> {
     }
 }
 fn get_entry_for_action(action_hash: &ActionHash) -> ExternResult<Option<EntryTypes>> {
-    let record = match get_details(action_hash.clone(), GetOptions::default())? {
+    let record = match get_details(action_hash.clone(), GetOptions { strategy: GetStrategy::Network })? {
         Some(Details::Record(record_details)) => record_details.record,
         _ => {
             return Ok(None);

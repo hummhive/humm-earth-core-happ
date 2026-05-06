@@ -85,7 +85,7 @@ pub fn create_encrypted_content(
     )?;
 
     // create link to the author
-    let my_agent_pub_key = agent_info()?.agent_latest_pubkey;
+    let my_agent_pub_key = agent_info()?.agent_initial_pubkey;
     let author_link_path = Path::from(vec![
         Component::from(my_agent_pub_key.to_string()),
         Component::from(input.content_type),
@@ -150,7 +150,7 @@ pub fn get_eh(ah: ActionHash) -> ExternResult<EntryHash> {
     Ok(eh.to_owned())
 }
 pub fn get_record(dh: AnyDhtHash) -> ExternResult<Record> {
-    let maybe_record = get(dh, GetOptions::network())?;
+    let maybe_record = get(dh, GetOptions { strategy: GetStrategy::Network })?;
     let Some(record) = maybe_record else {
         return Err(wasm_error!(WasmErrorInner::Guest(format!(
             "no Record found at given hash"
@@ -165,7 +165,7 @@ pub fn get_latest_typed_from_eh<T: TryFrom<SerializedBytes, Error = SerializedBy
     entry_hash: EntryHash,
 ) -> ExternResult<OptionTypedEntryAndHash<T>> {
     // First, make sure we DO have the latest action_hash address
-    let maybe_maybe_details = get_details(entry_hash.clone(), GetOptions::network())?;
+    let maybe_maybe_details = get_details(entry_hash.clone(), GetOptions { strategy: GetStrategy::Network })?;
     let Some(Details::Entry(details)) = maybe_maybe_details else {
         return Ok(None);
     };
@@ -185,7 +185,7 @@ pub fn get_latest_typed_from_eh<T: TryFrom<SerializedBytes, Error = SerializedBy
         }
     };
     // Second, go and get that Record, and return its entry and action_address
-    let Some(record) = get(latest_ah, GetOptions::network())? else {
+    let Some(record) = get(latest_ah, GetOptions { strategy: GetStrategy::Network })? else {
         return Ok(None);
     };
     let maybe_maybe_typed_entry = record.entry().to_app_option::<T>();
@@ -266,9 +266,10 @@ pub fn list_by_dynamic_link(
         Component::from(input.dynamic_link.clone()),
     ]);
 
-    let get_links_input =
-        GetLinksInputBuilder::try_new(path.path_entry_hash()?, LinkTypes::Dynamic)?.build();
-    let links = get_links(get_links_input)?;
+    let links = get_links(
+        LinkQuery::try_new(path.path_entry_hash()?, LinkTypes::Dynamic)?,
+        GetStrategy::Network,
+    )?;
     let hashes: Vec<ActionHash> = links
         .into_iter()
         .map(|link| link.target.into_action_hash())
@@ -289,9 +290,10 @@ pub fn list_by_hive_link(input: ListByHiveInput) -> ExternResult<Vec<EncryptedCo
         Component::from(input.hive_id),
         Component::from(input.content_type),
     ]);
-    let get_links_input =
-        GetLinksInputBuilder::try_new(path.path_entry_hash()?, LinkTypes::Hive)?.build();
-    let links = get_links(get_links_input)?;
+    let links = get_links(
+        LinkQuery::try_new(path.path_entry_hash()?, LinkTypes::Hive)?,
+        GetStrategy::Network,
+    )?;
     let hashes: Vec<ActionHash> = links
         .into_iter()
         .map(|link| link.target.into_action_hash())
@@ -314,9 +316,10 @@ pub fn get_by_content_id_link(
         Component::from(input.hive_id.clone()),
         Component::from(input.content_id.clone()),
     ]);
-    let get_links_input =
-        GetLinksInputBuilder::try_new(path.path_entry_hash()?, LinkTypes::HummContentId)?.build();
-    let links = get_links(get_links_input)?;
+    let links = get_links(
+        LinkQuery::try_new(path.path_entry_hash()?, LinkTypes::HummContentId)?,
+        GetStrategy::Network,
+    )?;
 
     let hashes: Vec<ActionHash> = links
         .into_iter()
@@ -359,20 +362,20 @@ pub fn list_by_acl_link(input: ListByAclInput) -> ExternResult<Vec<EncryptedCont
 
     let links = match input.acl_role.as_str() {
         "Owner" => get_links(
-            GetLinksInputBuilder::try_new(path.path_entry_hash()?, LinkTypes::HummContentOwner)?
-                .build(),
+            LinkQuery::try_new(path.path_entry_hash()?, LinkTypes::HummContentOwner)?,
+            GetStrategy::Network,
         )?,
         "Admin" => get_links(
-            GetLinksInputBuilder::try_new(path.path_entry_hash()?, LinkTypes::HummContentAdmin)?
-                .build(),
+            LinkQuery::try_new(path.path_entry_hash()?, LinkTypes::HummContentAdmin)?,
+            GetStrategy::Network,
         )?,
         "Writer" => get_links(
-            GetLinksInputBuilder::try_new(path.path_entry_hash()?, LinkTypes::HummContentWriter)?
-                .build(),
+            LinkQuery::try_new(path.path_entry_hash()?, LinkTypes::HummContentWriter)?,
+            GetStrategy::Network,
         )?,
         "Reader" => get_links(
-            GetLinksInputBuilder::try_new(path.path_entry_hash()?, LinkTypes::HummContentReader)?
-                .build(),
+            LinkQuery::try_new(path.path_entry_hash()?, LinkTypes::HummContentReader)?,
+            GetStrategy::Network,
         )?,
         _ => {
             return Err(wasm_error!(WasmErrorInner::Guest(String::from(
@@ -401,7 +404,8 @@ pub fn list_by_author(input: ListByAuthorInput) -> ExternResult<Vec<EncryptedCon
         Component::from(input.content_type),
     ]);
     let links = get_links(
-        GetLinksInputBuilder::try_new(path.path_entry_hash()?, LinkTypes::Hive)?.build(),
+        LinkQuery::try_new(path.path_entry_hash()?, LinkTypes::Hive)?,
+        GetStrategy::Network,
     )?;
 
     let hashes: Vec<ActionHash> = links
@@ -428,11 +432,11 @@ pub fn update_encrypted_content(
         &input.updated_encrypted_content,
     )?;
     let original_hash_link = get_links(
-        GetLinksInputBuilder::try_new(
+        LinkQuery::try_new(
             input.previous_encrypted_content_hash.clone(),
             LinkTypes::OriginalHashPointer,
-        )?
-        .build(),
+        )?,
+        GetStrategy::Network,
     )?;
 
     if original_hash_link.is_empty() {

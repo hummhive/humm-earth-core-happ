@@ -1,21 +1,16 @@
 ---
-manifest_version: "1"
+manifest_version: "0"
 name: humm_earth_core
 integrity:
   network_seed: ~
   properties: ~
-  origin_time: 1691627100041633
   zomes:
     - name: content_integrity
-      hash: ~
-      bundled: "../../../target/wasm32-unknown-unknown/release/content_integrity.wasm"
-      dependencies: ~
-      dylib: ~
+      path: "../../../target/wasm32-unknown-unknown/release/content_integrity.wasm"
+      dependencies: []
 coordinator:
   zomes:
     - name: content
-      hash: ~
-      bundled: "../../../target/wasm32-unknown-unknown/release/content.wasm"
+      path: "../../../target/wasm32-unknown-unknown/release/content.wasm"
       dependencies:
         - name: content_integrity
-      dylib: ~

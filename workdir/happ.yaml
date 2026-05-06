@@ -1,5 +1,5 @@
 ---
-manifest_version: "1"
+manifest_version: "0"
 name: humm-earth-core-happ
 description: ~
 roles:
@@ -8,11 +8,8 @@ roles:
       strategy: create
       deferred: false
     dna:
-      bundled: "../dnas/humm_earth_core/workdir/humm_earth_core.dna"
+      path: "../dnas/humm_earth_core/workdir/humm_earth_core.dna"
       modifiers:
         network_seed: ~
         properties: ~
-        origin_time: ~
-        quantum_time: ~
-      installed_hash: ~
       clone_limit: 0

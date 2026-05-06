@@ -10,9 +10,10 @@ name = "content"
 
 [dependencies]
 hdk = { workspace = true }
+holochain_serialized_bytes = { workspace = true }
 
 serde = { workspace = true }
 
-# time_indexing = { workspace = true } 
+# time_indexing = { workspace = true }
 # zome_utils.workspace = true
 content_integrity = { workspace = true } 
