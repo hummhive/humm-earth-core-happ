@@ -12,6 +12,13 @@ name = "content"
 hdk = { workspace = true }
 holochain_serialized_bytes = { workspace = true }
 
+# Needed for parsing standard-base64-encoded AgentPubKey strings out of
+# `Acl::reader` so they can be passed to `send_remote_signal`. The
+# happ's existing dependency tree already pulls base64 0.22 transitively
+# via hdk/holochain_types; the explicit dep here just exposes it to the
+# zome.
+base64 = "0.22"
+
 serde = { workspace = true }
 
 # time_indexing = { workspace = true }

@@ -47,6 +47,60 @@ pub enum EncryptedContentSignalType {
     Delete,
 }
 
+/// Best-effort remote delivery of a content signal to every agent
+/// listed in the entry's `public_key_acl.reader` (other than the
+/// author). Local `emit_signal` always fires first — it's the
+/// existing pre-this-change behaviour and the only signal source the
+/// author's own UI needs. `send_remote_signal` is purely additive:
+/// it gives recipients an immediate notification instead of waiting
+/// for sidecar-side DHT polling to discover the new entry.
+///
+/// Failures here (malformed base64, recipient offline, network error)
+/// MUST NOT propagate — the entry is already committed on the source
+/// chain, the local signal already fired, and the sidecar's polling
+/// fallback will eventually deliver the record regardless. Logging at
+/// `debug` keeps post-mortems possible without flooding production
+/// logs.
+///
+/// Backwards compatibility: this function only READS the existing
+/// `Acl::reader: Vec<String>` field. No schema changes. Every client
+/// that already populates the ACL (i.e. all of them) gets remote
+/// delivery transparently the moment this zome is deployed. Old
+/// clients writing entries without a `public_key_acl.reader` still
+/// work — the recipient list is empty, no remote signal fires, and
+/// behaviour matches the pre-change zome exactly.
+fn remote_signal_acl_readers(public_key_acl: &Acl, signal: EncryptedContentSignal) {
+    use base64::Engine;
+    let std = base64::engine::general_purpose::STANDARD;
+    let self_pubkey = match agent_info() {
+        Ok(info) => info.agent_initial_pubkey,
+        Err(err) => {
+            debug!("remote_signal_acl_readers: agent_info() failed: {err:?}");
+            return;
+        }
+    };
+    // Wire format: `Acl::reader` carries 39-byte `AgentPubKey` blobs
+    // (3-byte holochain prefix + 32-byte hash + 4-byte DHT location)
+    // encoded as standard base64 with padding. `try_from_raw_39`
+    // validates both length and prefix-matches-AgentPubKey in one
+    // step — anything that fails either check is silently dropped
+    // (the local `emit_signal` already covered the author; missing a
+    // remote signal recipient just means polling delivers).
+    let recipients: Vec<AgentPubKey> = public_key_acl
+        .reader
+        .iter()
+        .filter_map(|s| std.decode(s).ok())
+        .filter_map(|bytes| AgentPubKey::try_from_raw_39(bytes).ok())
+        .filter(|pk| *pk != self_pubkey)
+        .collect();
+    if recipients.is_empty() {
+        return;
+    }
+    if let Err(err) = send_remote_signal(signal, recipients) {
+        debug!("remote_signal_acl_readers: send_remote_signal failed (non-fatal): {err:?}");
+    }
+}
+
 #[hdk_extern]
 pub fn create_encrypted_content(
     input: CreateEncryptedContentInput,
@@ -75,6 +129,13 @@ pub fn create_encrypted_content(
         action_type: EncryptedContentSignalType::Create,
         data: response.clone(),
     })?;
+    remote_signal_acl_readers(
+        &encrypted_content.header.public_key_acl,
+        EncryptedContentSignal {
+            action_type: EncryptedContentSignalType::Create,
+            data: response.clone(),
+        },
+    );
 
     // create original hash pointer link pointing to itslef
     create_link(
@@ -474,6 +535,13 @@ pub fn update_encrypted_content(
         action_type: EncryptedContentSignalType::Update,
         data: record.clone(),
     })?;
+    remote_signal_acl_readers(
+        &record.encrypted_content.header.public_key_acl,
+        EncryptedContentSignal {
+            action_type: EncryptedContentSignalType::Update,
+            data: record.clone(),
+        },
+    );
 
     Ok(record)
 }
@@ -488,8 +556,16 @@ pub fn delete_encrypted_content(
     // all agents in all hives for every entry created across the network
     emit_signal(EncryptedContentSignal {
         action_type: EncryptedContentSignalType::Delete,
-        data: record,
+        data: record.clone(),
     })?;
+    let acl_for_remote = record.encrypted_content.header.public_key_acl.clone();
+    remote_signal_acl_readers(
+        &acl_for_remote,
+        EncryptedContentSignal {
+            action_type: EncryptedContentSignalType::Delete,
+            data: record,
+        },
+    );
     // TODO: delete links
     Ok(ah)
 }

@@ -19,6 +19,16 @@ pub fn set_cap_tokens() -> ExternResult<()> {
     fns.insert((zome_info()?.name, "get_by_content_id_link".into()));
     fns.insert((zome_info()?.name, "list_by_acl_link".into()));
     fns.insert((zome_info()?.name, "list_by_author".into()));
+    // `recv_remote_signal` is invoked by the conductor on every agent
+    // listed in `send_remote_signal`'s recipient list. The HDK requires
+    // this cap to be granted explicitly by the receiver zome — see
+    // `hdk::p2p::send_remote_signal` impl comment: "This requirement
+    // will likely be removed in the future". Until then, granting
+    // Unrestricted access is the standard pattern (the function only
+    // re-emits the incoming signal locally; it doesn't expose any
+    // state). This addition is purely additive — older clients that
+    // don't call `send_remote_signal` are unaffected.
+    fns.insert((zome_info()?.name, "recv_remote_signal".into()));
 
     let functions = GrantedFunctions::Listed(fns);
     create_cap_grant(CapGrantEntry {
@@ -33,6 +43,49 @@ pub fn set_cap_tokens() -> ExternResult<()> {
 pub fn init(_: ()) -> ExternResult<InitCallbackResult> {
     set_cap_tokens()?;
     Ok(InitCallbackResult::Pass)
+}
+
+/// Relay a remote signal to the local AppWebsocket subscribers.
+///
+/// When agent A calls `send_remote_signal(payload, [B, C, ...])`, the
+/// conductor on each recipient (B, C, ...) invokes THIS function with
+/// the payload. We re-emit it locally so the subscribed app (sidecar
+/// / smoketest / future client) receives the same shape as the local
+/// `emit_signal` path. Same payload, two delivery surfaces.
+///
+/// THREAT MODEL — read before consuming signals in a sidecar:
+///
+/// The cap grant on this function is `Unrestricted`, so any peer on
+/// the network can call it with any `EncryptedContentSignal` payload.
+/// The payload is attacker-controlled — fields like `hash`,
+/// `original_hash`, and the inner `encrypted_content` are NOT
+/// authenticated by the act of receiving a remote signal. Specifically:
+///
+///   - A peer can flood the signal queue (DoS against UI/sidecar
+///     event loop); conductor-level p2p limits help but don't
+///     eliminate this.
+///   - A peer can emit signals whose `hash` references a real
+///     committed entry but whose `encrypted_content` body is junk,
+///     or vice versa.
+///   - The signal and the DHT entry are decoupled: signal arrival
+///     does NOT prove the entry was actually committed.
+///
+/// Sidecars MUST treat signal data as a HINT, not authoritative.
+/// The legitimate use is "wake up and re-query the DHT for this
+/// hash"; reading the signal's `encrypted_content` directly without
+/// a follow-up `get_encrypted_content(hash)` is a confusion-attack
+/// surface. The polling fallback (sidecar's periodic
+/// `list_by_hive_link`) provides the authoritative read.
+#[hdk_extern]
+pub fn recv_remote_signal(payload: encrypted_content::EncryptedContentSignal) -> ExternResult<()> {
+    // `#[hdk_extern]` unwraps the outer `ExternIO` and deserialises
+    // into our typed input automatically — taking
+    // `EncryptedContentSignal` directly lets the macro handle the
+    // wire decode, giving a clean error if the payload shape ever
+    // drifts (instead of the silent-corruption that an `ExternIO`
+    // arg + manual `.decode()` would produce).
+    emit_signal(payload)?;
+    Ok(())
 }
 #[derive(Serialize, Deserialize, Debug)]
 #[serde(tag = "type")]
