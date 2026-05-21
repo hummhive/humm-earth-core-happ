@@ -84,6 +84,17 @@ pub fn recv_remote_signal(payload: encrypted_content::EncryptedContentSignal) ->
     // wire decode, giving a clean error if the payload shape ever
     // drifts (instead of the silent-corruption that an `ExternIO`
     // arg + manual `.decode()` would produce).
+    //
+    // Observability: log every arrival at info so cross-host DM
+    // debugging has a concrete breadcrumb. Without this line the
+    // receiver was completely silent — the only way to confirm
+    // delivery was via downstream `emit_signal` side-effects which
+    // require an AppWebsocket subscriber already attached. Pinned
+    // by `.extraResearch/DM_SECURITY_RECV_REMOTE_SIGNAL_2026-05-21.md`.
+    info!(
+        "recv_remote_signal: action_type={:?} hash={}",
+        payload.action_type, payload.data.hash,
+    );
     emit_signal(payload)?;
     Ok(())
 }

@@ -71,7 +71,19 @@ pub enum EncryptedContentSignalType {
 /// behaviour matches the pre-change zome exactly.
 fn remote_signal_acl_readers(public_key_acl: &Acl, signal: EncryptedContentSignal) {
     use base64::Engine;
-    let std = base64::engine::general_purpose::STANDARD;
+    // `Acl::reader` carries `AgentPubKey` strings produced by the
+    // `@holochain/client` helper `encodeHashToBase64`, which emits the
+    // multibase holohash form `'u' + URL_SAFE_NO_PAD(39 bytes)` — a
+    // 53-char string like `uhCAk7VFb…`. STANDARD-base64 decoders reject
+    // these on three independent grounds: the `'u'` prefix is not a
+    // base64 char, the URL-safe `-`/`_` chars are not in the STANDARD
+    // alphabet, and length 53 mod 4 = 1 is invalid for any padded
+    // variant. Pre-2026-05-21 this function used STANDARD and silently
+    // dropped every recipient — `recipients` was always empty,
+    // `send_remote_signal` was NEVER called, and cross-host DMs
+    // depended entirely on slow DHT gossip. Fix: strip the multibase
+    // prefix and decode with URL_SAFE_NO_PAD.
+    let urlsafe = base64::engine::general_purpose::URL_SAFE_NO_PAD;
     let self_pubkey = match agent_info() {
         Ok(info) => info.agent_initial_pubkey,
         Err(err) => {
@@ -79,20 +91,26 @@ fn remote_signal_acl_readers(public_key_acl: &Acl, signal: EncryptedContentSigna
             return;
         }
     };
-    // Wire format: `Acl::reader` carries 39-byte `AgentPubKey` blobs
-    // (3-byte holochain prefix + 32-byte hash + 4-byte DHT location)
-    // encoded as standard base64 with padding. `try_from_raw_39`
-    // validates both length and prefix-matches-AgentPubKey in one
-    // step — anything that fails either check is silently dropped
-    // (the local `emit_signal` already covered the author; missing a
-    // remote signal recipient just means polling delivers).
+    let raw_count = public_key_acl.reader.len();
     let recipients: Vec<AgentPubKey> = public_key_acl
         .reader
         .iter()
-        .filter_map(|s| std.decode(s).ok())
+        .filter_map(|s| s.strip_prefix('u'))
+        .filter_map(|stripped| urlsafe.decode(stripped).ok())
         .filter_map(|bytes| AgentPubKey::try_from_raw_39(bytes).ok())
         .filter(|pk| *pk != self_pubkey)
         .collect();
+    // Observability: emit BOTH counts so post-mortems can distinguish
+    // "ACL was empty" (raw=0) from "every entry failed to decode"
+    // (raw>0, valid=0 — the pre-fix silent-drop shape). Logged at info
+    // because cross-host DM delivery hinges on this path and we want
+    // the breadcrumb in production logs, not only at debug.
+    info!(
+        "remote_signal_acl_readers: raw_count={} valid_recipients={} action_type={:?}",
+        raw_count,
+        recipients.len(),
+        signal.action_type,
+    );
     if recipients.is_empty() {
         return;
     }

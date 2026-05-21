@@ -1,18 +1,23 @@
 /**
  * Verifies that `create_encrypted_content` / `update_encrypted_content` /
- * `delete_encrypted_content` now ALSO send a `send_remote_signal` to
- * every agent listed in the entry's `public_key_acl.reader`. The
- * existing local `emit_signal` behavior is preserved (covered by
- * `encrypted-content.test.ts`); this file pins the new additive
- * behavior plus its backwards-compatibility guarantees.
+ * `delete_encrypted_content` ALSO send a `send_remote_signal` to every
+ * agent listed in the entry's `public_key_acl.reader`, AND that the
+ * decoder accepts the holohash (`u` + URL_SAFE_NO_PAD) wire format the
+ * production renderer emits via `@holochain/client::encodeHashToBase64`.
  *
- * Wire format note: the zome's `Acl::reader` is `Vec<String>` of
- * standard-base64-encoded 39-byte AgentPubKey blobs (3-byte holochain
- * us `agentPubKey: Uint8Array`, which `Buffer.from(...).toString("base64")`
- * encodes the same way the production TS client does.
+ * Pre-fix history: the zome's `remote_signal_acl_readers` used
+ * `base64::engine::general_purpose::STANDARD.decode()`. Standard-base64
+ * cannot parse the production holohash strings (length 53 = 4n+1,
+ * URL-safe alphabet, multibase `'u'` prefix all fail). Every recipient
+ * was silently dropped via `filter_map(...ok())`; cross-host DM
+ * delivery via push-signal worked end-to-end ONLY for tests that
+ * encoded with the same STANDARD alphabet — i.e. a green-bar that
+ * never reproduced the production wire shape. Pinned by
+ * `.extraResearch/DM_SECURITY_RECV_REMOTE_SIGNAL_2026-05-21.md`.
  */
 import { assert, expect, test } from "vitest";
 import { runScenario, AppSignal, Signal, SignalType } from "@holochain/tryorama";
+import { encodeHashToBase64 } from "@holochain/client";
 import { Buffer } from "node:buffer";
 
 import {
@@ -55,8 +60,12 @@ function waitForSignal(
   });
 }
 
+// Production wire format — matches `@holochain/client::encodeHashToBase64`
+// which the humm-tauri renderer uses to populate every
+// `public_key_acl.reader` entry. Format: `'u' + URL_SAFE_NO_PAD(39 bytes)`
+// = 53 chars per pubkey. This is the encoding the fix targets.
 function encodePubkeyB64(pubkey: Uint8Array): string {
-  return Buffer.from(pubkey).toString("base64");
+  return encodeHashToBase64(pubkey);
 }
 
 test("create_encrypted_content fires remote signal to every public_key_acl.reader", async () => {
