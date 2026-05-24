@@ -16,6 +16,7 @@ import { decode, encode } from "@msgpack/msgpack";
 import {
   AclRole,
   EncryptedContentResponse,
+  cellPubkeyB64,
   createEncryptedContent,
   sampleCreateEncryptedContentInput,
   sampleEncryptedContent,
@@ -42,7 +43,7 @@ test("create and read EncryptedContent using acl owner link", async () => {
     await scenario.shareAllAgents();
 
     // Alice creates a EncryptedContent
-    const sampleContent = sampleEncryptedContent();
+    const sampleContent = sampleEncryptedContent({}, cellPubkeyB64(alice.cells[0]));
     const sampleInput = await sampleCreateEncryptedContentInput(sampleContent);
     const record = await createEncryptedContent(alice.cells[0], sampleInput);
     assert.ok(record);
@@ -91,7 +92,7 @@ test("create and read EncryptedContent using acl admin link", async () => {
     await scenario.shareAllAgents();
 
     // Alice creates a EncryptedContent
-    const sampleContent = sampleEncryptedContent();
+    const sampleContent = sampleEncryptedContent({}, cellPubkeyB64(alice.cells[0]));
     sampleContent.header.acl.admin.push("test-admin-id");
     const sampleInput = await sampleCreateEncryptedContentInput(sampleContent);
     const record = await createEncryptedContent(alice.cells[0], sampleInput);
@@ -141,7 +142,7 @@ test("create and read EncryptedContent using acl writer link", async () => {
     await scenario.shareAllAgents();
 
     // Alice creates a EncryptedContent
-    const sampleContent = sampleEncryptedContent();
+    const sampleContent = sampleEncryptedContent({}, cellPubkeyB64(alice.cells[0]));
     sampleContent.header.acl.writer.push("test-writer-id");
     const sampleInput = await sampleCreateEncryptedContentInput(sampleContent);
     const record = await createEncryptedContent(alice.cells[0], sampleInput);
@@ -191,7 +192,7 @@ test("create and read EncryptedContent using acl reader link", async () => {
     await scenario.shareAllAgents();
 
     // Alice creates a EncryptedContent
-    const sampleContent = sampleEncryptedContent();
+    const sampleContent = sampleEncryptedContent({}, cellPubkeyB64(alice.cells[0]));
     sampleContent.header.acl.reader.push("test-reader-id");
     const sampleInput = await sampleCreateEncryptedContentInput(sampleContent);
     const record = await createEncryptedContent(alice.cells[0], sampleInput);

@@ -94,7 +94,7 @@ test("create_encrypted_content fires remote signal to every public_key_acl.reade
           reader: [alicePubkeyB64, bobPubkeyB64],
         },
       },
-    });
+    }, [], alicePubkeyB64);
     const response: EncryptedContentResponse = await alice.cells[0].callZome({
       zome_name: "content",
       fn_name: "create_encrypted_content",
@@ -122,17 +122,18 @@ test("create_encrypted_content with empty public_key_acl.reader does NOT remote-
       if (signal.type === SignalType.App) bobSignalCount++;
     });
 
+    const alicePubkeyB64 = encodePubkeyB64(alice.agentPubKey);
     const input = await sampleCreateEncryptedContentInput({
       header: {
         id: "empty-acl-test-2",
         public_key_acl: {
-          owner: encodePubkeyB64(alice.agentPubKey),
+          owner: alicePubkeyB64,
           admin: [],
           writer: [],
           reader: [],  // explicitly empty — backwards-compat case
         },
       },
-    });
+    }, [], alicePubkeyB64);
     await alice.cells[0].callZome({
       zome_name: "content",
       fn_name: "create_encrypted_content",
@@ -162,11 +163,12 @@ test("create_encrypted_content with malformed reader entries skips silently (doe
       { label: "bob-mixed" },
     );
 
+    const alicePubkeyB64 = encodePubkeyB64(alice.agentPubKey);
     const input = await sampleCreateEncryptedContentInput({
       header: {
         id: "malformed-mix-test-3",
         public_key_acl: {
-          owner: encodePubkeyB64(alice.agentPubKey),
+          owner: alicePubkeyB64,
           admin: [],
           writer: [],
           // Mix of valid and garbage. Valid (bob) should still receive.
@@ -179,7 +181,7 @@ test("create_encrypted_content with malformed reader entries skips silently (doe
           ],
         },
       },
-    });
+    }, [], alicePubkeyB64);
     const response = await alice.cells[0].callZome({
       zome_name: "content",
       fn_name: "create_encrypted_content",
@@ -220,7 +222,7 @@ test("author is filtered from recipients (no self-loop)", async () => {
           reader: [alicePubkeyB64],  // only self
         },
       },
-    });
+    }, [], alicePubkeyB64);
     await alice.cells[0].callZome({
       zome_name: "content",
       fn_name: "create_encrypted_content",

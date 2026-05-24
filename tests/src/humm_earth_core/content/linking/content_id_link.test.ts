@@ -15,6 +15,7 @@ import { decode, encode } from "@msgpack/msgpack";
 
 import {
   EncryptedContentResponse,
+  cellPubkeyB64,
   createEncryptedContent,
   sampleCreateEncryptedContentInput,
   sampleEncryptedContent,
@@ -41,7 +42,7 @@ test("create and read EncryptedContent using content id link", async () => {
     await scenario.shareAllAgents();
 
     // Alice creates a EncryptedContent
-    const sampleContent = sampleEncryptedContent();
+    const sampleContent = sampleEncryptedContent({}, cellPubkeyB64(alice.cells[0]));
     const sampleInput = await sampleCreateEncryptedContentInput(sampleContent);
     const record = await createEncryptedContent(alice.cells[0], sampleInput);
     assert.ok(record);
@@ -88,7 +89,7 @@ test("create, update, and read EncryptedContent using hive link", async () => {
     await scenario.shareAllAgents();
 
     // Alice creates a EncryptedContent
-    const sampleContent = sampleEncryptedContent();
+    const sampleContent = sampleEncryptedContent({}, cellPubkeyB64(alice.cells[0]));
     const sampleInput = await sampleCreateEncryptedContentInput(sampleContent);
 
     const record = await createEncryptedContent(alice.cells[0], sampleInput);
@@ -115,7 +116,7 @@ test("create, update, and read EncryptedContent using hive link", async () => {
 
     const contentUpdate = sampleEncryptedContent({
       bytes: Buffer.from("test-bytes-2"),
-    });
+    }, cellPubkeyB64(alice.cells[0]));
     let updateInput = {
       previous_encrypted_content_hash: createReadOutput.hash,
       updated_encrypted_content: contentUpdate,
