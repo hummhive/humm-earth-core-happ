@@ -224,3 +224,35 @@ fn get_entry_for_action(action_hash: &ActionHash) -> ExternResult<Option<EntryTy
         entry,
     )?)
 }
+
+/// Input for [`get_messages_since`].
+#[derive(serde::Serialize, serde::Deserialize, Debug)]
+pub struct GetMessagesSinceInput {
+    pub since_seq: u32,
+}
+
+/// Return all source-chain records committed after `since_seq` (exclusive),
+/// with entries included.
+///
+/// This queries the LOCAL agent's own source chain only — it is NOT a DHT
+/// or cross-agent query. It is intended for the startup cache to detect
+/// outgoing messages that were committed after the cache was last written.
+///
+/// `since_seq = u32::MAX` causes `saturating_add(1)` to wrap to 0, which
+/// returns the full chain — this is the intended behaviour for a "full
+/// resync" path.
+#[hdk_extern]
+pub fn get_messages_since(input: GetMessagesSinceInput) -> ExternResult<Vec<Record>> {
+    debug!(
+        "get_messages_since: querying chain seq_range=[{}, {}]",
+        input.since_seq.saturating_add(1),
+        u32::MAX,
+    );
+    let filter = ChainQueryFilter::new()
+        .sequence_range(ChainQueryFilterRange::ActionSeqRange(
+            input.since_seq.saturating_add(1),
+            u32::MAX,
+        ))
+        .include_entries(true);
+    query(filter)
+}
