@@ -77,24 +77,18 @@ pub fn init(_: ()) -> ExternResult<InitCallbackResult> {
 /// surface. The polling fallback (sidecar's periodic
 /// `list_by_hive_link`) provides the authoritative read.
 #[hdk_extern]
-pub fn recv_remote_signal(payload: encrypted_content::EncryptedContentSignal) -> ExternResult<()> {
-    // `#[hdk_extern]` unwraps the outer `ExternIO` and deserialises
-    // into our typed input automatically — taking
-    // `EncryptedContentSignal` directly lets the macro handle the
-    // wire decode, giving a clean error if the payload shape ever
-    // drifts (instead of the silent-corruption that an `ExternIO`
-    // arg + manual `.decode()` would produce).
-    //
-    // Observability: log every arrival at info so cross-host DM
-    // debugging has a concrete breadcrumb. Without this line the
-    // receiver was completely silent — the only way to confirm
-    // delivery was via downstream `emit_signal` side-effects which
-    // require an AppWebsocket subscriber already attached. Pinned
-    // by `.extraResearch/DM_SECURITY_RECV_REMOTE_SIGNAL_2026-05-21.md`.
+pub fn recv_remote_signal(
+    mut payload: encrypted_content::EncryptedContentSignal,
+) -> ExternResult<()> {
+    // call_info().provenance is the lair-attested AgentPubKey of the Peer
+    // that invoked send_remote_signal — the conductor authenticates which
+    // Peer called, regardless of what the payload claims.
+    let caller_agent = call_info()?.provenance;
     info!(
-        "recv_remote_signal: action_type={:?} hash={}",
-        payload.action_type, payload.data.hash,
+        "recv_remote_signal: action_type={:?} hash={} from_agent={}",
+        payload.action_type, payload.data.hash, caller_agent,
     );
+    payload.from_agent = Some(caller_agent);
     emit_signal(payload)?;
     Ok(())
 }

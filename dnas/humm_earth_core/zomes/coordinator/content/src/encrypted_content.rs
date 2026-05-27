@@ -37,6 +37,11 @@ pub struct CreateEncryptedContentInput {
 pub struct EncryptedContentSignal {
     pub action_type: EncryptedContentSignalType,
     pub data: EncryptedContentResponse,
+    /// Populated by recv_remote_signal from call_info().provenance.
+    /// None for locally-emitted signals (post_commit / create / update paths
+    /// where the conductor runs on the author's own Node — no remote caller).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub from_agent: Option<AgentPubKey>,
 }
 
 #[hdk_entry_helper]
@@ -144,15 +149,17 @@ pub fn create_encrypted_content(
     // temp solution while waiting for pub/sub to be implemented. this will alert
     // all agents in all hives for every entry created across the network
     emit_signal(EncryptedContentSignal {
-        action_type: EncryptedContentSignalType::Create,
-        data: response.clone(),
-    })?;
+            action_type: EncryptedContentSignalType::Create,
+            data: response.clone(),
+            from_agent: None,
+        })?;
     remote_signal_acl_readers(
         &encrypted_content.header.public_key_acl,
         EncryptedContentSignal {
-            action_type: EncryptedContentSignalType::Create,
-            data: response.clone(),
-        },
+                action_type: EncryptedContentSignalType::Create,
+                data: response.clone(),
+                from_agent: None,
+            },
     );
 
     // create original hash pointer link pointing to itslef
@@ -361,24 +368,73 @@ pub fn list_by_dynamic_link(
 pub struct ListByHiveInput {
     pub hive_id: String,
     pub content_type: String,
+    /// When set, only links created after this timestamp are returned.
+    #[serde(default)]
+    pub since_ts: Option<Timestamp>,
+    /// Maximum number of results to return. None = unbounded (legacy behaviour).
+    #[serde(default)]
+    pub limit: Option<usize>,
 }
 
 #[hdk_extern]
 pub fn list_by_hive_link(input: ListByHiveInput) -> ExternResult<Vec<EncryptedContentResponse>> {
     let path = Path::from(vec![
         Component::from(input.hive_id),
-        Component::from(input.content_type),
+        Component::from(input.content_type.clone()),
     ]);
-    let links = get_links(
-        LinkQuery::try_new(path.path_entry_hash()?, LinkTypes::Hive)?,
-        GetStrategy::Network,
-    )?;
-    let hashes: Vec<ActionHash> = links
+    let path_hash = path.path_entry_hash()?;
+
+    let mut builder = GetLinksInputBuilder::try_new(path_hash, LinkTypes::Hive)?
+        .get_options(GetStrategy::Network);
+    if let Some(ts) = input.since_ts {
+        builder = builder.after(ts);
+    }
+    let links_input = builder.build();
+    let mut all_links = HDK
+        .with(|h| h.borrow().get_links(vec![links_input]))?
+        .pop()
+        .unwrap_or_default();
+
+    // Sort newest-first so limit truncation is deterministic.
+    all_links.sort_by(|a, b| b.timestamp.cmp(&a.timestamp));
+    if let Some(limit) = input.limit {
+        all_links.truncate(limit);
+    }
+
+    let hashes: Vec<ActionHash> = all_links
         .into_iter()
-        .map(|link| link.target.into_action_hash())
-        .filter_map(|x| x)
+        .filter_map(|l| l.target.into_action_hash())
         .collect();
     get_many_encrypted_content(hashes)
+}
+
+/// Count links by hive path, optionally filtered to those created after
+/// `since_ts`. When `since_ts` is absent uses the efficient `count_links`
+/// host call; when it is set falls back to `get_links(...).len()` because
+/// `count_links` only accepts a `LinkQuery` which has no timestamp filter.
+#[hdk_extern]
+pub fn count_links_by_hive(input: ListByHiveInput) -> ExternResult<usize> {
+    let path = Path::from(vec![
+        Component::from(input.hive_id),
+        Component::from(input.content_type.clone()),
+    ]);
+    let path_hash = path.path_entry_hash()?;
+
+    if let Some(ts) = input.since_ts {
+        // count_links only accepts LinkQuery (no timestamp filter); fall back
+        // to fetching the links and counting them.
+        let links_input = GetLinksInputBuilder::try_new(path_hash, LinkTypes::Hive)?
+            .get_options(GetStrategy::Network)
+            .after(ts)
+            .build();
+        let all_links = HDK
+            .with(|h| h.borrow().get_links(vec![links_input]))?
+            .pop()
+            .unwrap_or_default();
+        return Ok(all_links.len());
+    }
+
+    count_links(LinkQuery::try_new(path_hash, LinkTypes::Hive)?)
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -550,15 +606,17 @@ pub fn update_encrypted_content(
     // temp solution while waiting for pub/sub to be implemented. this will alert
     // all agents in all hives for every entry created across the network
     emit_signal(EncryptedContentSignal {
-        action_type: EncryptedContentSignalType::Update,
-        data: record.clone(),
-    })?;
+            action_type: EncryptedContentSignalType::Update,
+            data: record.clone(),
+            from_agent: None,
+        })?;
     remote_signal_acl_readers(
         &record.encrypted_content.header.public_key_acl,
         EncryptedContentSignal {
-            action_type: EncryptedContentSignalType::Update,
-            data: record.clone(),
-        },
+                action_type: EncryptedContentSignalType::Update,
+                data: record.clone(),
+                from_agent: None,
+            },
     );
 
     Ok(record)
@@ -573,16 +631,18 @@ pub fn delete_encrypted_content(
     // temp solution while waiting for pub/sub to be implemented. this will alert
     // all agents in all hives for every entry created across the network
     emit_signal(EncryptedContentSignal {
-        action_type: EncryptedContentSignalType::Delete,
-        data: record.clone(),
-    })?;
+            action_type: EncryptedContentSignalType::Delete,
+            data: record.clone(),
+            from_agent: None,
+        })?;
     let acl_for_remote = record.encrypted_content.header.public_key_acl.clone();
     remote_signal_acl_readers(
         &acl_for_remote,
         EncryptedContentSignal {
-            action_type: EncryptedContentSignalType::Delete,
-            data: record,
-        },
+                action_type: EncryptedContentSignalType::Delete,
+                data: record,
+                from_agent: None,
+            },
     );
     // TODO: delete links
     Ok(ah)
