@@ -13,6 +13,9 @@
 //!   `remote_signal_acl_readers` fan-out helper.
 //! - `get_helpers.rs` — generic DHT-get helpers
 //!   (`get_eh`, `get_record`, `get_latest_typed_from_eh`, `sah_to_ah`).
+//! - `migration.rs` — pass-1 follow-up. Forward-pointer migration markers
+//!   for the eventual pass-2 DNA-hash change (`mark_migrated` write extern
+//!   + `get_migration_marker` reader; coordinator-only, no DNA-hash impact).
 //!
 //! Public-API guarantee: every `#[hdk_extern]` and shared struct exposed
 //! by the original file is re-exported from this module so existing
@@ -26,6 +29,7 @@ use hdk::prelude::*;
 
 pub mod crud;
 pub mod get_helpers;
+pub mod migration;
 pub mod queries;
 pub mod signals;
 
@@ -80,4 +84,8 @@ pub use signals::{
     DmRemoteSignal, EncryptedContentSignal, EncryptedContentSignalType,
     SendDmCallInitAcceptInput, SendDmCallInitRequestInput, SendDmCallSdpDataInput,
     SendDmDeleteRequestInput,
+};
+pub use migration::{
+    build_marker_payload, get_migration_marker, mark_migrated, MarkMigratedInput,
+    MigrationMarkerV1, MIGRATION_MARKER_CONTENT_TYPE_PREFIX, MIGRATION_MARKER_SCHEMA_TAG,
 };

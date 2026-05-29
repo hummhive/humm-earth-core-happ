@@ -105,7 +105,7 @@ no longer coordinator-only — abort the deploy.
   `record.header.revision_author_signing_public_key`. Drop signals where
   the two disagree. Closes the
   "attacker-fabricated-signal-pointing-at-a-real-entry" confusion attack
-  the inline doc-comment at `lib.rs:85-138` describes.
+  the `recv_remote_signal` extern's threat-model doc-comment describes.
 - **NB on the wire form:** `from_agent` is `Uint8Array(39)` on the
   msgpack wire. Compare via `encodeHashToBase64` (53-char `'u' +
   URL_SAFE_NO_PAD`) or `Buffer.from(a).equals(Buffer.from(b))`, NOT
@@ -196,8 +196,9 @@ run modified coordinator WASM (the standard Holochain adversary —
 coordinator code is not a security boundary). Today the integrity zome
 validators for `LinkTypes::Hive` and `LinkTypes::Dynamic` are no-op
 `Ok(Valid)` stubs
-(`dnas/humm_earth_core/zomes/integrity/content/src/lib.rs:119,127` and
-`:302,310`); a modified-coordinator Mallory can directly publish
+(the `RegisterCreateLink` and `StoreRecord::CreateLink` arms of the
+integrity zome's `validate(op: Op)` dispatcher for both `LinkTypes::Hive`
+and `LinkTypes::Dynamic`); a modified-coordinator Mallory can directly publish
 arbitrary `Hive` and `Dynamic` links pointing at her poison entry,
 landing it in BOTH sets the intersection consults — including the
 victim's active hive's dynamic path. The intersection therefore returns
@@ -349,8 +350,8 @@ humm-tauri devs don't re-discover them by accident:
    `from_agent: None` (the author IS the receiver — there's no remote
    caller to attest). Treat `None` as "this signal originated on my own
    conductor."
-2. **Signal arrival is a HINT, not proof.** Per the long doc-comment at
-   `lib.rs:85-138`: the cap grant on `recv_remote_signal` is
+2. **Signal arrival is a HINT, not proof.** Per the threat-model
+   doc-comment on `recv_remote_signal`: the cap grant is
    `Unrestricted`, so any peer can send any decodable payload. The
    `from_agent` field is trustworthy (conductor-attested); every OTHER
    field in the payload is attacker-controlled. Sidecars MUST re-fetch
@@ -423,7 +424,8 @@ humm-tauri devs don't re-discover them by accident:
 These all change the DNA hash → forks the network → require a planned
 migration / user wipe. They are the natural second-pass scope. From the
 ecosystem research at
-`/mnt/c/proj/github/hummhive/holochain-ecosystem/HAPP_COORDINATOR_CHANGES.md`
+`holochain-ecosystem/HAPP_COORDINATOR_CHANGES.md` (a sibling checkout
+adjacent to this repo)
 (deferred I-class) and from this pass's reviewer findings:
 
 | ID | Name | Driving doc | Why required |
@@ -431,7 +433,7 @@ ecosystem research at
 | **I-A** | Receiver-initiated native HC tombstone for DMs | `humm-tauri/.newTasks/T_DM_DELETE_IMPL.md` §"DNA changes (Tier B)" | Restrict deletes in `validate_delete_encrypted_content` to author OR `original_entry.public_key_acl.reader`. Today it returns `Valid` unconditionally. |
 | **I-B** | Dual sender-key fields in `EncryptedContentHeader` | `humm-tauri/.newTasks/T_SECURITY_SENDER_IDENTITY_UNATTESTED.md` §"Scope of fix" §1 | New `sender_signing_pubkey: String` carrying the Tauri-keyring Ed25519 key separate from `revision_author_signing_public_key`. New validator enforces `action.author == header.revision_author_signing_public_key`. |
 | **I-C** | DHT Inbox link type + `DmProbeLog` private entry | (ecosystem research) | New link type + new private entry type for offline-deliverable DM signaling. |
-| **I-D (NEW — from this pass's reviewers)** | **Hive/Dynamic link integrity validators (true H-1 fix)** | This pass's security review SEC-1; planning doc's C4 caveat | Today `LinkTypes::Hive` and `LinkTypes::Dynamic` validators are no-op `Ok(Valid)` stubs (integrity `lib.rs:119,127` and `:302,310`). Add: (a) Hive author-path link's base MUST equal link author; (b) Dynamic link's author MUST have writer rights to the hive named by the base path. Without these, C4's intersection is a defense-in-depth narrowing but NOT a cryptographic H-1 guarantee. |
+| **I-D (NEW — from this pass's reviewers)** | **Hive/Dynamic link integrity validators (true H-1 fix)** | This pass's security review SEC-1; planning doc's C4 caveat | Today `LinkTypes::Hive` and `LinkTypes::Dynamic` validators are no-op `Ok(Valid)` stubs in the integrity zome's `validate(op: Op)` dispatcher (both `RegisterCreateLink` and `StoreRecord::CreateLink` arms). Add: (a) Hive author-path link's base MUST equal link author; (b) Dynamic link's author MUST have writer rights to the hive named by the base path. Without these, C4's intersection is a defense-in-depth narrowing but NOT a cryptographic H-1 guarantee. |
 
 The second-pass branch should pick these up as a coherent unit — they
 all share the migration story (existing users wipe + re-bootstrap), so
@@ -454,10 +456,66 @@ predictable, reproducible way).
 
 ---
 
+## Pass-2 migration scaffold (this pass — ready for use)
+
+Because pass 2 changes the DNA hash, every existing user (we have zero
+today but this WILL matter at launch) needs a migration path forward.
+The scaffold lives in this repo, ships in pass 1, and stays inert until
+pass 2 actually breaks the DNA hash:
+
+- `scripts/migrate-dna.ts` — standalone TypeScript orchestrator with
+  two modes: `export` (pulls all `EncryptedContent` from a running
+  old-DNA hApp's local source chain to a JSON bundle) and `import`
+  (replays the bundle into a fresh new-DNA hApp, restamps author
+  pubkeys, emits an old→new action-hash remap).
+- `docs/DNA_MIGRATION_GUIDE.md` — full procedure including the
+  cross-agent SS coordination dance, idempotency notes, failure modes,
+  and a pre-launch readiness checklist for pass 2.
+
+The scaffold uses ONLY existing zome surface (`get_messages_since` for
+export, `create_encrypted_content` for import). No new extern, no new
+cap grant, no DNA-hash change in pass 1. The standalone script is the
+reference implementation; humm-tauri's auto-update flow should
+eventually wire the same logic in Rust via `holochain_client_rust` so
+integrity-breaking upgrades migrate transparently.
+
+## Ecosystem pattern note (the C4 finding generalizes)
+
+The C4 class of issue — coordinator-only intersection / membership
+defenses are only as strong as the integrity validators backing the
+link types they consult — is **not unique to this hApp**. Quick survey
+of patterns we inherited:
+
+- **moss/group** — well-defended on security-critical types
+  (`StewardPermission`, `GroupProfile`, `GroupMetaData`, `AgentToStewardPermissions`
+  all enforce `action.author` ↔ link-content constraints in the
+  integrity zome). Decorative listings (private applet metadata, cloned
+  cell metadata) have looser validators but those don't carry trust
+  decisions.
+- **presence** — `validate_create_link_all_descendent_rooms` and
+  `validate_create_link_all_attachments` carry explicit
+  `// TODO add the appropriate validation rules` markers and return
+  `Valid` unconditionally. Modified-coordinator agents can pollute the
+  all-rooms and all-attachments listings. The TODO is self-flagged in
+  the upstream source so it's not a novel disclosure — just a heads-up
+  that copying presence's pattern verbatim inherits the gap.
+- **humm-earth-core-happ (this repo) at HEAD** — every link validator
+  is a stub. Pass 2's I-D item closes this with author-vs-link-base
+  enforcement on `LinkTypes::Hive` and writer-membership enforcement on
+  `LinkTypes::Dynamic`.
+
+**Lesson for humm-tauri developers:** when reading "this is enforced
+at the integrity layer" anywhere in this codebase (or in ecosystem
+inspiration repos), verify against the actual validator function —
+`Ok(Valid)` returns mean the enforcement is host-side discipline only.
+The C1 `from_agent` from `call_info()?.provenance` is the one truly
+conductor-attested identity bit you can rely on without integrity
+changes; everything else needs an integrity validator backing it.
+
 ## References
 
-- **Planning doc:** `/mnt/c/proj/github/hummhive/holochain-ecosystem/HAPP_COORDINATOR_CHANGES.md`
-  (1525 lines — the authoritative spec this pass implements)
+- **Planning doc:** `holochain-ecosystem/HAPP_COORDINATOR_CHANGES.md`
+  (sibling checkout — the authoritative spec this pass implements)
 - **C1 driver:** `humm-tauri/.newTasks/T_SECURITY_SENDER_IDENTITY_UNATTESTED.md`
 - **C2 driver:** `humm-tauri/.newTasks/20260525_ListByHiveLinkPagination.md`
   (a.k.a. `T_HAPP_COORDINATOR_C2_LIST_PAGINATED.md` in some refs)
@@ -467,7 +525,6 @@ predictable, reproducible way).
 - **Signal-dispatch pattern:** `holochain-ecosystem/MOSS_REFERENCE.md` §1
 - **HDK reference:** `holochain-ecosystem/HOLOCHAIN_HC_REFERENCE.md`
 - **Tryorama reference:** `holochain-ecosystem/TRYORAMA_REFERENCE.md`
-- **In-repo plan artifact:** `local://happ-coordinator-enablement.md`
-  (this pass's execution plan)
-- **In-repo baseline hashes:** `.baseline-hashes.txt`
-  (DNA + wasm sha256 before/after invariant check)
+- **In-repo baseline hashes:** `.baseline-hashes.txt` at the repo root
+  records the DNA + wasm sha256 before/after this pass's invariant
+  check; re-run the invariant check by rebuilding and comparing.

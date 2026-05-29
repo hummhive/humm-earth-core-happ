@@ -50,6 +50,9 @@ use encrypted_content::signals::{DmRemoteSignal, EncryptedContentSignal};
 /// - `create_encrypted_content` / `update_encrypted_content` /
 ///   `delete_encrypted_content` mutate this agent's source chain;
 ///   stays ungranted (only the author should write to their own chain).
+/// - `mark_migrated` (pass-1 follow-up) writes a forward-pointer marker
+///   onto this agent's own entries; same reasoning as the CRUD externs.
+///   Local-only by design.
 pub fn set_cap_tokens() -> ExternResult<()> {
     let zome = zome_info()?.name;
     let mut fns = HashSet::new();
@@ -70,6 +73,16 @@ pub fn set_cap_tokens() -> ExternResult<()> {
     // C4 — new intersection-fetch extern.
     fns.insert((zome.clone(), "fetch_pair_ss_with_hive_check".into()));
 
+    // Pass-1 follow-up — migration-marker reader. Reads already-public
+    // DHT data (walks an entry's update chain; same data any peer could
+    // fetch via `get_details` directly). Unrestricted matches the
+    // read-side cap pattern. `mark_migrated` (the write side) is
+    // intentionally NOT granted — see the "NOT GRANTED" block in the
+    // doc-comment above. The reader applies its own author-binding
+    // filter (only updates by the original entry's author count as
+    // valid markers; see `get_migration_marker`'s doc-comment), so it
+    // does not rely on the cap surface for forge resistance.
+    fns.insert((zome.clone(), "get_migration_marker".into()));
 
     // `recv_remote_signal` is invoked by the conductor on every agent
     // listed in `send_remote_signal`'s recipient list. The HDK requires
