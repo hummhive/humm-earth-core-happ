@@ -11,3 +11,7 @@ node_modules/
 .hc
 .running
 .DS_Store
+
+# session-scope artifacts (this-pass agent work)
+/target-host/
+/local/

@@ -30,7 +30,7 @@ const TEST_APP_PATH = process.cwd() + "/../workdir/humm-earth-core-happ.happ";
 
 test("create_encrypted_content REJECTS a forged revision_author_signing_public_key", async () => {
   await runScenario(async (scenario) => {
-    const appSource = { appBundleSource: { path: TEST_APP_PATH } };
+    const appSource = { appBundleSource: { type: "path" as const, value: TEST_APP_PATH } };
     const [alice, bob] = await scenario.addPlayersWithApps([appSource, appSource]);
     await scenario.shareAllAgents();
 
@@ -58,7 +58,7 @@ test("create_encrypted_content REJECTS a forged revision_author_signing_public_k
 
 test("create_encrypted_content ACCEPTS a header pubkey matching action.author", async () => {
   await runScenario(async (scenario) => {
-    const appSource = { appBundleSource: { path: TEST_APP_PATH } };
+    const appSource = { appBundleSource: { type: "path" as const, value: TEST_APP_PATH } };
     const [alice] = await scenario.addPlayersWithApps([appSource]);
     await scenario.shareAllAgents();
 
@@ -84,7 +84,7 @@ test("create_encrypted_content ACCEPTS a header pubkey matching action.author", 
 
 test("update_encrypted_content REJECTS a forged revision_author_signing_public_key", async () => {
   await runScenario(async (scenario) => {
-    const appSource = { appBundleSource: { path: TEST_APP_PATH } };
+    const appSource = { appBundleSource: { type: "path" as const, value: TEST_APP_PATH } };
     const [alice, bob] = await scenario.addPlayersWithApps([appSource, appSource]);
     await scenario.shareAllAgents();
 
@@ -123,7 +123,7 @@ test("update_encrypted_content REJECTS a forged revision_author_signing_public_k
 
 test("update_encrypted_content ACCEPTS an honest update", async () => {
   await runScenario(async (scenario) => {
-    const appSource = { appBundleSource: { path: TEST_APP_PATH } };
+    const appSource = { appBundleSource: { type: "path" as const, value: TEST_APP_PATH } };
     const [alice] = await scenario.addPlayersWithApps([appSource]);
     await scenario.shareAllAgents();
 

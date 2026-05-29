@@ -70,7 +70,7 @@ function encodePubkeyB64(pubkey: Uint8Array): string {
 
 test("create_encrypted_content fires remote signal to every public_key_acl.reader", async () => {
   await runScenario(async (scenario) => {
-    const appSource = { appBundleSource: { path: TEST_APP_PATH } };
+    const appSource = { appBundleSource: { type: "path" as const, value: TEST_APP_PATH } };
     const [alice, bob] = await scenario.addPlayersWithApps([appSource, appSource]);
     await scenario.shareAllAgents();
 
@@ -113,7 +113,7 @@ test("create_encrypted_content with empty public_key_acl.reader does NOT remote-
   // should see exactly pre-change behaviour: local emit_signal fires on
   // the author, nothing fires elsewhere.
   await runScenario(async (scenario) => {
-    const appSource = { appBundleSource: { path: TEST_APP_PATH } };
+    const appSource = { appBundleSource: { type: "path" as const, value: TEST_APP_PATH } };
     const [alice, bob] = await scenario.addPlayersWithApps([appSource, appSource]);
     await scenario.shareAllAgents();
 
@@ -152,7 +152,7 @@ test("create_encrypted_content with malformed reader entries skips silently (doe
   // them out one-by-one. The commit itself MUST still succeed and the
   // local emit_signal MUST still fire on the author.
   await runScenario(async (scenario) => {
-    const appSource = { appBundleSource: { path: TEST_APP_PATH } };
+    const appSource = { appBundleSource: { type: "path" as const, value: TEST_APP_PATH } };
     const [alice, bob] = await scenario.addPlayersWithApps([appSource, appSource]);
     await scenario.shareAllAgents();
 
@@ -202,7 +202,7 @@ test("author is filtered from recipients (no self-loop)", async () => {
   // But `send_remote_signal` from author → author would either bounce
   // or duplicate the local `emit_signal`. Helper filters self out.
   await runScenario(async (scenario) => {
-    const appSource = { appBundleSource: { path: TEST_APP_PATH } };
+    const appSource = { appBundleSource: { type: "path" as const, value: TEST_APP_PATH } };
     const [alice] = await scenario.addPlayersWithApps([appSource]);
     await scenario.shareAllAgents();
 

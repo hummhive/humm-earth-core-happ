@@ -1,0 +1,15 @@
+DNA-HASH-BASELINE (HEAD = c326e62, pre-implementation)
+=======================================================
+DNA hash (canonical, hc dna hash):
+  uhC0kT0Tkc3b6ccfa75YwWdzpSWvdkXERpdqkxIndRhfK5TJAUusY
+
+WASM sha256:
+  content_integrity.wasm  8c620847f7ae8878769e000452f2f89a4954a747b1c51c129666cdf0978f2c5c
+  content.wasm            f4277cfd50d3937eba652a788802199c064fe2e978d2d821825fcd9bfc7ecc7f
+
+INVARIANT
+---------
+After all coordinator-only changes (C4/C5/C6/C7/C7b + C2 fix + module split):
+  - content_integrity.wasm sha256 MUST match the above byte-for-byte.
+  - DNA hash MUST match the above byte-for-byte.
+  - content.wasm sha256 WILL change (expected — that's the whole point).
