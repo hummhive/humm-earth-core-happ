@@ -55,7 +55,22 @@ reference.
   c326e62) then `DmRemoteSignal` (the C6/C7 envelope). Disambiguation
   is empirically pinned by six host-side serde unit tests.
 
-### Deploy (no user wipe — coordinator hot-swap)
+### Deploy (transparent — coordinator hot-swap, no user wipe)
+
+This pass is coordinator-only (verified — see DNA hash below). The
+canonical happ-install guard pattern in humm-tauri is `WS-L` in
+`.extraResearch/decentralizedStartupSync/EXECUTION_PLAN.md`. **WS-L is
+a Tier-0 PLANNED feature** — when it ships, coordinator upgrades on an
+existing install will be FULLY transparent: the host's install guard
+detects a `COORDINATOR_WASM_VERSION` bump on launch and calls
+`AdminWebsocket::update_coordinators` automatically, the user sees no
+prompt and no migration UI, the conductor re-runs `init` after the
+hot-swap so new cap grants (C3 / C4 / `get_migration_marker` /
+`recv_remote_signal`) take effect immediately. Until WS-L lands the
+coordinator WASM stays at whatever version was last installed and the
+new externs are unreachable on existing users' conductors — so
+**landing WS-L is the deploy prerequisite for this pass to reach
+existing users**.
 
 1. On Linux dev box (`~/humm-earth-core-happ`):
    ```bash
@@ -69,17 +84,23 @@ reference.
    ```
 2. Copy `workdir/humm-earth-core-happ.happ` (~1.08 MB) into
    `humm-tauri/src-tauri/bin/humm-earth-core.happ`.
-3. Bump `COORDINATOR_WASM_VERSION` in humm-tauri's install guard so the
-   relay sees the version cross and triggers a coordinator hot-swap on
-   next start. Conductor re-runs `init` → new cap grants for C3 / C4 /
-   `recv_remote_signal` take effect.
-4. Restart the humm-tauri relay. No user wipe; no DNA migration; no
-   re-bootstrap.
+3. Bump `COORDINATOR_WASM_VERSION` in humm-tauri's install guard. With
+   WS-L shipped, the hot-swap path picks up the bump on the user's
+   next app launch and rotates the coordinator WASM in place.
+4. Ship the humm-tauri build. With WS-L, existing users get the new
+   coordinator on next launch — silently, no UI, no wipe, no DHT
+   migration, no re-bootstrap. Without WS-L, fresh installs get the
+   new coordinator but existing users keep running the old one.
 
 The integrity wasm sha256 is `8c620847f7ae8878769e000452f2f89a4954a747b1c51c129666cdf0978f2c5c`
 before AND after this pass. If your build produces a different
 integrity sha256, something edited the integrity zome and the change is
-no longer coordinator-only — abort the deploy.
+no longer coordinator-only — abort the deploy and re-investigate.
+(Once WS-L ships, a stray integrity edit would also trigger WS-L's
+`DnaHashMismatch` guard on every existing user's next launch,
+prompting a wipe; before WS-L, the same edit silently loads users into
+a broken state where every cross-peer call fails — the abort here
+protects against both failure modes.)
 
 ---
 
@@ -338,6 +359,31 @@ Discriminate on `'kind' in signal` first, then fall back to
 on every variant.
 
 ---
+
+## Drivers + tasks now unblocked
+
+Per-change driver attribution and what each change opens up on the
+humm-tauri side. "Driver" = the task that motivated the change;
+"Unblocked" = work in humm-tauri that was waiting on the change and is
+now actionable.
+
+| Change | Driver task(s) | Unblocked humm-tauri work |
+|---|---|---|
+| **C0** `get_messages_since` (shipped pre-this-pass at `2dbeb13`) | `.newTasks/T_HAPP_COORDINATOR_C0_WIRE.md` (TS-side wiring spec, DONE on TS) + planning doc §C0 | Delta-sync hydration in `reconcileFromConductor` (`src/state/index.ts:576`); `DmStore._ingestForeignThreadMessage` watermark advance; `cacheWrites.ts` `lastSeenSeq` consumption. All listed in the C0 wiring task. |
+| **C1** `from_agent` provenance stamping | `.doneTasks/T_HAPP_COORDINATOR_C1_SENDER_PROVENANCE.md` (DONE on TS at humm-tauri's end) + `.newTasks/T_SECURITY_SENDER_IDENTITY_UNATTESTED.md` (the security gap that drove the change) | TS-side mismatch-drop in `DmStore.ingestIncomingMessage` already wired; `zomeSignals.ts` `from_agent?: AgentPubKey` typed; this pass preserves the wire shape through the C7b dispatcher refactor — no further humm-tauri changes required for the established C1 path. |
+| **C2** `list_by_hive_link` `since_ts` + `limit` (oldest-first sort-fix) | `.newTasks/20260525_ListByHiveLinkPagination.md` (a.k.a. `T_HAPP_COORDINATOR_C2_LIST_PAGINATED.md`) | **Now unblocked**: `DmStore._sweepInbox` watermark loop (~lines 239, 700-705, 1167-1171); `src/api/core/hummContent/index.ts` `listAllByHive` (~line 452); demo-mode mocks (`inMemoryStore.ts`, `zomeHandlers.ts`). Multiply JS ms by 1000 for `since_ts` microseconds. |
+| **C3** `count_links_by_hive` | Planning doc §C3 (implicit need from `20260525_ListByHiveLinkPagination.md` — paginated lists need a cheap "how many" UI primitive) + `holochain-ecosystem/HOLOCHAIN_HC_REFERENCE.md` §3 (`count_links` HDK 0.6.0 host function) | **Now unblocked**: unread-message badges in DM threads; hive item counts in the sidebar; `SyncIndicator` progress without paying the `get_many_…` fan-out cost. Plus indirectly: live-peer-status / "Requests (0)" UX work flagged in `.newTasks/20260528_GENERAL_CLEANUP.md` U4/U5. |
+| **C4** `fetch_pair_ss_with_hive_check` | `.doneTasks/T_SECURITY_FETCH_PAIR_FROM_AUTHOR_POISONING.md` | **Now unblocked** (with the caveat from "C4 — what this DOES NOT defend against" above): the TS-side `listAllByAuthor`-plus-filter at `src/api/content/sharedSecret/index.ts` `fetchPairFromAuthor` (~line 600) can collapse to a single C4 call. The TS-side trust checks (sender identity, decrypt-and-verify) STAY in place as the load-bearing control until I-D ships. |
+| **C5** cap-grant audit | `.newTasks/T_HAPP_UPSTREAM_CAVEATS.md` §2 (the `get_many_encrypted_conten` typo) + `.newTasks/T_HAPP_COORDINATOR_C2_LIST_PAGINATED.md` "Known latent bug" section + this pass's security review SEC-2 (the `send_dm_*` Unrestricted concern) | **Now unblocked**: cross-agent `get_many_encrypted_content` calls (any code path that calls it via `call_remote` previously hit a silent CapAccess denial). Indirect: any future humm-tauri code wanting batch reads across peers. |
+| **C6** `send_dm_delete_request` (ephemeral) | `.newTasks/T_DM_DELETE_IMPL.md` | **Now unblocked**: `DmStore.sendDeleteRequest` ephemeral-tier (low-latency, no DHT entry — pairs with the existing in-payload `kind:'delete_request'` Tier A path for offline coverage). |
+| **C7** `send_dm_call_*` + `DmCallSignal` | `.newTasks/T_DM_MEDIA_AND_WEBRTC_AV_FUTURE_SCOPE.md` + `holochain-ecosystem/PRESENCE_WEBRTC_REFERENCE.md` | **Now unblocked**: WebRTC signaling primitive available for any future call/AV feature. New `src/sidecars/dm-webrtc/dm-webrtc-store.ts` modeled on `presence/ui/src/streams-store.ts`. Thread-participant authorization is HOST-side. |
+| **C7b** `recv_remote_signal` dispatcher | Derived from C6/C7 (Holochain permits one `recv_remote_signal` per zome → ordered try-decode is the only multi-signal-family pattern) + this pass's security review F1 verification | **Now unblocked**: `src/api/core/holochain/zomeSignals.ts` discriminated-union type covering legacy + DM-delete + WebRTC variants; `from_agent` stamped on every variant uniformly. |
+| **Pass-2 migration scaffold** (this pass) | Forward-looking infrastructure (no driving humm-tauri task today; user-requested in-session for pass-2 prep) | **Now unblocked**: the entire pass-2 ship path. `scripts/migrate-dna.ts` can be wired into humm-tauri's auto-update flow as a child process, or its three phases (export / import / mark-migrated) can be re-implemented in Rust via `holochain_client_rust` for in-app integration. See `docs/DNA_MIGRATION_GUIDE.md` "humm-tauri GUI integration" for the recommended flow. |
+
+### Operational unblocks (deployment-level, not code)
+
+- **WS-L coordinator hot-swap** (`.extraResearch/decentralizedStartupSync/EXECUTION_PLAN.md` §WS-L): if humm-tauri's install guard is already wired (per the EXECUTION_PLAN status), this pass deploys with a single `COORDINATOR_WASM_VERSION` bump and ships transparently to every existing user. If WS-L is NOT yet wired, this pass is the forcing function to land it — the alternative is asking every user to wipe and re-install.
+- **`.happ` versioning** (`.newTasks/T_HAPP_CI.md`): this pass ships a fresh `.happ` artifact; the verify-hash script in T_HAPP_CI can pin against the DNA hash recorded in `.baseline-hashes.txt`.
 
 ## Caveats and non-obvious behavior
 

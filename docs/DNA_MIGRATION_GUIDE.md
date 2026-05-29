@@ -147,18 +147,45 @@ Create hash in `old_action_hash`.
   weakening (C) to app-id-only resolution. Always pass
   `NEW_DNA_HASH_BASE64` for production migrations.
 
-## humm-tauri GUI integration (recommended UX)
+## humm-tauri GUI integration — transparent by default, prompt only at trust boundaries
 
-The standalone TS script is the reference. For the user-facing flow,
-wire the same logic into humm-tauri so migration is GUI-driven:
+The goal is the same as humm-tauri's `WS-L` install-guard pattern for
+coordinator-only changes (see
+`.extraResearch/decentralizedStartupSync/EXECUTION_PLAN.md` §WS-L in
+the humm-tauri repo — Tier-0 planned). When WS-L ships, users see
+nothing during routine coordinator upgrades. For DNA-hash-bumping
+integrity changes the cryptographic trust boundary forces ONE user
+prompt (DNA crossover requires explicit consent — defense (B) above),
+but everything else — install, export, import, remap-rewrite, marker
+write — runs silently in the background.
+
+### Tiered transparency model
+
+| Change tier | What's transparent | What needs a user prompt |
+|---|---|---|
+| **Coordinator-only** (this pass) | Everything (once WS-L lands). The host's `update_coordinators` hot-swap fires on next launch when `COORDINATOR_WASM_VERSION` changes; no UI, no wipe, no migration. | None. |
+| **Integrity / DNA-hash bump** (pass-2 and later) | Install of the new `.happ` (background); export from old DNA (background); import to new DNA (background); host-side remap rewrite (background); marker write back to old DNA (background); cutover countdown (informational notification, not a blocking prompt). | **Exactly one mandatory prompt**: explicit consent to cross the DNA trust boundary (defense B). Approval is also required for the receiver-side prompt when a peer's `_migrated/*` signal arrives. |
+
+The migration script's three phases (`export` / `import` / `mark-migrated`)
+are the building blocks; the recommended UX wires them as silent
+background work behind a single consent dialog.
+
+### Recommended flow (canonical 9-step sequence)
+
+The standalone TS script is the reference implementation. For the
+user-facing flow, wire the same logic into humm-tauri so migration is
+GUI-driven:
 
 1. **Update detection** — humm-tauri's auto-update channel detects a
    new `.happ` bundle (different DNA hash from the currently-installed
    one). Computes the new DNA hash via `hc dna hash` (or by parsing
    the bundle manifest) and compares.
-2. **User prompt** — show a dialog: "humm-tauri has shipped a security
-   update that requires migrating your data. This takes about N
-   seconds and is reversible until you confirm. Migrate now?"
+2. **User prompt — the one mandatory dialog (defense B)** — explicit
+   consent to cross the DNA trust boundary. Example copy: "humm-tauri
+   has shipped a security update that requires migrating your data.
+   This takes about N seconds, runs in the background, and is
+   reversible until you confirm the cutover. Migrate now?" Approval is
+   the SINGLE blocking step in the entire flow.
 3. **Install new hApp** — install the new `.happ` under a distinct
    `installed_app_id` (e.g. `humm-earth-core@<short-hash>`). Both
    old and new are now running.
@@ -167,8 +194,8 @@ wire the same logic into humm-tauri so migration is GUI-driven:
    `holochain_client_rust` from the Rust side, or invoke the TS script
    as a child process). Show a progress bar.
 5. **Host-side rewrite** — walk the remap file in-process; update
-   localStorage, IndexedDB, SS index, DmStore caches, every key that
-   carries an old action hash.
+   localStorage, IndexedDB, shared-secret (SS) index, DmStore caches,
+   every key that carries an old action hash.
 6. **Write markers** — run `mark-migrated` phase. Recipients online at
    this moment get the cross-host "I migrated" signal in real time.
 7. **Confirm cutover** — show "migration complete; old hApp will be
@@ -190,9 +217,11 @@ wire the same logic into humm-tauri so migration is GUI-driven:
    `get_migration_marker(old_ah)` for the authoritative marker, then
    confirm with the user before installing the new hApp.
 
-This is the user-transparent path. The mandatory human-in-the-loop
-steps are: (2) initial approval to migrate own data, and (B) explicit
-approval before any DNA crossover. Everything else can be background.
+This is the user-transparent path. The single mandatory human-in-the-
+loop step is (2) above — defense (B)'s explicit consent to cross the
+DNA trust boundary. Everything else is background. The receiver-side
+prompt in step 9 is also a defense-B trust boundary on the receiver's
+side; same single-prompt model.
 
 ## Stages
 
