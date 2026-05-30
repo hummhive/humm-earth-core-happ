@@ -13,9 +13,10 @@
 //!   `remote_signal_acl_readers` fan-out helper.
 //! - `get_helpers.rs` — generic DHT-get helpers
 //!   (`get_eh`, `get_record`, `get_latest_typed_from_eh`, `sah_to_ah`).
-//! - `migration.rs` — pass-1 follow-up. Forward-pointer migration markers
-//!   for the eventual pass-2 DNA-hash change (`mark_migrated` write extern
-//!   + `get_migration_marker` reader; coordinator-only, no DNA-hash impact).
+//! - `migration.rs` — forward-pointer migration markers
+//!   for the pass-2 DNA-hash change (`mark_migrated` / `mark_migrated_v2`
+//!   write externs + `get_migration_marker` / `get_migration_marker_v2`
+//!   readers; coordinator-only, no DNA-hash impact).
 //!
 //! Public-API guarantee: every `#[hdk_extern]` and shared struct exposed
 //! by the original file is re-exported from this module so existing
@@ -35,8 +36,7 @@ pub mod signals;
 
 // --- Shared wire-shape types -------------------------------------------------
 //
-// These were originally at the top of `encrypted_content.rs`; they live here
-// because more than one submodule needs them.
+// Multiple submodules require these wire-shape types at the module root.
 
 #[hdk_entry_helper]
 #[derive(Clone, PartialEq)]
