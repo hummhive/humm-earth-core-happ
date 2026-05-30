@@ -1,3 +1,39 @@
+> **Pass-2 update (`feat-integrity-pass-2`, commit `1fa4d37`):**
+> The pass-2 integrity zome change has SHIPPED on the
+> `feat-integrity-pass-2` branch. DNA hash:
+> `uhC0kzl0W9BBITBGu-NeUaXPxqxSPj0yTGfDD3UH3EjhfLDQZfZxe` (new) vs
+> `uhC0kT0Tkc3b6ccfa75YwWdzpSWvdkXERpdqkxIndRhfK5TJAUusY` (pass-1
+> baseline). The migration scaffold described in this guide is now
+> ACTIVATED: every pass-1 cell that wants to keep its data on the new
+> DNA MUST run the migration flow.
+>
+> Pass-2 adds two coordination steps not covered in this guide:
+> 1. **Hive owners migrate first.** Each hive's genesis-author must
+>    `create_hive_genesis` on the new DNA (passing
+>    `display_id = <old squuid hive_id>` for continuity) before any
+>    member of that hive can migrate their entries; members need the
+>    new `hive_genesis_hash` to stamp on re-imported entries.
+> 2. **Members migrate second.** After the hive owner publishes their
+>    new genesis (and grants memberships via `create_hive_membership`),
+>    each member must call `get_latest_membership({me, hive_genesis_hash})`
+>    before each entry re-import to fetch their `author_membership_hash`.
+>
+> The host-side discovery of "what is the new genesis hash for old hive
+> squuid X?" lives in humm-tauri app state — TBD per integration
+> discussion. The pass-1 `MigrationMarkerV1` reader IS extensible for
+> this (the marker payload's `new_action_hash_base64` field can carry
+> the new genesis hash when the migrated entry IS a HiveGenesis), but
+> the pass-1 schema does not have a HiveGenesis entry type to attach a
+> marker to — so the natural location is markers on the pass-1
+> `EncryptedContent` entry the hive's genesis-author originally
+> published as the hive setup (`hive_id == ''` content of type
+> `'hive-discovery'` or similar).
+>
+> See [`PASS_2_DEPLOY_HANDOFF.md`](./PASS_2_DEPLOY_HANDOFF.md) for the
+> full pass-2 wire-shape change list + deploy steps.
+
+---
+
 # DNA Migration Guide
 
 When the integrity zome ships its first non-additive change (pass 2 of

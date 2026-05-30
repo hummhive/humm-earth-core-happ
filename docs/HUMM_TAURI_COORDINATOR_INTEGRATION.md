@@ -1,3 +1,20 @@
+> **Pass-2 update (`feat-integrity-pass-2`, commit `1fa4d37`):**
+> The integrity zome has shipped its first non-additive change. DNA hash
+> has changed from
+> `uhC0kT0Tkc3b6ccfa75YwWdzpSWvdkXERpdqkxIndRhfK5TJAUusY` (pass-1) to
+> `uhC0kzl0W9BBITBGu-NeUaXPxqxSPj0yTGfDD3UH3EjhfLDQZfZxe` (pass-2). See
+> [`PASS_2_DEPLOY_HANDOFF.md`](./PASS_2_DEPLOY_HANDOFF.md) for the
+> wire-shape changes, new externs (`create_hive_genesis`,
+> `create_hive_membership`, `get_latest_membership`, `list_my_hives`,
+> `send_to_inbox`, `probe_inbox`, etc.), and the migration flow. The
+> coordinator-pass-1 content below is preserved as historical reference;
+> any field marked `hive_id: String` on a hive-scoped query input is now
+> `hive_genesis_hash: ActionHash` post-pass-2. C4's "this does NOT defend
+> against modified coordinator WASM" caveat is RESOLVED post-pass-2 —
+> the integrity-layer link validators are now load-bearing.
+
+---
+
 # humm-tauri Coordinator Integration Guide
 
 **Branch:** `feat-optional-recipient-id`
