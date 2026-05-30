@@ -237,14 +237,18 @@ const CONTENT_TYPE_ACL_SPEC: Readonly<Record<string, AclSpecKind>> = {
 };
 
 /** Fallback classification for content types not listed above. We pick
- * `Public` (not `HiveGroup`) intentionally: pass-3 `HiveGroup` requires
- * the author to hold Writer+ in every group listed in `group_acl.*`,
- * but pass-1/pass-2 had no `group_acl` field, so the migration cannot
- * populate it without operator input. `Public` keeps the entry readable
- * by every member of the hive (via hive Writer+ on the author),
- * matching the most common humm-tauri "everyone in the hive sees this"
- * pattern. humm-tauri can re-stamp specific entries to `HiveGroup`
- * post-migration once real groups exist (see Phase D.1 follow-up). */
+ * `Public` (not `HiveGroup`) intentionally: pass-3+ `HiveGroup` requires
+ * the author to hold Writer+ in every group listed in `group_acl.*`
+ * AND (pass-4) a `recipient_witnesses` vec covering every pubkey in
+ * `public_key_acl`. Pass-1/pass-2 had no `group_acl` field and no
+ * groups exist on the new DNA until D.1's migrate-group track has
+ * been run, so the migration cannot populate either field without
+ * operator input. `Public` keeps the entry readable by every member
+ * of the hive (via hive Writer+ on the author), matching the most
+ * common humm-tauri "everyone in the hive sees this" pattern.
+ * humm-tauri can re-stamp specific entries to `HiveGroup` post-
+ * migration once real groups + memberships exist (see Phase D.1
+ * follow-up + `classification-overrides.json`). */
 const DEFAULT_ACL_SPEC_KIND: AclSpecKind = "Public";
 
 /** Resolve `(hive_genesis_hash, author_membership_hash, agent_pubkey,
@@ -333,16 +337,25 @@ function classifyAclSpec(
       };
     }
     case "HiveGroup": {
-      // No legacy → HiveGroup mapping yet (requires the migrated
-      // group-track to exist; deferred to Phase D.1). If an operator
-      // adds a content type to CONTENT_TYPE_ACL_SPEC mapped to
-      // HiveGroup before D.1 ships, surface a clear error so the
-      // import does not silently produce a broken entry.
+      // The pass-4 wire shape requires `recipient_witnesses` on every
+      // HiveGroup write — populated by walking
+      // `get_latest_group_membership(agent, group_genesis_hash)` per
+      // PKA pubkey + bucket and stamping the returned membership hash.
+      // That walk requires migrated groups to exist on the new DNA,
+      // which the migrate-group / grant-group-memberships track
+      // (Phase D.1) provides; without D.1 there are no groups to walk.
+      //
+      // Pre-D.1 we surface a clear error so a config that classifies
+      // unknown content_types into HiveGroup does not silently produce
+      // a broken entry. Operators wanting HiveGroup classification
+      // wait for D.1 + author a per-bundle classification-overrides.json.
       throw new Error(
         `HiveGroup classification for content_type "${contentType}" requires ` +
-          `the group-migration track (Phase D.1, not yet shipped). Either ` +
-          `change the classification in CONTENT_TYPE_ACL_SPEC or wait for ` +
-          `D.1.`,
+          `the group-migration track (Phase D.1, not yet shipped). The pass-4 ` +
+          `wire shape adds 'recipient_witnesses: RecipientWitness[]' inside ` +
+          `AclSpec::HiveGroup; populating it requires migrated groups + ` +
+          `memberships on the new DNA. Either change the classification in ` +
+          `CONTENT_TYPE_ACL_SPEC or wait for D.1.`,
       );
     }
   }
