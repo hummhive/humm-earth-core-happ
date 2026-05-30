@@ -254,10 +254,16 @@ fn signal_action(action: SignedActionHashed) -> ExternResult<()> {
 }
 
 fn signal_link_created(action: SignedActionHashed, create_link: CreateLink) -> ExternResult<()> {
-    if let Ok(Some(link_type)) =
-        LinkTypes::from_type(create_link.zome_index, create_link.link_type)
-    {
-        emit_signal(Signal::LinkCreated { action, link_type })?;
+    match LinkTypes::from_type(create_link.zome_index, create_link.link_type) {
+        Ok(Some(link_type)) => {
+            emit_signal(Signal::LinkCreated { action, link_type })?;
+        }
+        // Expected: link belongs to a different zome's link-type registry —
+        // not a signal this zome should fan out.
+        Ok(None) => {}
+        Err(err) => {
+            warn!("signal_link_created: LinkTypes::from_type failed; signal skipped: {err:?}");
+        }
     }
     Ok(())
 }
@@ -277,41 +283,84 @@ fn signal_link_deleted(action: SignedActionHashed, delete_link: DeleteLink) -> E
             "Create Link should exist".to_string()
         )));
     };
-    if let Ok(Some(link_type)) =
-        LinkTypes::from_type(create_link.zome_index, create_link.link_type)
-    {
-        emit_signal(Signal::LinkDeleted { action, link_type })?;
-    }
-    Ok(())
-}
-
-fn signal_entry_created(action: SignedActionHashed) -> ExternResult<()> {
-    if let Ok(Some(app_entry)) = get_entry_for_action(&action.hashed.hash) {
-        emit_signal(Signal::EntryCreated { action, app_entry })?;
-    }
-    Ok(())
-}
-
-fn signal_entry_updated(action: SignedActionHashed, update: Update) -> ExternResult<()> {
-    if let Ok(Some(app_entry)) = get_entry_for_action(&action.hashed.hash) {
-        if let Ok(Some(original_app_entry)) = get_entry_for_action(&update.original_action_address)
-        {
-            emit_signal(Signal::EntryUpdated {
-                action,
-                app_entry,
-                original_app_entry,
-            })?;
+    match LinkTypes::from_type(create_link.zome_index, create_link.link_type) {
+        Ok(Some(link_type)) => {
+            emit_signal(Signal::LinkDeleted { action, link_type })?;
+        }
+        // Expected: link belongs to a different zome's link-type registry —
+        // not a signal this zome should fan out.
+        Ok(None) => {}
+        Err(err) => {
+            warn!("signal_link_deleted: LinkTypes::from_type failed; signal skipped: {err:?}");
         }
     }
     Ok(())
 }
 
+fn signal_entry_created(action: SignedActionHashed) -> ExternResult<()> {
+    match get_entry_for_action(&action.hashed.hash) {
+        Ok(Some(app_entry)) => {
+            emit_signal(Signal::EntryCreated { action, app_entry })?;
+        }
+        // Expected: action carries no app entry, or entry is shaped for a
+        // different zome / not yet retrievable — caller's polling fallback
+        // covers any post-commit DHT gossip lag.
+        Ok(None) => {}
+        Err(err) => {
+            warn!("signal_entry_created: get_entry_for_action failed; signal skipped: {err:?}");
+        }
+    }
+    Ok(())
+}
+
+fn signal_entry_updated(action: SignedActionHashed, update: Update) -> ExternResult<()> {
+    let app_entry = match get_entry_for_action(&action.hashed.hash) {
+        Ok(Some(entry)) => entry,
+        // Expected: same shape as `signal_entry_created`'s Ok(None) arm.
+        Ok(None) => return Ok(()),
+        Err(err) => {
+            warn!(
+                "signal_entry_updated: get_entry_for_action(new) failed; signal skipped: {err:?}"
+            );
+            return Ok(());
+        }
+    };
+    let original_app_entry = match get_entry_for_action(&update.original_action_address) {
+        Ok(Some(entry)) => entry,
+        // Expected: original entry not retrievable (deleted, shaped for a
+        // different zome). Skip the signal rather than fire a partial one.
+        Ok(None) => return Ok(()),
+        Err(err) => {
+            warn!(
+                "signal_entry_updated: get_entry_for_action(original) failed; signal skipped: {err:?}"
+            );
+            return Ok(());
+        }
+    };
+    emit_signal(Signal::EntryUpdated {
+        action,
+        app_entry,
+        original_app_entry,
+    })?;
+    Ok(())
+}
+
 fn signal_entry_deleted(action: SignedActionHashed, delete: Delete) -> ExternResult<()> {
-    if let Ok(Some(original_app_entry)) = get_entry_for_action(&delete.deletes_address) {
-        emit_signal(Signal::EntryDeleted {
-            action,
-            original_app_entry,
-        })?;
+    match get_entry_for_action(&delete.deletes_address) {
+        Ok(Some(original_app_entry)) => {
+            emit_signal(Signal::EntryDeleted {
+                action,
+                original_app_entry,
+            })?;
+        }
+        // Expected: original entry not retrievable (already deleted, shaped
+        // for a different zome). Skip the signal.
+        Ok(None) => {}
+        Err(err) => {
+            warn!(
+                "signal_entry_deleted: get_entry_for_action failed; signal skipped: {err:?}"
+            );
+        }
     }
     Ok(())
 }
