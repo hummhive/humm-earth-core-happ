@@ -116,3 +116,118 @@ See:
 - `docs/HUMM_TAURI_COORDINATOR_INTEGRATION.md`
                                         — wire-shape change list for humm-tauri
 - `docs/PASS_2_DEPLOY_HANDOFF.md`      — post-pass-2 deployment runbook + pass-2.5 migration commands
+
+Pass-3 (branch feat-integrity-pass-3-groups, FINAL)
+---------------------------------------------------------------------
+Built from: 0b67509 (pass-3 Phase E tip; the commit that produced the
+recorded wasm shas — Phase F adds this baseline section and the final
+report. The shas were captured on the Phase E tip because Phase F is
+a docs-only addition; the wasm output is deterministic against the
+production-code commit.)
+
+Integrity zome changes (G-series — validated group-membership
+infrastructure + AclSpec discriminated-union wire reshape on
+EncryptedContentHeader + variant-dispatch content validators +
+inline M-1/L-1/L-2 hardenings) intentionally bump the DNA hash again.
+The pass-2 invariant is dead on this branch — it is the inverse:
+pass-3 commits land a new DNA hash that becomes the new invariant
+once the cutover lands.
+
+  DNA hash (FINAL):        uhC0kwO11VbVMLrFlQBqeslvnZroeHUp5VetnH1tgX68lH5FebRgC
+  content_integrity.wasm:  95810f0bb2bef09271e04babef811758dc650e2c15469d2e647e20088cbf70f2
+  content.wasm:            629df371b80fdc716211334c6dbc1ccd66e795e09e8c73f547947b4509537021
+  hApp bundle sha256:      9084ea948d5e4cab91bcfd00e362b9b7e9896c28aaf3cf0b761cc4525f4414fa
+
+Lineage within pass-3 branch
+----------------------------
+- 00329eb feat(integrity): pass-3 group authority + AclSpec foundation (Phase A)
+- 65fcd7a docs: HANDOFF_UPDATED_INFO.md — living delta for humm-tauri devs
+- 699c093 feat(coordinator): pass-3 group authority externs + GroupInvite (Phase B)
+- 7e17b4c feat(integrity): pass-3 AclSpec wire reshape + variant-dispatch validators (Phase C)
+- 1a745d7 feat(migration): pass-3 AclSpec classifier + wire-shape import (Phase D)
+- 0b67509 docs(handoff): pass-3 humm-tauri integration doc set (Phase E)
+
+Tests
+-----
+- 58 integrity host-side tests green (49 pass-2.5 baseline + 9 Phase C
+  variant-dispatch tests: DM cardinality/author/reader/buckets/
+  uniqueness, OpenWrite target=None / header pubkey mismatch). Note:
+  fetch-dependent branches (HiveGroup hive/group authority, OpenWrite
+  target existence, EncryptedContentUpdates author-binding, M-1
+  original-author check) are NOT reachable from `cargo test` — they
+  require a live conductor's must_get_valid_record. Tryorama
+  integration tests covering those branches are a separate follow-up
+  task in `tests/src/humm_earth_core/content/`.
+- 22 coordinator host-side tests green (unchanged from pass-2.5).
+- Wasm release build: zero warnings, both zomes.
+
+Pass-3 invariants
+-----------------
+- Pass-1 DNA hash HELD on its branch: ✓ (pass-3 is a new branch off
+  chore-pass-2.5-cleanup).
+- Pass-2 DNA hash HELD on its branch: ✓ (pass-3 is a new branch off
+  chore-pass-2.5-cleanup, which itself held the pass-2 FINAL hash).
+- Pass-3 DNA hash is the new invariant: every subsequent pass-3
+  commit MUST hold this DNA hash + integrity wasm sha256 byte-
+  identical until pass-4+ does its own intentional integrity-zome
+  bump. Coordinator wasm sha256 MAY change (per the same
+  precedent set by pass-2.5).
+
+What is NEW in pass-3 (security)
+--------------------------------
+- GroupGenesis + GroupMembership entry types (cryptographic group
+  identity rooted in the hive owner via check_group_authority's
+  Path A/B/C; G-4.4 grant-window containment with the security-
+  review-hardened path-attribution fix).
+- AgentToGroupMemberships + GroupToGroupMemberships + HiveToGroups
+  discovery link types (cryptographic roster replaces forgeable
+  GroupMemberList; the latter is demoted to display cache).
+- AclSpec discriminated union with four variants (HiveGroup,
+  DirectMessage, Public, OpenWrite) — variant-dispatch validators
+  carry the right authority contract per scope; cross-hive
+  patterns (DMs, public posts, member-request, hive-discovery)
+  remain functional.
+- DM cardinality bound (DM_MAX_RECIPIENTS = 32) +
+  HiveGroup amplification bound (GROUP_ACL_MAX_GROUPS = 64).
+- InboxEvent::GroupInvite = 3 discriminator (additive; existing
+  bytes unchanged).
+- M-1: validate_update_encrypted_content now requires
+  action.author == original_action.author (closes update-chain
+  hijack across all variants; was pre-existing pass-1 gap).
+- L-1: validate_create_link_encrypted_content_updates now binds
+  link author == base author == target author (closes app-level
+  update-graph poisoning).
+- L-2: DM rejects duplicate recipients (degenerate self-DM hygiene).
+- LOW-1 (cross-cutting fix to pass-2 list_my_hives): author guard
+  on the founded-hive inbox path; same fix applied to list_my_groups.
+
+What is DEFERRED (Phase C.1 + Phase D.1)
+----------------------------------------
+- G-6.2 recipient-set integrity for HiveGroup public_key_acl (Phase
+  C.1). Documented; HiveGroup public_key_acl is an unauthenticated
+  routing hint at commit time. Decryption gating via SharedSecrets
+  is unaffected; recipient-list FORGERY for remote-signal routing
+  is the residual attack.
+- migrate-group / grant-group-memberships commands + per-bundle
+  classification-overrides.json (Phase D.1). The classifier defaults
+  unknown content types to AclSpec::Public; humm-tauri post-
+  migration UI workflow re-stamps to HiveGroup with real
+  group_genesis_hashes once create_group_genesis +
+  create_group_membership have run.
+
+Migration story
+---------------
+Pass-3 uses the same export → migrate-hive → grant-memberships →
+import → mark-* pipeline as pass-2.5. The pass-3 wire-shape reshape
+is handled by the in-script `classifyAclSpec` per-content-type
+classifier in `scripts/migrate-dna.ts`; no operator-facing changes
+to the pipeline. Bundle schema_version: 1 (pass-1/2 legacy) and 2
+(pass-3-aware; not currently produced by export but accepted on
+import) both round-trip cleanly.
+
+See:
+- `docs/HUMM_TAURI_ACLSPEC_INTEGRATION.md` — pass-3 wire shape + per-modal mechanics (canonical)
+- `docs/PASS_3_DEPLOY_HANDOFF.md`          — pass-3 deploy runbook + smoke tests
+- `docs/HUMM_TAURI_FEATURE_ENABLEMENT.md`  — feature-by-feature implementation guide
+- `docs/DNA_MIGRATION_GUIDE.md`            — migration mechanics (Pass-3 wire-shape migration section)
+- `docs/HANDOFF_UPDATED_INFO.md`           — living delta from pass-2.5 to pass-3
