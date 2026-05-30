@@ -843,25 +843,123 @@ mod tests {
     }
 
     #[test]
-    fn delete_rejects_acl_match_by_string_only_on_unrelated_field() {
-        // Defensive: ensure the validator looks at all four ACL fields,
-        // not just one. If a future refactor accidentally drops a check,
-        // this will catch it.
+    fn delete_rejects_when_author_string_is_substring_of_acl_value() {
+        // The `public_key_acl.owner` field is a `String` and the
+        // admin/writer/reader fields are `Vec<String>`. The validator
+        // uses `==` (exact-string) comparison everywhere, so a stranger
+        // whose pubkey string happens to be a strict substring of an
+        // ACL value MUST NOT false-match. This test pins the exact-
+        // match guarantee in every bucket.
+        let alice = agent_pubkey(1);
+        let bob = agent_pubkey(2);
+        let bob_str = bob.to_string();
+        // Bob's pubkey string with an appended suffix — bob is NOT
+        // exactly listed; the suffix-bearing string is the ACL value.
+        let bob_with_suffix = format!("{bob_str}EXTRA");
+        // Note: the inverse direction (ACL value is a strict prefix of
+        // bob's pubkey) is covered by
+        // `delete_rejects_when_acl_value_is_substring_of_author_string`.
+        for acl in [
+            // owner field carries a string that CONTAINS bob's pubkey.
+            Acl {
+                owner: bob_with_suffix.clone(),
+                admin: vec![],
+                writer: vec![],
+                reader: vec![],
+            },
+            // admin vec carries a containing-string (admin entry holds bob+suffix).
+            Acl {
+                owner: "z".into(),
+                admin: vec![bob_with_suffix.clone()],
+                writer: vec![],
+                reader: vec![],
+            },
+            // writer vec carries a containing-string.
+            Acl {
+                owner: "z".into(),
+                admin: vec![],
+                writer: vec![bob_with_suffix.clone()],
+                reader: vec![],
+            },
+            // reader vec carries a containing-string (reader entry holds bob+suffix).
+            Acl {
+                owner: "z".into(),
+                admin: vec![],
+                writer: vec![],
+                reader: vec![bob_with_suffix.clone()],
+            },
+        ] {
+            let action = make_delete(bob.clone());
+            let original = EntryCreationAction::Create(make_create(alice.clone()));
+            let content = sample_content_with_acl(acl);
+            let result = validate_delete_encrypted_content(action, original, content)
+                .expect("validator should not error in test");
+            assert!(
+                matches!(result, ValidateCallbackResult::Invalid(_)),
+                "substring-but-not-exact ACL match must NOT permit delete; got {result:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn delete_rejects_when_acl_value_is_substring_of_author_string() {
+        // Inverse of the previous test: an ACL value that is a strict
+        // prefix of the deleter's pubkey string must NOT false-match.
+        // Exact-string semantics in both directions.
+        let alice = agent_pubkey(1);
+        let bob = agent_pubkey(2);
+        let bob_str = bob.to_string();
+        let bob_prefix_only = bob_str[..bob_str.len() - 1].to_string();
+        let action = make_delete(bob.clone());
+        let original = EntryCreationAction::Create(make_create(alice));
+        let content = sample_content_with_acl(Acl {
+            owner: bob_prefix_only.clone(),
+            admin: vec![bob_prefix_only.clone()],
+            writer: vec![bob_prefix_only.clone()],
+            reader: vec![bob_prefix_only],
+        });
+        let result = validate_delete_encrypted_content(action, original, content)
+            .expect("validator should not error in test");
+        assert!(
+            matches!(result, ValidateCallbackResult::Invalid(_)),
+            "ACL value that is a strict prefix of author pubkey must NOT permit delete; got {result:?}",
+        );
+    }
+
+    #[test]
+    fn delete_reader_acl_accept_reject_pair() {
+        // Side-by-side accept/reject pin: the same delete-author with
+        // the same original-action, differing only in whether the
+        // entry's `public_key_acl.reader` contains the author's pubkey.
+        // Catches any future regression where the validator stops
+        // consulting the ACL it was given.
         let alice = agent_pubkey(1);
         let bob = agent_pubkey(2);
         let action = make_delete(bob.clone());
         let original = EntryCreationAction::Create(make_create(alice));
-        // Bob is only in `reader` — should pass.
-        let content = sample_content_with_acl(Acl {
-            owner: "z".into(),
+        let content_with_bob = sample_content_with_acl(Acl {
+            owner: "x".into(),
             admin: vec![],
             writer: vec![],
             reader: vec![bob.to_string()],
         });
-        assert!(matches!(
-            validate_delete_encrypted_content(action, original, content).unwrap(),
-            ValidateCallbackResult::Valid,
-        ));
+        let accept = validate_delete_encrypted_content(action, original, content_with_bob)
+            .expect("validator should not error in test");
+        assert!(matches!(accept, ValidateCallbackResult::Valid));
+
+        let alice = agent_pubkey(1);
+        let bob = agent_pubkey(2);
+        let action = make_delete(bob);
+        let original = EntryCreationAction::Create(make_create(alice));
+        let content_without_bob = sample_content_with_acl(Acl {
+            owner: "x".into(),
+            admin: vec![],
+            writer: vec![],
+            reader: vec![],
+        });
+        let reject = validate_delete_encrypted_content(action, original, content_without_bob)
+            .expect("validator should not error in test");
+        assert!(matches!(reject, ValidateCallbackResult::Invalid(_)));
     }
 
     // ---------------------------------------------------------------------
@@ -883,4 +981,197 @@ mod tests {
             .expect("recompute_base should compute in test");
         assert_eq!(manual_hash, recomputed);
     }
+
+    // ---------------------------------------------------------------------
+    // Delete-link author-equality — Hive / Dynamic / HummContentId /
+    // HummContentAcl all share the contract "only the link's author may
+    // delete it". Pure logic, no host calls.
+    // ---------------------------------------------------------------------
+
+    fn make_create_link(author: AgentPubKey) -> CreateLink {
+        CreateLink {
+            author,
+            timestamp: Timestamp(0),
+            action_seq: 0,
+            prev_action: action_hash(0),
+            base_address: AnyLinkableHash::from(action_hash(1)),
+            target_address: AnyLinkableHash::from(action_hash(2)),
+            zome_index: 0.into(),
+            link_type: 0.into(),
+            tag: LinkTag::new(vec![]),
+            weight: Default::default(),
+        }
+    }
+
+    fn make_delete_link(author: AgentPubKey) -> DeleteLink {
+        DeleteLink {
+            author,
+            timestamp: Timestamp(0),
+            action_seq: 1,
+            prev_action: action_hash(0),
+            base_address: AnyLinkableHash::from(action_hash(1)),
+            link_add_address: action_hash(3),
+        }
+    }
+
+    fn link_args() -> (AnyLinkableHash, AnyLinkableHash, LinkTag) {
+        (
+            AnyLinkableHash::from(action_hash(1)),
+            AnyLinkableHash::from(action_hash(2)),
+            LinkTag::new(vec![]),
+        )
+    }
+
+    #[test]
+    fn delete_link_hive_accepts_original_author() {
+        let alice = agent_pubkey(1);
+        let (base, target, tag) = link_args();
+        let result = validate_delete_link_hive(
+            make_delete_link(alice.clone()),
+            make_create_link(alice),
+            base,
+            target,
+            tag,
+        )
+        .expect("validator should not error in test");
+        assert!(matches!(result, ValidateCallbackResult::Valid));
+    }
+
+    #[test]
+    fn delete_link_hive_rejects_third_party() {
+        let alice = agent_pubkey(1);
+        let mallory = agent_pubkey(99);
+        let (base, target, tag) = link_args();
+        let result = validate_delete_link_hive(
+            make_delete_link(mallory),
+            make_create_link(alice),
+            base,
+            target,
+            tag,
+        )
+        .expect("validator should not error in test");
+        assert!(matches!(result, ValidateCallbackResult::Invalid(_)));
+    }
+
+    #[test]
+    fn delete_link_dynamic_enforces_author_equality() {
+        let alice = agent_pubkey(1);
+        let mallory = agent_pubkey(99);
+        let (base, target, tag) = link_args();
+        let accept = validate_delete_link_dynamic(
+            make_delete_link(alice.clone()),
+            make_create_link(alice.clone()),
+            base.clone(),
+            target.clone(),
+            tag.clone(),
+        )
+        .expect("validator should not error in test");
+        assert!(matches!(accept, ValidateCallbackResult::Valid));
+        let reject = validate_delete_link_dynamic(
+            make_delete_link(mallory),
+            make_create_link(alice),
+            base,
+            target,
+            tag,
+        )
+        .expect("validator should not error in test");
+        assert!(matches!(reject, ValidateCallbackResult::Invalid(_)));
+    }
+
+    #[test]
+    fn delete_link_humm_content_id_enforces_author_equality() {
+        let alice = agent_pubkey(1);
+        let mallory = agent_pubkey(99);
+        let (base, target, tag) = link_args();
+        let accept = validate_delete_link_humm_content_id(
+            make_delete_link(alice.clone()),
+            make_create_link(alice.clone()),
+            base.clone(),
+            target.clone(),
+            tag.clone(),
+        )
+        .expect("validator should not error in test");
+        assert!(matches!(accept, ValidateCallbackResult::Valid));
+        let reject = validate_delete_link_humm_content_id(
+            make_delete_link(mallory),
+            make_create_link(alice),
+            base,
+            target,
+            tag,
+        )
+        .expect("validator should not error in test");
+        assert!(matches!(reject, ValidateCallbackResult::Invalid(_)));
+    }
+
+    #[test]
+    fn delete_link_humm_content_acl_enforces_author_equality_per_class() {
+        // ACL delete-link validator takes a `class_label: &str` for
+        // error messaging; iterate every ACL class to confirm uniform
+        // author-equality across the four variants.
+        let alice = agent_pubkey(1);
+        let mallory = agent_pubkey(99);
+        for class_label in [
+            "HummContentOwner",
+            "HummContentAdmin",
+            "HummContentWriter",
+            "HummContentReader",
+        ] {
+            let (base, target, tag) = link_args();
+            let accept = validate_delete_link_humm_content_acl(
+                make_delete_link(alice.clone()),
+                make_create_link(alice.clone()),
+                base.clone(),
+                target.clone(),
+                tag.clone(),
+                class_label,
+            )
+            .expect("validator should not error in test");
+            assert!(
+                matches!(accept, ValidateCallbackResult::Valid),
+                "{class_label} delete by original author must be Valid; got {accept:?}",
+            );
+            let reject = validate_delete_link_humm_content_acl(
+                make_delete_link(mallory.clone()),
+                make_create_link(alice.clone()),
+                base,
+                target,
+                tag,
+                class_label,
+            )
+            .expect("validator should not error in test");
+            match reject {
+                ValidateCallbackResult::Invalid(msg) => {
+                    assert!(
+                        msg.contains(class_label),
+                        "{class_label}: error message must identify the link class; got {msg:?}",
+                    );
+                }
+                other => panic!("{class_label}: expected Invalid, got {other:?}"),
+            }
+        }
+    }
+
+    #[test]
+    fn delete_link_encrypted_content_updates_is_invalid() {
+        // EncryptedContentUpdates is the only link type that
+        // unconditionally rejects deletes (preserves the update chain
+        // integrity).
+        let alice = agent_pubkey(1);
+        let (base, target, tag) = link_args();
+        let result = validate_delete_link_encrypted_content_updates(
+            make_delete_link(alice.clone()),
+            make_create_link(alice),
+            base,
+            target,
+            tag,
+        )
+        .expect("validator should not error in test");
+        match result {
+            ValidateCallbackResult::Invalid(msg) => {
+                assert!(msg.contains("cannot be deleted"));
+            }
+            other => panic!("expected Invalid, got {other:?}"),
+        }
+    }
+
 }
