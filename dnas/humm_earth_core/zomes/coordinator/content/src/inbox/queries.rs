@@ -71,7 +71,7 @@ pub fn probe_inbox(input: ProbeInboxInput) -> ExternResult<Vec<InboxItem>> {
     }
 
     // Oldest-first ordering matches the watermark-sweep convention
-    // shared by list_by_hive_link (C2): callers can pin a cursor on
+    // shared by list_by_hive_link: callers can pin a cursor on
     // the highest returned timestamp without skipping older items.
     items.sort_by(|a, b| a.created_at.cmp(&b.created_at));
     Ok(items)

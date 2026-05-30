@@ -1,4 +1,4 @@
-//! Validated hive-membership infrastructure (pass-2 I-H).
+//! Validated hive-membership infrastructure.
 //!
 //! Closes H-1 cryptographically by establishing a per-hive root of trust:
 //! every hive is anchored to a [`HiveGenesis`] entry whose **action hash**

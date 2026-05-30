@@ -93,7 +93,6 @@ fn dispatch_acl_delete_link(
     )
 }
 
-
 /// Fetch the original record being deleted and dispatch to the
 /// per-entry-type delete validator.
 ///

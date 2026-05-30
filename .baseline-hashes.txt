@@ -13,25 +13,38 @@ hot-swap path was viable.
   content_integrity.wasm:  8c620847f7ae8878769e000452f2f89a4954a747b1c51c129666cdf0978f2c5c
   content.wasm:            f4277cfd50d3937eba652a788802199c064fe2e978d2d821825fcd9bfc7ecc7f
 
-Pass-2 (branch feat-integrity-pass-2, this commit)
+Pass-2 (branch feat-integrity-pass-2, FINAL)
 ---------------------------------------------------------------------
 Integrity zome changes (I-H validated hive membership infrastructure +
-I-A receiver-initiated tombstone + I-C offline DM inbox) **intentionally
-bump the DNA hash**. The pass-1 invariant is DEAD on this branch — it's
-the inverse: pass-2 commits MUST land a new, consistent DNA hash that
-becomes the new invariant once the cutover lands.
-  DNA hash (NEW):          uhC0kzl0W9BBITBGu-NeUaXPxqxSPj0yTGfDD3UH3EjhfLDQZfZxe
-  content_integrity.wasm:  82639e455c004d04a1f6fbf25f01abf26241e2fbe1733cbe39db7882a4fb2402
-  content.wasm:            998511e6fbc0ecde0bb6172993cd4d0e90fb44fb3810dfce1ebf078376fb08e6 (post pass-2-SEC-1 fix)
+I-A receiver-initiated tombstone + I-C offline DM inbox) intentionally
+bump the DNA hash. The pass-1 invariant is dead on this branch — it is
+the inverse: pass-2 commits land a new DNA hash that becomes the new
+invariant once the cutover lands.
+
+  DNA hash (FINAL):        uhC0kawoZqBxv3Jjvh-TlSQ5aO4U-hwiUNtZxFzXkTOBc5ijKVatw
+  content_integrity.wasm:  cd137fcfde8632c7236497592014b3b1e80548691ee71e5ebbad12cb373275dc
+  content.wasm:            b2df2efc6790b20467043cdd5519945f62c2c14144e9f4d9ebd5fb7d5d43bffd
+
+Lineage within pass-2 branch
+----------------------------
+- 1fa4d37 initial integrity+coordinator commit  → DNA uhC0kzl0W9BBITBGu-NeUaXPxqxSPj0yTGfDD3UH3EjhfLDQZfZxe
+- a089b45 security fix (drop get_last_probe cap) → DNA unchanged (coordinator-only)
+- HEAD    coding-standards cleanup               → DNA uhC0kawoZqBxv3Jjvh-TlSQ5aO4U-hwiUNtZxFzXkTOBc5ijKVatw (FINAL)
+
+rustc emits source-path metadata into release wasm, so even comment-only
+edits in the integrity zome bump the wasm sha (and therefore the DNA
+hash). The FINAL row above is what the release .happ bundles.
 
 VERIFICATION
 ------------
 - DNA hash CHANGED from pass-1: ✓ (new bytes, see above)
 - content_integrity.wasm CHANGED: ✓ (new bytes)
 - content.wasm CHANGED: ✓ (new bytes)
+- 37/37 host-side cargo tests pass (26 integrity + 11 coordinator).
 
-The pass-2 invariant is: every subsequent pass-2 commit MUST hold these
-NEW hashes byte-identical until pass-3+ does its own intentional bump.
+The pass-2 invariant is: every subsequent pass-2 release commit MUST
+hold the FINAL hashes above byte-identical until pass-3+ does its own
+intentional bump.
 
 Migration story
 ---------------
@@ -45,5 +58,4 @@ See:
 - `docs/DNA_MIGRATION_GUIDE.md`        — migration mechanics (extended for pass-2)
 - `docs/HUMM_TAURI_COORDINATOR_INTEGRATION.md`
                                         — wire-shape change list for humm-tauri
-- `docs/PASS_1_DEPLOY_HANDOFF.md`      — superseded; see PASS_2_DEPLOY_HANDOFF for the
-                                          post-pass-2 deployment runbook
+- `docs/PASS_2_DEPLOY_HANDOFF.md`      — post-pass-2 deployment runbook

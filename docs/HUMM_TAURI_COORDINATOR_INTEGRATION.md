@@ -2,7 +2,7 @@
 > The integrity zome has shipped its first non-additive change. DNA hash
 > has changed from
 > `uhC0kT0Tkc3b6ccfa75YwWdzpSWvdkXERpdqkxIndRhfK5TJAUusY` (pass-1) to
-> `uhC0kzl0W9BBITBGu-NeUaXPxqxSPj0yTGfDD3UH3EjhfLDQZfZxe` (pass-2). See
+> `uhC0kawoZqBxv3Jjvh-TlSQ5aO4U-hwiUNtZxFzXkTOBc5ijKVatw` (pass-2). See
 > [`PASS_2_DEPLOY_HANDOFF.md`](./PASS_2_DEPLOY_HANDOFF.md) for the
 > wire-shape changes, new externs (`create_hive_genesis`,
 > `create_hive_membership`, `get_latest_membership`, `list_my_hives`,

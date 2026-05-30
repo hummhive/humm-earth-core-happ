@@ -1,7 +1,7 @@
 > **Pass-2 update (`feat-integrity-pass-2`, commit `1fa4d37`):**
 > The pass-2 integrity zome change has SHIPPED on the
 > `feat-integrity-pass-2` branch. DNA hash:
-> `uhC0kzl0W9BBITBGu-NeUaXPxqxSPj0yTGfDD3UH3EjhfLDQZfZxe` (new) vs
+> `uhC0kawoZqBxv3Jjvh-TlSQ5aO4U-hwiUNtZxFzXkTOBc5ijKVatw` (new) vs
 > `uhC0kT0Tkc3b6ccfa75YwWdzpSWvdkXERpdqkxIndRhfK5TJAUusY` (pass-1
 > baseline). The migration scaffold described in this guide is now
 > ACTIVATED: every pass-1 cell that wants to keep its data on the new

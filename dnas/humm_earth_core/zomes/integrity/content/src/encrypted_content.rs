@@ -1,29 +1,4 @@
-//! [`EncryptedContent`] entry + every link validator that hangs off it.
-//!
-//! Pass-2 changes (load-bearing):
-//!
-//! 1. `EncryptedContentHeader` gains `hive_genesis_hash: ActionHash` and
-//!    `author_membership_hash: Option<ActionHash>`. The first roots the
-//!    entry in a specific hive cryptographically; the second carries the
-//!    author's authorising [`HiveMembership`] entry (or `None` if the
-//!    author IS that hive's genesis creator).
-//! 2. `validate_create_encrypted_content` and
-//!    `validate_update_encrypted_content` now call
-//!    [`crate::hive::check_hive_authority`] to verify the author actually
-//!    has at least Writer role in `hive_genesis_hash`.
-//! 3. `validate_delete_encrypted_content` (I-A) permits the author OR
-//!    any agent listed in `original_entry.public_key_acl.*` to tombstone.
-//!    For DMs that means either party (sender + recipient both in
-//!    `public_key_acl.reader`).
-//! 4. Link validators for `Hive`, `Dynamic`, `HummContentOwner`,
-//!    `HummContentAdmin`, `HummContentWriter`, `HummContentReader`, and
-//!    `HummContentId` now RECOMPUTE the link's expected base path from
-//!    the target entry's validated header fields and reject any link
-//!    whose claimed `base_address` does not match. This closes H-1: a
-//!    modified-coordinator Mallory cannot forge a discovery link
-//!    pointing into someone else's hive path because the recompute will
-//!    diverge from her forged base.
-
+//! [`EncryptedContent`] entry and every link validator that hangs off it.
 use hdi::hash_path::path::Component;
 use hdi::prelude::*;
 

@@ -16,7 +16,7 @@ flow section appended).
 ## TL;DR
 
 - **DNA hash CHANGED** from `uhC0kT0Tkc3b6ccfa75YwWdzpSWvdkXERpdqkxIndRhfK5TJAUusY`
-  (pass-1) to `uhC0kzl0W9BBITBGu-NeUaXPxqxSPj0yTGfDD3UH3EjhfLDQZfZxe` (pass-2).
+  (pass-1) to `uhC0kawoZqBxv3Jjvh-TlSQ5aO4U-hwiUNtZxFzXkTOBc5ijKVatw` (pass-2).
   Coordinator hot-swap does NOT work for this pass; users see a new cell
   on install and require the migration flow to keep their data.
 - **I-H — Validated hive-membership infrastructure** (NEW entry types
@@ -60,7 +60,7 @@ migration scaffold (shipped at commit `520bfc6`) activates here:
      cargo build --release --target wasm32-unknown-unknown
    hc dna pack dnas/humm_earth_core/workdir
    hc dna hash dnas/humm_earth_core/workdir/humm_earth_core.dna
-   # MUST print: uhC0kzl0W9BBITBGu-NeUaXPxqxSPj0yTGfDD3UH3EjhfLDQZfZxe
+   # MUST print: uhC0kawoZqBxv3Jjvh-TlSQ5aO4U-hwiUNtZxFzXkTOBc5ijKVatw
    hc app pack workdir --recursive
    sha256sum workdir/humm-earth-core-happ.happ
    ```
@@ -232,9 +232,9 @@ The write externs stay local-only by design — granting them
 After packing the pass-2 .happ, ALL of:
 
 ```
-DNA hash:                uhC0kzl0W9BBITBGu-NeUaXPxqxSPj0yTGfDD3UH3EjhfLDQZfZxe
-content_integrity.wasm:  82639e455c004d04a1f6fbf25f01abf26241e2fbe1733cbe39db7882a4fb2402
-content.wasm:            76ca7f5bb8ab4752ace71549800704f548d2a1d291cbecec3e324e083c236b99
+DNA hash:                uhC0kawoZqBxv3Jjvh-TlSQ5aO4U-hwiUNtZxFzXkTOBc5ijKVatw
+content_integrity.wasm:  cd137fcfde8632c7236497592014b3b1e80548691ee71e5ebbad12cb373275dc
+content.wasm:            b2df2efc6790b20467043cdd5519945f62c2c14144e9f4d9ebd5fb7d5d43bffd
 ```
 
 Mismatch on any of these means the build diverged from this commit.

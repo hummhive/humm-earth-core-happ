@@ -15,126 +15,80 @@ use encrypted_content::signals::{DmRemoteSignal, EncryptedContentSignal};
 /// re-runs `init` on coordinator hot-swap, so newly-registered functions
 /// pick up grants automatically without a user wipe.
 ///
-/// **C5** fixes:
-/// - Typo: `get_many_encrypted_conten` → `get_many_encrypted_content`.
-///   Pre-fix, cross-agent callers calling the externally-correct name
-///   silently failed at the cap check; this affected any RPC pattern
-///   relying on remote calls to that function.
-/// - Adds grants for query externs newly introduced this pass:
-///   `count_links_by_hive` (C3) and `fetch_pair_ss_with_hive_check`
-///   (C4). Both are read-only queries over already-public DHT data, so
-///   `Unrestricted` matches the pattern of every other `list_by_*` /
-///   `get_*` extern.
+/// Two classes of extern are excluded from the granted set:
 ///
-/// `recv_remote_signal` MUST stay granted — the conductor invokes it on
-/// every recipient of a `send_remote_signal` and the cap check applies
-/// even to that conductor-internal call (per hdk source: "This
-/// requirement will likely be removed in the future").
+/// 1. **Source-chain mutators** — every `create_*` / `update_*` /
+///    `delete_*` extern writes the calling agent's source chain.
+///    Granting them `Unrestricted` would let any peer pollute another
+///    agent's chain. The local UI reaches them through the conductor's
+///    AppWebsocket auth without needing a cap grant.
+/// 2. **Source-chain readers that surface private data** —
+///    `get_messages_since` and `get_last_probe` both call `query(...)`
+///    against the caller's local chain. A remote cap-call would
+///    enumerate or leak chain-private contents (action hashes,
+///    `DmProbeLog` cursors). Local UI only.
 ///
-/// **NOT GRANTED** (deliberate — security-reviewer SEC-2):
+/// The sender-side ephemeral signal externs (`send_dm_delete_request`
+/// and the three `send_dm_call_*` variants) are excluded for a third
+/// reason: each issues `send_remote_signal` to a caller-chosen
+/// recipient. Granting them remotely would let any peer use the local
+/// agent as a signal reflector to a third party — both an
+/// amplification DoS and a spoof-by-proxy vector that subverts the
+/// `from_agent` provenance guarantee enforced by `recv_remote_signal`.
 ///
-/// - `send_dm_delete_request` (C6) and the three `send_dm_call_*` (C7)
-///   externs are SENDER-side: each calls `send_remote_signal` to a
-///   caller-chosen recipient. Granting them `Unrestricted` would let
-///   any peer call_remote them on MY cell to use my agent as a signal
-///   reflector to a third party — both an amplification DoS and a
-///   spoof-by-proxy vector that subverts the C1 `from_agent` guarantee
-///   (the third party would cryptographically attribute the signal to
-///   ME, with attacker-chosen payload). Local-UI callers do NOT need
-///   the grant — they reach the extern through the conductor's
-///   AppWebsocket auth (see the unchanged `create_encrypted_content` /
-///   `update_encrypted_content` / `delete_encrypted_content` precedent,
-///   which are intentionally not in `set_cap_tokens` yet work fine
-///   from humm-tauri's local UI).
-/// - `get_messages_since` queries the LOCAL source chain; granting it
-///   would let any peer enumerate every action hash committed to my
-///   chain. Stays ungranted by design — do not add it here.
-/// - `create_encrypted_content` / `update_encrypted_content` /
-///   `delete_encrypted_content` mutate this agent's source chain;
-///   stays ungranted (only the author should write to their own chain).
-/// - `mark_migrated` (pass-1 follow-up) writes a forward-pointer marker
-///   onto this agent's own entries; same reasoning as the CRUD externs.
-///   Local-only by design.
+/// `recv_remote_signal` itself MUST stay granted — the conductor
+/// invokes it on every recipient of a `send_remote_signal` and the cap
+/// check applies even to that conductor-internal call (per hdk source:
+/// "This requirement will likely be removed in the future").
 pub fn set_cap_tokens() -> ExternResult<()> {
     let zome = zome_info()?.name;
     let mut fns = HashSet::new();
 
-    // CRUD + read externs.
+    // Read surface — every query extern over public DHT data.
     fns.insert((zome.clone(), "get_encrypted_content".into()));
-    fns.insert((zome.clone(), "get_many_encrypted_content".into())); // C5 typo fix
+    fns.insert((zome.clone(), "get_many_encrypted_content".into()));
     fns.insert((zome.clone(), "get_encrypted_content_by_time_and_author".into()));
     fns.insert((zome.clone(), "list_by_dynamic_link".into()));
     fns.insert((zome.clone(), "list_by_hive_link".into()));
     fns.insert((zome.clone(), "get_by_content_id_link".into()));
     fns.insert((zome.clone(), "list_by_acl_link".into()));
     fns.insert((zome.clone(), "list_by_author".into()));
-
-    // C3 — new count extern.
     fns.insert((zome.clone(), "count_links_by_hive".into()));
-
-    // C4 — new intersection-fetch extern.
     fns.insert((zome.clone(), "fetch_pair_ss_with_hive_check".into()));
 
-    // Pass-1 follow-up — migration-marker reader. Reads already-public
-    // DHT data (walks an entry's update chain; same data any peer could
-    // fetch via `get_details` directly). Unrestricted matches the
-    // read-side cap pattern. `mark_migrated` (the write side) is
-    // intentionally NOT granted — see the "NOT GRANTED" block in the
-    // doc-comment above. The reader applies its own author-binding
-    // filter (only updates by the original entry's author count as
-    // valid markers; see `get_migration_marker`'s doc-comment), so it
-    // does not rely on the cap surface for forge resistance.
-    // Pass-2 (I-H) — hive-membership read externs. These are query-only
-    // and surface DHT-public data (HiveGenesis and HiveMembership entries
-    // are public; the link space is public). `Unrestricted` matches the
-    // existing pattern for every other read extern.
+    // Migration-marker reader. Reads already-public DHT data (walks an
+    // entry's update chain; same data any peer could fetch via
+    // `get_details` directly). `mark_migrated` (the write side) is
+    // intentionally NOT granted by Rule 1 above. The reader applies
+    // its own author-binding filter — only updates by the original
+    // entry's author count as valid markers; see
+    // `get_migration_marker`'s doc-comment — so it does not rely on
+    // the cap surface for forge resistance.
+    fns.insert((zome.clone(), "get_migration_marker".into()));
+
+    // Hive-membership read externs. Surface DHT-public data
+    // (`HiveGenesis` and `HiveMembership` entries are public; the link
+    // space is public). The write counterparts
+    // `create_hive_genesis` / `create_hive_membership` are excluded by
+    // Rule 1.
     fns.insert((zome.clone(), "get_latest_membership".into()));
     fns.insert((zome.clone(), "list_my_hives".into()));
 
-    // Pass-2 (I-C) — inbox read externs. `probe_inbox` walks the
-    // PUBLIC DHT link space keyed off the receiving agent's own pubkey
-    // (`agent_info().agent_initial_pubkey`) — when a peer cap-calls it
-    // remotely the receiving agent resolves to the LOCAL conductor's
-    // pubkey, so the cap grant is structurally inert from a remote
-    // peer's vantage point. Safe to grant for uniformity.
+    // Inbox read externs. `probe_inbox` walks the PUBLIC DHT link
+    // space keyed off the receiving agent's own pubkey
+    // (`agent_info().agent_initial_pubkey`); a remote cap-call resolves
+    // the receiving agent to the LOCAL conductor's pubkey, making the
+    // grant structurally inert from a remote peer's vantage point.
     //
-    // `get_last_probe` is **NOT GRANTED** here even though it's a read.
-    // Unlike `probe_inbox`, `get_last_probe` calls `query(...)` over
-    // the LOCAL source chain to read the private `DmProbeLog` entry
-    // (probed_at_microseconds + last_processed_inbox_link_hash). A
-    // cap-call from a remote peer would leak this private read-receipt
-    // cursor — security-reviewer finding pass-2-SEC-1. Same local-only
-    // treatment as `get_messages_since` for the same reason
-    // (source-chain `query(...)` of caller-private data).
+    // `get_last_probe` is intentionally NOT granted: it `query(...)`s
+    // the LOCAL source chain for the private `DmProbeLog` entry, and a
+    // remote cap-call would leak the private read-receipt cursor
+    // (`probed_at_microseconds` + `last_processed_inbox_link_hash`).
+    // Matches the `get_messages_since` treatment (Rule 2 above).
     fns.insert((zome.clone(), "probe_inbox".into()));
 
-    // NOT GRANTED (pass-2 additions; the pass-1 entries continue to
-    // apply per the `set_cap_tokens` doc-comment above):
-    // - `get_last_probe` — see preceding paragraph; reads private
-    //   source-chain `DmProbeLog` entries.
-    // - `create_hive_genesis` / `create_hive_membership` — mutate the
-    //   caller's source chain; only the local UI should invoke them.
-    //   Granting would let any peer pollute another agent's chain with
-    //   bogus hive entries.
-    // - `send_to_inbox` — local UI invocation; the link write happens
-    //   on the caller's source chain. Granting would let any peer use
-    //   another agent as an inbox-write proxy (amplification + spoofing
-    //   the link author).
-    // - `consume_inbox_item` / `record_probe` — write the caller's
-    //   source chain; local-only by the same reasoning as the CRUD
-    //   externs.
-
-    fns.insert((zome.clone(), "get_migration_marker".into()));
-
-    // `recv_remote_signal` is invoked by the conductor on every agent
-    // listed in `send_remote_signal`'s recipient list. The HDK requires
-    // this cap to be granted explicitly by the receiver zome — see
-    // `hdk::p2p::send_remote_signal` impl comment: "This requirement
-    // will likely be removed in the future". Until then, granting
-    // Unrestricted access is the standard pattern (the function only
-    // re-emits the incoming signal locally; it doesn't expose any
-    // state). This addition is purely additive — older clients that
-    // don't call `send_remote_signal` are unaffected.
+    // `recv_remote_signal` — required by the HDK cap check; see the
+    // doc-comment opener for the rationale.
     fns.insert((zome.clone(), "recv_remote_signal".into()));
 
     let functions = GrantedFunctions::Listed(fns);
@@ -153,7 +107,7 @@ pub fn init(_: ()) -> ExternResult<InitCallbackResult> {
 }
 
 /// **C7b** — multi-signal dispatcher.
-///
+/// Multi-signal dispatcher.
 /// Holochain permits exactly one `recv_remote_signal` extern per zome,
 /// so adding new signal families (DM delete-request, WebRTC signalling)
 /// without breaking the shipped `EncryptedContentSignal` wire path

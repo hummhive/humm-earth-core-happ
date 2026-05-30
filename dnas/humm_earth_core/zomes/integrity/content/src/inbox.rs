@@ -1,4 +1,4 @@
-//! Offline DM inbox primitives (pass-2 I-C).
+//! Offline DM inbox primitives for cross-host event delivery.
 //!
 //! Adapted from the vines `notify_peer.rs` pattern. The mechanism is a
 //! single `Inbox` link type:
