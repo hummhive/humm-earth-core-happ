@@ -58,6 +58,22 @@ to pass-2 FINAL.
   content_integrity.wasm:  cd137fcfde8632c7236497592014b3b1e80548691ee71e5ebbad12cb373275dc (UNCHANGED)
   content.wasm:            5790b6a459b9b4f4aee9a03f73c7ddf2c808024612862df94644090725b130e8 (NEW — coordinator change)
 
+Pass-2.5 cleanup follow-up (branch chore-pass-2.5-cleanup off 2cde900)
+----------------------------------------------------------------------
+Built from: d1e53b1 (HEAD at the time wasm shas were recorded; the
+source-bumping commits are bbb7494 — signal-helper match+warn — and
+2e40919 — mod.rs historical-narration cleanup. Other branch commits
+touch docs / tests / .baseline-hashes.txt only and do not bump wasm.)
+Cleanup workstream + pass-2 integrity audit. No validator-logic
+changes. Coordinator wasm sha256 BUMPS (signal-helper match+warn +
+mod.rs comment edit); integrity wasm sha256 + DNA hash HELD byte-
+identical to pass-2 FINAL. Pass-2 integrity audit added 14 host-side
+coverage tests; integrity test count 26 → 40.
+
+  DNA hash (HELD):         uhC0kawoZqBxv3Jjvh-TlSQ5aO4U-hwiUNtZxFzXkTOBc5ijKVatw
+  content_integrity.wasm:  cd137fcfde8632c7236497592014b3b1e80548691ee71e5ebbad12cb373275dc (UNCHANGED)
+  content.wasm:            7210ae584071a0bc00ea7f4bd6a1187d9ee9794fc5ec726a677d0e14a198d8fe (NEW — coordinator cleanup)
+
 VERIFICATION
 ------------
 - DNA hash CHANGED from pass-1: ✓ (new bytes, see above)
@@ -68,8 +84,16 @@ VERIFICATION
   11 new tests cover V1/V2 marker disambiguation, MigrationMarker enum
   round-trip + external-tag wire-shape pin, decode_marker priority,
   V2 idempotency, and unknown future schema_version handling).
+- Pass-2.5 cleanup host-side cargo tests: 62/62 (40 integrity + 22
+  coordinator; +14 new integrity tests from the pass-2 audit cover
+  ACL substring no-match, HiveGenesis/HiveMembership immutability,
+  HiveMembership self-grant rule 1, and delete-link author-equality
+  across Hive / Dynamic / HummContentId / HummContentAcl /
+  EncryptedContentUpdates).
 - Pass-2.5 DNA hash HELD: ✓ (unchanged from pass-2 FINAL).
 - Pass-2.5 integrity wasm sha256 HELD: ✓ (unchanged from pass-2 FINAL).
+- Pass-2.5 cleanup DNA hash HELD: ✓ (unchanged from pass-2 FINAL).
+- Pass-2.5 cleanup integrity wasm sha256 HELD: ✓ (unchanged from pass-2 FINAL).
 
 The pass-2 invariant is: every subsequent pass-2 release commit MUST
 hold the FINAL DNA hash + integrity wasm sha256 byte-identical until
