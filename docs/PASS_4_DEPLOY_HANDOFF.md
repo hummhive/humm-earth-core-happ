@@ -387,16 +387,19 @@ checklist in `PASS_3_DEPLOY_HANDOFF.md`):
 
 ## Hash invariants for verification
 
-To be populated by Phase 4-F. Build the wasm against
-`feat-integrity-pass-4-recipient-witnesses` tip and record the:
+Recorded by Phase 4-F (commit `9e1f842` source-of-record; wasms +
+packed bundle generated against that tip):
 
-- Integrity wasm sha256 (`content_integrity.wasm`)
-- Coordinator wasm sha256 (`content.wasm`)
-- DNA hash (`humm_earth_core.dna`)
-- hApp sha256 (`humm-earth-core-happ.happ`)
+- DNA hash:                `uhC0kNS2JM6lqmdxr3Q8VK2uhDJFF-wRBz-W73JjJKZnTTMyT8_JS`
+- `content_integrity.wasm`: `1f4534b24332d9fdf089b66e80c04b4eb370994841b554bfcb455524b6f0c3c4`
+- `content.wasm`:           `7a9e7a9800053a916b50141fd6cc72265d0090e3965a44eb90ae4ec298ca8370`
+- hApp bundle sha256:       `50d409602fa8d9eeacf553a497aff39191bc9cc4f1c9ffd8080d3c8e0e844abd`
 
-The hashes live in `.baseline-hashes.txt` "Pass-4" section after
-Phase 4-F lands.
+These hashes are the **new pass-4 invariant** — every subsequent
+pass-4 commit MUST hold the DNA hash + integrity wasm sha256
+byte-identical until pass-5+ does its own intentional integrity-
+zome bump. The full lineage + invariant statement lives in
+`.baseline-hashes.txt` "Pass-4" section.
 
 ## Commit + branch state
 

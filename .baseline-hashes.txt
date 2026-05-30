@@ -231,3 +231,102 @@ See:
 - `docs/HUMM_TAURI_FEATURE_ENABLEMENT.md`  — feature-by-feature implementation guide
 - `docs/DNA_MIGRATION_GUIDE.md`            — migration mechanics (Pass-3 wire-shape migration section)
 - `docs/HANDOFF_UPDATED_INFO.md`           — living delta from pass-2.5 to pass-3
+
+Pass-4 (branch feat-integrity-pass-4-recipient-witnesses, FINAL)
+---------------------------------------------------------------------
+Built from: 9e1f842 (pass-4 Phase 4-E tip; the commit that produced
+the recorded wasm shas — Phase 4-F adds this baseline section and
+the final report. The shas were captured on the Phase 4-E tip
+because Phase 4-F is a docs-only addition; the wasm output is
+deterministic against the production-code commit (9dc0690 +
+be6a93b coordinator-no-op script comment).)
+
+Integrity zome changes (G-6.2 recipient-set integrity:
+RecipientWitness + AclBucket + recipient_witnesses field on
+AclSpec::HiveGroup + bidirectional PKA cross-check + per-witness
+verification; G-4.4 hive back-port: enforce_hive_grant_window +
+rule 4 in validate_create_hive_membership) intentionally bump the
+DNA hash again. The pass-3 invariant is dead on this branch — it
+is the inverse: pass-4 commits land a new DNA hash that becomes
+the new invariant once the cutover lands.
+
+  DNA hash (FINAL):        uhC0kNS2JM6lqmdxr3Q8VK2uhDJFF-wRBz-W73JjJKZnTTMyT8_JS
+  content_integrity.wasm:  1f4534b24332d9fdf089b66e80c04b4eb370994841b554bfcb455524b6f0c3c4
+  content.wasm:            7a9e7a9800053a916b50141fd6cc72265d0090e3965a44eb90ae4ec298ca8370
+  hApp bundle sha256:      50d409602fa8d9eeacf553a497aff39191bc9cc4f1c9ffd8080d3c8e0e844abd
+
+Lineage within pass-4 branch
+----------------------------
+- 9dc0690 feat(integrity): pass-4 G-6.2 recipient witnesses + G-4.4 hive grant-window
+- be6a93b feat(migration): pass-4 classifier comments reflect recipient_witnesses wire shape (coordinator no-op)
+- 9e1f842 docs(handoff): pass-4 deploy handoff + ACLSpec wire shape + roadmap + E.4.l invite links
+- HEAD    chore(baseline): record pass-4 DNA hash + wasm shas (Phase 4-F)
+
+Tests
+-----
+- 69 integrity host-side tests green (58 pass-3 baseline + 9 G-6.2
+  witness branches + 2 G-4.4 hive back-port; one redundant 3rd
+  G-4.4 test dropped per reviewer feedback to keep the no-witness
+  fast path coverage tight). Pass-3 had 58 integrity tests; pass-4
+  net delta +11.
+- 22 coordinator host-side tests green (unchanged from pass-3; two
+  test fixtures gained the `recipient_witnesses: vec![]` field for
+  the new wire shape but no tests added or removed).
+- Wasm release build: zero warnings, both zomes.
+
+Pass-4 invariants
+-----------------
+- Pass-1 DNA hash HELD on its branch: ✓.
+- Pass-2 DNA hash HELD on its branch: ✓.
+- Pass-3 DNA hash HELD on its branch (b1e72aa): ✓.
+- Pass-4 DNA hash is the new invariant: every subsequent pass-4
+  commit MUST hold this DNA hash + integrity wasm sha256 byte-
+  identical until pass-5+ does its own intentional integrity-zome
+  bump. Coordinator wasm sha256 MAY change (per the same precedent
+  set by pass-2.5 + pass-3).
+
+What is NEW in pass-4 (security)
+--------------------------------
+- AclSpec::HiveGroup gains a required
+  `recipient_witnesses: Vec<RecipientWitness>` field. Each
+  witness names a real GroupMembership for a pubkey in
+  public_key_acl; validator enforces bidirectional cross-check
+  with bucket dominance (AclBucket = Owner > Admin > Writer >
+  Reader) + per-witness must_get_valid_record. Closes attack #5
+  (recipient-list forgery for routing fan-out).
+- HIVEGROUP_MAX_WITNESSES = 256 cardinality bound (analogous to
+  DM_MAX_RECIPIENTS = 32 + GROUP_ACL_MAX_GROUPS = 64).
+- enforce_hive_grant_window — G-4.4 back-port to HiveMembership.
+  An expiring Path-2 hive grantor can no longer extend the
+  delegation window or mint permanent grants. Mirrors the pass-3
+  group-layer rule, with the simpler one-witness-path attribution
+  model (Path-1 re-verification via fetch_genesis covers the
+  convention-break case where the grantor is also the genesis
+  author).
+
+What is DEFERRED still
+----------------------
+- Phase D.1 (group migration track + classification-overrides) —
+  separate branch feat-migration-d1-group-track. Until D.1 ships,
+  the migration classifier defaults legacy group-scoped content
+  to AclSpec::Public; humm-tauri post-migration UI re-stamps to
+  HiveGroup once real groups exist on the new DNA.
+- Tryorama integration tests covering fetch-dependent validator
+  branches — separate branch test-tryorama-integrity-coverage.
+
+Migration story
+---------------
+Same pipeline as pass-3: export → migrate-hive → grant-memberships
+→ import → mark-*. The pass-4 wire-shape addition is handled
+invisibly by the existing classifier for non-HiveGroup content
+(DM / Public / OpenWrite). HiveGroup content requires the D.1
+group track + per-bundle classification-overrides.json (separate
+branch) to migrate end-to-end; pre-D.1, HiveGroup entries default
+to Public via the classifier.
+
+See:
+- `docs/PASS_4_DEPLOY_HANDOFF.md`          — pass-4 deploy runbook + smoke tests
+- `docs/HUMM_TAURI_ACLSPEC_INTEGRATION.md` — pass-3 + pass-4 wire shape + per-modal mechanics
+- `docs/HUMM_TAURI_PASS_ROADMAP.md`        — per-pass concrete-task mapping for humm-tauri
+- `docs/HUMM_TAURI_FEATURE_ENABLEMENT.md`  — feature-by-feature implementation guide (E.4.l invite links new)
+- `docs/HANDOFF_UPDATED_INFO.md`           — living delta from pass-3 to pass-4
