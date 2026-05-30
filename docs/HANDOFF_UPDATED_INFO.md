@@ -396,7 +396,15 @@ authoritative into your UI.
   validator-amplification bound on HiveGroup (analogous to
   `DM_MAX_RECIPIENTS = 32`).
 - Phase D — Migration tooling extends (`scripts/migrate-dna.ts`
-  group track + AclSpec classification): **not started.**
+  content-type → AclSpec classifier + new wire-shape import +
+  schema_version 1/2 acceptance): **COMMITTED** *(this commit)*.
+  `DNA_MIGRATION_GUIDE.md` updated with the pass-3 wire-shape
+  migration section + classification table. **Phase D.1 deferred**:
+  the legacy-group → `GroupGenesis` track (`migrate-group` /
+  `grant-group-memberships`) and per-bundle
+  `classification-overrides.json` mechanism — defaults to `Public`
+  for unknown types in the meantime (rationale + humm-tauri
+  re-stamp guidance in the migration guide).
 - Phase E — Full handoff docs
   (`HUMM_TAURI_ACLSPEC_INTEGRATION.md` and
   `HUMM_TAURI_FEATURE_ENABLEMENT.md`): **not started.**

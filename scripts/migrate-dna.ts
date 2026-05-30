@@ -194,9 +194,159 @@ const ZOME_NAME = "content";
 const ROLE_NAME = "humm_earth_core";
 const MIGRATION_MARKER_SCHEMA_TAG = "humm-earth-core-happ/migration-marker";
 
-/** Roles accepted by the pass-2 HiveMembership integrity zome. */
+/** Roles accepted by the pass-2/pass-3 membership integrity zomes.
+ *  Wire-form variant names match `Role` in the integrity zome (pass-3
+ *  shared between hive + group membership). */
 type HiveRole = "Owner" | "Admin" | "Writer" | "Reader";
 const HIVE_ROLES: readonly HiveRole[] = ["Owner", "Admin", "Writer", "Reader"];
+
+/**
+ * Pass-3 wire-shape: `AclSpec` discriminated-union variants accepted
+ * by the new `EncryptedContentHeader.acl_spec` field. Wire-form follows
+ * the serde external-tag convention (`{ "VariantName": { ...fields } }`).
+ */
+type AclSpecKind = "HiveGroup" | "DirectMessage" | "Public" | "OpenWrite";
+
+/**
+ * Content-type → `AclSpec` variant classification table used by the
+ * `import` track to re-stamp pass-1/pass-2 entries onto the pass-3
+ * wire shape. Every legacy entry on the source chain needs to land in
+ * exactly one of the four pass-3 variants; for content types the
+ * humm-tauri product roadmap has explicitly placed in DM /
+ * OpenWrite / Public scopes we list them here. Everything else falls
+ * through to the default mapping below.
+ *
+ * Coverage of shipped humm-tauri content types is best-effort: the
+ * canonical reference is `docs/HUMM_TAURI_ACLSPEC_INTEGRATION.md`
+ * (Phase E.1 — not yet written; defer to that doc when it lands).
+ * Operators with custom content types should add entries here BEFORE
+ * running `import`. A per-bundle classification-overrides file
+ * (Phase D.1, deferred) will replace the in-script table when shipped.
+ */
+const CONTENT_TYPE_ACL_SPEC: Readonly<Record<string, AclSpecKind>> = {
+  // DirectMessage — cross-hive pair/small-group messaging.
+  "direct_message": "DirectMessage",
+  "hummhive-core-peer-identity-claim-v1": "DirectMessage",
+  // OpenWrite — outsider-knock + cross-network discovery.
+  "hummhive-core-member-request-v1": "OpenWrite",
+  "hummhive-core-hive-discovery-v1": "OpenWrite",
+  "hummhive-core-agent-directory-v1": "OpenWrite",
+  // Public — world-readable hive content.
+  "humm-addon-text-post-v1": "Public",
+  "hummhive-core-hive-v1": "Public",
+};
+
+/** Fallback classification for content types not listed above. We pick
+ * `Public` (not `HiveGroup`) intentionally: pass-3 `HiveGroup` requires
+ * the author to hold Writer+ in every group listed in `group_acl.*`,
+ * but pass-1/pass-2 had no `group_acl` field, so the migration cannot
+ * populate it without operator input. `Public` keeps the entry readable
+ * by every member of the hive (via hive Writer+ on the author),
+ * matching the most common humm-tauri "everyone in the hive sees this"
+ * pattern. humm-tauri can re-stamp specific entries to `HiveGroup`
+ * post-migration once real groups exist (see Phase D.1 follow-up). */
+const DEFAULT_ACL_SPEC_KIND: AclSpecKind = "Public";
+
+/** Resolve `(hive_genesis_hash, author_membership_hash, agent_pubkey,
+ * old_public_key_acl)` into the wire-shape value of `acl_spec` for the
+ * given content type. `old_public_key_acl` may be the legacy shape
+ * `{owner, admin, writer, reader: string[]}` or `null`; only the DM
+ * variant needs it (reader bucket pin). */
+function classifyAclSpec(
+  contentType: string,
+  hiveGenesisHashBytes: Uint8Array,
+  authorMembershipHashBytes: Uint8Array | null,
+  targetAgentBase64: string,
+  oldPublicKeyAcl: unknown,
+): { acl_spec: unknown; public_key_acl: unknown; display_hive_id: string | null } {
+  const kind = CONTENT_TYPE_ACL_SPEC[contentType] ?? DEFAULT_ACL_SPEC_KIND;
+  const oldReaders =
+    typeof oldPublicKeyAcl === "object" &&
+    oldPublicKeyAcl !== null &&
+    Array.isArray((oldPublicKeyAcl as { reader?: unknown }).reader)
+      ? ((oldPublicKeyAcl as { reader: string[] }).reader as string[])
+      : [];
+  switch (kind) {
+    case "DirectMessage": {
+      // Best-effort: re-use the legacy public_key_acl.reader as the
+      // recipient set. The author MUST be in it for the validator to
+      // accept; the import flow restamps the author pubkey so we
+      // splice it in if absent. Cardinality bounds are checked by the
+      // integrity zome at commit time.
+      const recipientsB64 = Array.from(
+        new Set<string>(oldReaders.concat([targetAgentBase64])),
+      );
+      // Strip the 'u' multibase prefix and decode to raw 39-byte
+      // holohash so the validator's `for_agent == header.author`
+      // check passes (action.author is a raw AgentPubKey, not a
+      // string).
+      const recipients = recipientsB64.map((b64) => decodeHashFromBase64(b64));
+      // Reader bucket MUST equal recipients (sorted-equality at the
+      // validator). Both sides use the same multibase string form.
+      return {
+        acl_spec: { DirectMessage: { recipients } },
+        public_key_acl: {
+          owner: "",
+          admin: [],
+          writer: [],
+          reader: recipientsB64,
+        },
+        display_hive_id: null,
+      };
+    }
+    case "OpenWrite": {
+      // member-request / hive-discovery: keep the hive context as the
+      // target (so list_by_hive on the new DNA still surfaces them
+      // under the target hive's discovery index). hive-discovery
+      // entries published with empty hive_id translate to
+      // OpenWrite { target: None }; everything else stays bound.
+      // The import flow passes hive_genesis_hash even for these,
+      // because the bundle's `header.hive_id` was non-empty on the
+      // source. We let the operator drop the binding by tweaking
+      // their bundle pre-import (or by adjusting this table).
+      return {
+        acl_spec: { OpenWrite: { target_hive_genesis_hash: hiveGenesisHashBytes } },
+        public_key_acl: oldPublicKeyAcl ?? {
+          owner: "",
+          admin: [],
+          writer: [],
+          reader: [],
+        },
+        display_hive_id: null,
+      };
+    }
+    case "Public": {
+      return {
+        acl_spec: {
+          Public: {
+            hive_genesis_hash: hiveGenesisHashBytes,
+            author_membership_hash: authorMembershipHashBytes,
+          },
+        },
+        public_key_acl: oldPublicKeyAcl ?? {
+          owner: "",
+          admin: [],
+          writer: [],
+          reader: [],
+        },
+        display_hive_id: null,
+      };
+    }
+    case "HiveGroup": {
+      // No legacy → HiveGroup mapping yet (requires the migrated
+      // group-track to exist; deferred to Phase D.1). If an operator
+      // adds a content type to CONTENT_TYPE_ACL_SPEC mapped to
+      // HiveGroup before D.1 ships, surface a clear error so the
+      // import does not silently produce a broken entry.
+      throw new Error(
+        `HiveGroup classification for content_type "${contentType}" requires ` +
+          `the group-migration track (Phase D.1, not yet shipped). Either ` +
+          `change the classification in CONTENT_TYPE_ACL_SPEC or wait for ` +
+          `D.1.`,
+      );
+    }
+  }
+}
 
 /** Bundle entry shape. One per `EncryptedContent` action on the source chain. */
 type BundleEntry = {
@@ -213,6 +363,9 @@ type BundleEntry = {
   encrypted_content: {
     header: {
       id: string;
+      /** Legacy field name (was `hive_id` in pass-1/2 bundles). The
+       *  pass-3 wire field is `display_hive_id`; the bundle preserves
+       *  the original property name so older exports round-trip. */
       hive_id: string;
       /** Pass-2 schema: present on bundles sourced from pass-2 DNAs;
        * absent on pass-1 bundles. The raw decoded value is a Uint8Array
@@ -860,9 +1013,23 @@ async function doImport(
     exported_at_iso: string;
     entries: SerializedBundleEntry[];
   };
-  if (raw.schema_version !== 1) {
+  // Bundle schema_version contract:
+  //  - 1 = pre-pass-3 (every legacy export tagged 1; pass-1/2 wire shape).
+  //  - 2 = pass-3 (new wire shape in the exported header — currently
+  //        produced only by hypothetical pass-3-aware exports; absent in
+  //        practice today).
+  // The classifier below restamps schema_version 1 bundles into the
+  // pass-3 wire shape on import; the operator does not need to
+  // pre-translate. Anything other than {1, 2} is unknown.
+  if (raw.schema_version !== 1 && raw.schema_version !== 2) {
     throw new Error(
-      `Unsupported bundle schema_version: ${raw.schema_version} (expected 1)`,
+      `Unsupported bundle schema_version: ${raw.schema_version} (expected 1 or 2)`,
+    );
+  }
+  if (raw.schema_version === 2) {
+    console.log(
+      `[import] bundle schema_version=2 (pass-3 wire shape); restamp ` +
+        `via classifier still applies for cross-DNA migration`,
     );
   }
   console.log(
@@ -964,20 +1131,45 @@ async function doImport(
     }
     const authorMembershipHash =
       membershipByGenesisB64.get(hive.new_genesis_hash_base64) ?? null;
+    // Pass-3: classify the entry into one of the four AclSpec variants
+    // based on content_type, then build the new wire-shape input. The
+    // classifier handles the author-pubkey restamp for DirectMessage
+    // (splices the new agent into the recipient set) and inlines the
+    // hive_genesis_hash + author_membership_hash into HiveGroup/Public
+    // variants. Legacy `header.acl` is intentionally NOT carried over —
+    // pass-3 HiveGroup uses an ActionHash-keyed group_acl, which the
+    // migration cannot populate without the group track (Phase D.1).
+    const hiveGenesisHashBytes = decodeHashFromBase64(hive.new_genesis_hash_base64);
+    let classified;
+    try {
+      classified = classifyAclSpec(
+        header.content_type,
+        hiveGenesisHashBytes,
+        authorMembershipHash,
+        targetAgentBase64,
+        header.public_key_acl,
+      );
+    } catch (err) {
+      remap.failures.push({
+        id: header.id,
+        old_action_hash: entry.old_action_hash,
+        error: `classify_acl_spec_failed: ${String(err)}`,
+      });
+      process.stdout.write("F");
+      continue;
+    }
     // Restamp the signing pubkey to match the new agent. The integrity
     // zome enforces action.author == header.revision_author_signing_public_key
     // (`check_author_matches_header`) — failing this would invalidate every
     // committed entry.
     const input = {
       id: header.id,
-      hive_id: header.hive_id,
-      hive_genesis_hash: decodeHashFromBase64(hive.new_genesis_hash_base64),
-      author_membership_hash: authorMembershipHash,
+      display_hive_id: classified.display_hive_id ?? header.hive_id,
       content_type: header.content_type,
       revision_author_signing_public_key: targetAgentBase64,
       bytes,
-      acl: header.acl,
-      public_key_acl: header.public_key_acl,
+      acl_spec: classified.acl_spec,
+      public_key_acl: classified.public_key_acl,
       dynamic_links: null, // host re-stamps from app state if needed
     };
     try {
