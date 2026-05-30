@@ -301,6 +301,8 @@ mod tests {
             header: EncryptedContentHeader {
                 id: "msg-1".into(),
                 hive_id: "hive-1".into(),
+                hive_genesis_hash: ActionHash::from_raw_36(vec![7u8; 36]),
+                author_membership_hash: None,
                 content_type: "dm".into(),
                 revision_author_signing_public_key: "uhCAk-original-author".into(),
                 acl: sample_acl(),

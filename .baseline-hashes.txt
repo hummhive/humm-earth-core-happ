@@ -1,15 +1,50 @@
-DNA-HASH-BASELINE (HEAD = c326e62, pre-implementation)
-=======================================================
-DNA hash (canonical, hc dna hash):
-  uhC0kT0Tkc3b6ccfa75YwWdzpSWvdkXERpdqkxIndRhfK5TJAUusY
+DNA-HASH-BASELINE — Pass-2 (feat-integrity-pass-2, intentional bump)
+=====================================================================
+This file records the DNA hash invariant per release pass.
 
-WASM sha256:
-  content_integrity.wasm  8c620847f7ae8878769e000452f2f89a4954a747b1c51c129666cdf0978f2c5c
-  content.wasm            f4277cfd50d3937eba652a788802199c064fe2e978d2d821825fcd9bfc7ecc7f
+Pass-1 (HEAD = c326e62 → a10a4ba, branch feat-optional-recipient-id, PUSHED)
+---------------------------------------------------------------------
+Coordinator-only changes (C0/C1/C2/C3, C4-C7b + module split, migration
+scaffold, docs, deploy handoff). The pass-1 INVARIANT was: every commit
+in that branch held the DNA hash byte-identical so the coordinator
+hot-swap path was viable.
 
-INVARIANT
----------
-After all coordinator-only changes (C4/C5/C6/C7/C7b + C2 fix + module split):
-  - content_integrity.wasm sha256 MUST match the above byte-for-byte.
-  - DNA hash MUST match the above byte-for-byte.
-  - content.wasm sha256 WILL change (expected — that's the whole point).
+  DNA hash:                uhC0kT0Tkc3b6ccfa75YwWdzpSWvdkXERpdqkxIndRhfK5TJAUusY
+  content_integrity.wasm:  8c620847f7ae8878769e000452f2f89a4954a747b1c51c129666cdf0978f2c5c
+  content.wasm:            f4277cfd50d3937eba652a788802199c064fe2e978d2d821825fcd9bfc7ecc7f
+
+Pass-2 (branch feat-integrity-pass-2, this commit)
+---------------------------------------------------------------------
+Integrity zome changes (I-H validated hive membership infrastructure +
+I-A receiver-initiated tombstone + I-C offline DM inbox) **intentionally
+bump the DNA hash**. The pass-1 invariant is DEAD on this branch — it's
+the inverse: pass-2 commits MUST land a new, consistent DNA hash that
+becomes the new invariant once the cutover lands.
+
+  DNA hash (NEW):          uhC0kzl0W9BBITBGu-NeUaXPxqxSPj0yTGfDD3UH3EjhfLDQZfZxe
+  content_integrity.wasm:  82639e455c004d04a1f6fbf25f01abf26241e2fbe1733cbe39db7882a4fb2402
+  content.wasm:            76ca7f5bb8ab4752ace71549800704f548d2a1d291cbecec3e324e083c236b99
+
+VERIFICATION
+------------
+- DNA hash CHANGED from pass-1: ✓ (new bytes, see above)
+- content_integrity.wasm CHANGED: ✓ (new bytes)
+- content.wasm CHANGED: ✓ (new bytes)
+
+The pass-2 invariant is: every subsequent pass-2 commit MUST hold these
+NEW hashes byte-identical until pass-3+ does its own intentional bump.
+
+Migration story
+---------------
+The pass-1 migration scaffold (`encrypted_content::migration::*` +
+`scripts/migrate-dna.ts`) activates on this DNA-hash change. Hosts
+running pass-1 see their entries' `get_migration_marker` reader return
+markers pointing at pass-2 entry hashes once authors have published
+forward-pointer markers on the old DNA.
+
+See:
+- `docs/DNA_MIGRATION_GUIDE.md`        — migration mechanics (extended for pass-2)
+- `docs/HUMM_TAURI_COORDINATOR_INTEGRATION.md`
+                                        — wire-shape change list for humm-tauri
+- `docs/PASS_1_DEPLOY_HANDOFF.md`      — superseded; see PASS_2_DEPLOY_HANDOFF for the
+                                          post-pass-2 deployment runbook

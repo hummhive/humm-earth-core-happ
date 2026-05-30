@@ -3,14 +3,20 @@
 //! `Vec<EncryptedContentResponse>` (or scalar variants where the query
 //! shape demands it).
 //!
-//! Phase-1 contract: every query path uses
+//! Pass-2 cutover: every hive-scoped query keys off
+//! `hive_genesis_hash: ActionHash` instead of `hive_id: String`. The
+//! integrity validator recomputes link bases from the target entry's
+//! `header.hive_genesis_hash`; queries MUST present the same value or
+//! they will land on a different path and return empty.
+//!
+//! Phase-1 contract preserved: every query path uses
 //! `get_links(LinkQuery, GetStrategy::Network)` — the high-level HDK API
 //! — to keep the call shape uniform and reviewable. Cursor pagination
-//! (Phase 2) is deferred: `LinkQuery` has no native limit/tiebreaker,
-//! and a timestamp-only cursor risks dupes / gaps at microsecond
-//! collisions. The single safe addition is `since_ts` + `limit` on the
-//! hive query (C2) — paired with **oldest-first** sort so the
-//! watermark sweep on the host side is gap-free.
+//! (Phase 2) is still deferred: `LinkQuery` has no native
+//! limit/tiebreaker, and a timestamp-only cursor risks dupes / gaps at
+//! microsecond collisions. The single safe addition is `since_ts` +
+//! `limit` on the hive query (C2) — paired with **oldest-first** sort
+//! so the watermark sweep on the host side is gap-free.
 
 use content_integrity::*;
 use hdi::hash_path::path::Component;
@@ -43,7 +49,7 @@ pub fn get_encrypted_content_by_time_and_author(
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct ListByDynamicLinkInput {
-    pub hive_id: String,
+    pub hive_genesis_hash: ActionHash,
     pub content_type: String,
     pub dynamic_link: String,
 }
@@ -53,7 +59,7 @@ pub fn list_by_dynamic_link(
     input: ListByDynamicLinkInput,
 ) -> ExternResult<Vec<EncryptedContentResponse>> {
     let path = Path::from(vec![
-        Component::from(input.hive_id),
+        Component::from(input.hive_genesis_hash.to_string()),
         Component::from(input.content_type),
         Component::from(input.dynamic_link.clone()),
     ]);
@@ -71,7 +77,7 @@ pub fn list_by_dynamic_link(
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct ListByHiveInput {
-    pub hive_id: String,
+    pub hive_genesis_hash: ActionHash,
     pub content_type: String,
     /// When set, only links created after this timestamp are returned
     /// (boundary inclusivity follows the conductor's `LinkQuery::after`
@@ -89,9 +95,9 @@ pub struct ListByHiveInput {
     pub limit: Option<usize>,
 }
 
-/// List entries linked off the hive path (`[hive_id, content_type]` →
-/// `Hive`). Supports time-windowed sweeps via `since_ts` and result
-/// capping via `limit`.
+/// List entries linked off the hive path
+/// (`[hive_genesis_hash_b64, content_type]` → `Hive`). Supports
+/// time-windowed sweeps via `since_ts` and result capping via `limit`.
 ///
 /// **C2 fix.** Earlier this function sorted newest-first then truncated to
 /// `limit`. For a watermark sweep with `>limit` new entries that is a
@@ -105,7 +111,7 @@ pub struct ListByHiveInput {
 #[hdk_extern]
 pub fn list_by_hive_link(input: ListByHiveInput) -> ExternResult<Vec<EncryptedContentResponse>> {
     let path = Path::from(vec![
-        Component::from(input.hive_id),
+        Component::from(input.hive_genesis_hash.to_string()),
         Component::from(input.content_type.clone()),
     ]);
     let path_hash = path.path_entry_hash()?;
@@ -135,7 +141,7 @@ pub fn list_by_hive_link(input: ListByHiveInput) -> ExternResult<Vec<EncryptedCo
 /// wire shape.
 #[derive(Serialize, Deserialize, Debug)]
 pub struct CountByHiveInput {
-    pub hive_id: String,
+    pub hive_genesis_hash: ActionHash,
     pub content_type: String,
     /// Same semantics as `ListByHiveInput::since_ts` — links created
     /// after the supplied timestamp (boundary inclusivity follows the
@@ -153,7 +159,7 @@ pub struct CountByHiveInput {
 #[hdk_extern]
 pub fn count_links_by_hive(input: CountByHiveInput) -> ExternResult<usize> {
     let path = Path::from(vec![
-        Component::from(input.hive_id),
+        Component::from(input.hive_genesis_hash.to_string()),
         Component::from(input.content_type),
     ]);
     let path_hash = path.path_entry_hash()?;
@@ -171,7 +177,7 @@ pub fn count_links_by_hive(input: CountByHiveInput) -> ExternResult<usize> {
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct ListByContentIdInput {
-    pub hive_id: String,
+    pub hive_genesis_hash: ActionHash,
     pub content_id: String,
 }
 
@@ -180,7 +186,7 @@ pub fn get_by_content_id_link(
     input: ListByContentIdInput,
 ) -> ExternResult<EncryptedContentResponse> {
     let path = Path::from(vec![
-        Component::from(input.hive_id.clone()),
+        Component::from(input.hive_genesis_hash.to_string()),
         Component::from(input.content_id.clone()),
     ]);
     let links = get_links(
@@ -204,7 +210,7 @@ pub fn get_by_content_id_link(
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct ListByAclInput {
-    pub hive_id: String,
+    pub hive_genesis_hash: ActionHash,
     pub content_type: String,
     /// `Owner` | `Admin` | `Writer` | `Reader`. String because the
     /// historical `serde` setup for the enum form was flaky; kept as
@@ -216,7 +222,7 @@ pub struct ListByAclInput {
 #[hdk_extern]
 pub fn list_by_acl_link(input: ListByAclInput) -> ExternResult<Vec<EncryptedContentResponse>> {
     let path = Path::from(vec![
-        Component::from(input.hive_id),
+        Component::from(input.hive_genesis_hash.to_string()),
         Component::from(input.content_type),
         Component::from(input.entity_id.clone()),
     ]);
@@ -282,23 +288,26 @@ pub fn list_by_author(input: ListByAuthorInput) -> ExternResult<Vec<EncryptedCon
 
 /// Input for `fetch_pair_ss_with_hive_check` (C4).
 ///
-/// All fields are required. `active_hive_id` is the host's currently
-/// active hive (humm-tauri tracks this in `ActiveHiveStore`); the C4
-/// guarantee only holds within that hive's writer set, so the host MUST
-/// pass it explicitly rather than letting the zome infer one.
+/// `active_hive_genesis_hash` is the host's currently active hive's
+/// cryptographic identity (humm-tauri tracks this post-pass-2 in
+/// `ActiveHiveStore`). C4's guarantee only holds within that hive's
+/// writer set, so the host MUST pass it explicitly rather than letting
+/// the zome infer one.
 #[derive(Serialize, Deserialize, Debug)]
 pub struct FetchPairWithHiveCheckInput {
     /// The author whose pair-SS entries the caller wants. Matches on the
     /// `[author, content_type]` → `Hive` author path. This path is
     /// Holochain-attested: an entry is on this path iff that agent is
-    /// the action.author.
+    /// the action.author (post-pass-2: AND the link integrity validator
+    /// confirmed `link.author == target.action.author`).
     pub author: String,
-    /// The active hive the caller trusts. The zome only returns entries
-    /// also reachable from `[active_hive_id, content_type, group_id]` →
-    /// `Dynamic` — a path a writer of THIS hive must have created. A
-    /// poisoned SS authored elsewhere is on the author path but not on
-    /// this hive's dynamic path, so the intersection excludes it.
-    pub active_hive_id: String,
+    /// The active hive the caller trusts, as the `HiveGenesis` action
+    /// hash. The zome only returns entries also reachable from
+    /// `[active_hive_genesis_hash_b64, content_type, group_id]` →
+    /// `Dynamic` — a path a Writer+ member of THIS hive MUST have
+    /// authored (post-pass-2: enforced by the link integrity validator,
+    /// not just convention).
+    pub active_hive_genesis_hash: ActionHash,
     pub content_type: String,
     /// The pair/group identifier used as the third component of the
     /// dynamic path. Opaque to the zome.
@@ -312,38 +321,28 @@ pub struct FetchPairWithHiveCheckInput {
 ///
 /// ## What this DOES defend against
 ///
-/// Against an **unmodified-client** attacker who can only invoke the
-/// stock `create_encrypted_content` extern with arbitrary inputs, the
-/// intersection narrows results to entries that are both
+/// Against ANY attacker — including one running modified coordinator
+/// WASM — the intersection narrows results to entries that are both
 /// authored-by-target AND placed under the caller's chosen
-/// `(active_hive_id, content_type, group_id)` dynamic path. Such an
-/// attacker, lacking access to put their poison under the victim's
-/// active hive's dynamic path via the normal create flow, will at most
-/// place their entry under their OWN `hive_id` — which fails the
-/// intersection.
+/// `(active_hive_genesis_hash, content_type, group_id)` dynamic path.
+/// Post-pass-2, the integrity zome validates BOTH legs:
 ///
-/// ## What this DOES NOT defend against (load-bearing — read this)
+/// - `Hive` author-shape links require `link.author ==
+///   target.action.author`, so the author path cannot be polluted by
+///   third parties.
+/// - `Dynamic` links require `link.author == target.action.author` AND
+///   the target's `header.hive_genesis_hash` matches the path's first
+///   component AND the target's author holds Writer+ HiveMembership in
+///   that hive. A poisoned SS authored by Mallory cannot bind to bob's
+///   hive's dynamic path because Mallory lacks a bob-issued
+///   HiveMembership.
 ///
-/// **This function does NOT close H-1** against any attacker willing to
-/// run modified coordinator WASM (the standard Holochain adversary —
-/// coordinator code is not a security boundary). Today the integrity
-/// zome validators for `LinkTypes::Hive` and `LinkTypes::Dynamic` are
-/// no-op `Ok(Valid)` stubs
-/// (`dnas/humm_earth_core/zomes/integrity/content/src/lib.rs:119,127`
-/// and `:302,310`); a modified-coordinator Mallory can directly publish
-/// arbitrary `Hive` and `Dynamic` links pointing at her poison entry,
-/// landing it in BOTH sets the intersection consults — including the
-/// victim's active hive's dynamic path. The intersection therefore
-/// returns the poisoned entry.
-///
-/// Closing H-1 properly requires integrity-level validators that prove
-/// (a) the `Hive` author-path link's base equals the link author, and
-/// (b) the `Dynamic` link's author has writer rights to the hive named
-/// by the base path. Both are DNA-hash-bumping changes deferred per the
-/// plan's I-A/I-B/I-C class. Until those ship, the TS-side trust checks
-/// in `humm-tauri` (`from_agent` from C1 + decrypt-and-verify the SS)
-/// remain the load-bearing control; C4 is a defense-in-depth narrowing,
-/// not a cryptographic guarantee.
+/// **H-1 closure status (post-pass-2):** This function NOW closes H-1
+/// cryptographically. The pre-pass-2 caveat ("does NOT defend against
+/// modified coordinator WASM") is RESOLVED — the integrity-layer link
+/// validators are the load-bearing control. The function survives as a
+/// query-level convenience, but its safety properties are inherited
+/// from the integrity layer rather than from intersection arithmetic.
 ///
 /// ## Empty-result semantics
 ///
@@ -356,11 +355,12 @@ pub struct FetchPairWithHiveCheckInput {
 /// ## Robustness — single-bad-entry isolation (SEC-3 mitigation)
 ///
 /// The intersection set is fetched **best-effort**: hashes that fail to
-/// resolve (dead entries, transient DHT propagation gaps, attacker-
-/// injected garbage AHs) are dropped from the result rather than
-/// failing the whole call. This prevents an attacker-injected
-/// unresolvable hash in the intersection from acting as a targeted
-/// denial-of-service against legitimate pair-SS lookups.
+/// resolve (dead entries, transient DHT propagation gaps) are dropped
+/// from the result rather than failing the whole call. With the
+/// pass-2 integrity validators in place, attacker-injected garbage AHs
+/// in the link space are now structurally impossible (the link itself
+/// would fail validation), but the best-effort behaviour remains
+/// useful for the transient-gap case.
 #[hdk_extern]
 pub fn fetch_pair_ss_with_hive_check(
     input: FetchPairWithHiveCheckInput,
@@ -385,7 +385,7 @@ pub fn fetch_pair_ss_with_hive_check(
     }
 
     let hive_path = Path::from(vec![
-        Component::from(input.active_hive_id),
+        Component::from(input.active_hive_genesis_hash.to_string()),
         Component::from(input.content_type),
         Component::from(input.group_id),
     ]);
@@ -415,11 +415,11 @@ pub fn fetch_pair_ss_with_hive_check(
     if intersection.is_empty() {
         return Ok(vec![]);
     }
-    // Best-effort fetch (SEC-3): skip un-resolvable hashes rather than
-    // failing the whole query. An attacker who managed to inject one
-    // garbage AH into the intersection (only possible under the
-    // modified-coordinator scenario the docstring acknowledges) would
-    // otherwise DoS legitimate pair-SS lookups.
+    // Best-effort fetch: skip un-resolvable hashes rather than failing
+    // the whole query. Post-pass-2 the integrity validators prevent
+    // attacker-injected garbage AHs from landing in either link set in
+    // the first place; this branch survives only for transient DHT
+    // propagation gaps.
     let mut out: Vec<EncryptedContentResponse> = Vec::with_capacity(intersection.len());
     for ah in intersection {
         match get_encrypted_content(ah.clone()) {

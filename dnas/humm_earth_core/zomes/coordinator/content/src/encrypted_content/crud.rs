@@ -33,6 +33,8 @@ pub fn create_encrypted_content(
         header: EncryptedContentHeader {
             id: input.id,
             hive_id: input.hive_id.clone(),
+            hive_genesis_hash: input.hive_genesis_hash.clone(),
+            author_membership_hash: input.author_membership_hash.clone(),
             content_type: input.content_type.clone(),
             revision_author_signing_public_key: input.revision_author_signing_public_key,
             acl: input.acl,

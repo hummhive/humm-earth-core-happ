@@ -50,7 +50,25 @@ pub struct EncryptedContentResponse {
 #[derive(Clone, PartialEq)]
 pub struct CreateEncryptedContentInput {
     pub id: String,
+    /// Display alias for the hive (preserves the legacy squuid
+    /// `hive_id` semantics for UX continuity). NOT load-bearing for
+    /// security — see `hive_genesis_hash` for the cryptographic
+    /// identity. May be the empty string for hive-discovery entries
+    /// that intentionally sit OUTSIDE any hive's content path.
     pub hive_id: String,
+    /// Cryptographic hive identity. The integrity validator looks
+    /// this hash up via `must_get_valid_record` and verifies it
+    /// references a `HiveGenesis` entry; the action.author of the
+    /// entry being created must hold at least Writer authority in
+    /// this hive (see `author_membership_hash`).
+    pub hive_genesis_hash: ActionHash,
+    /// `None` = the entry's author IS the genesis author for the
+    /// hive (implicit Owner role, no membership entry needed).
+    /// `Some(hash)` = the validator must fetch this `HiveMembership`
+    /// entry and verify it grants the author at least Writer role
+    /// for `hive_genesis_hash`. Coordinators populate this via the
+    /// `get_latest_membership` helper before each write.
+    pub author_membership_hash: Option<ActionHash>,
     pub content_type: String,
     pub revision_author_signing_public_key: String,
     pub bytes: SerializedBytes,

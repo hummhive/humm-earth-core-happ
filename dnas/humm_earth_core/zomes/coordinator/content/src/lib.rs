@@ -1,4 +1,6 @@
 pub mod encrypted_content;
+pub mod hive;
+pub mod inbox;
 pub mod linking;
 
 use content_integrity::*;
@@ -82,6 +84,37 @@ pub fn set_cap_tokens() -> ExternResult<()> {
     // filter (only updates by the original entry's author count as
     // valid markers; see `get_migration_marker`'s doc-comment), so it
     // does not rely on the cap surface for forge resistance.
+    // Pass-2 (I-H) — hive-membership read externs. These are query-only
+    // and surface DHT-public data (HiveGenesis and HiveMembership entries
+    // are public; the link space is public). `Unrestricted` matches the
+    // existing pattern for every other read extern.
+    fns.insert((zome.clone(), "get_latest_membership".into()));
+    fns.insert((zome.clone(), "list_my_hives".into()));
+
+    // Pass-2 (I-C) — inbox read externs. Same rationale: queries over
+    // DHT-public link space. `probe_inbox` reads links keyed off the
+    // caller's own pubkey, so an unauthorised peer cap-calling
+    // `probe_inbox` from elsewhere would just see their own inbox via
+    // `agent_info().agent_initial_pubkey` (which surfaces THE
+    // CONDUCTOR'S agent, not the peer's) — making the cap grant
+    // structurally inert from a peer's vantage point. Granted for
+    // uniformity with the rest of the read surface.
+    fns.insert((zome.clone(), "probe_inbox".into()));
+    fns.insert((zome.clone(), "get_last_probe".into()));
+
+    // NOT GRANTED:
+    // - `create_hive_genesis` / `create_hive_membership` — mutate the
+    //   caller's source chain; only the local UI should invoke them.
+    //   Granting would let any peer pollute another agent's chain with
+    //   bogus hive entries.
+    // - `send_to_inbox` — local UI invocation; the link write happens
+    //   on the caller's source chain. Granting would let any peer use
+    //   another agent as an inbox-write proxy (amplification + spoofing
+    //   the link author).
+    // - `consume_inbox_item` / `record_probe` — write the caller's
+    //   source chain; local-only by the same reasoning as the CRUD
+    //   externs.
+
     fns.insert((zome.clone(), "get_migration_marker".into()));
 
     // `recv_remote_signal` is invoked by the conductor on every agent
