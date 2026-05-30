@@ -2,8 +2,11 @@ DNA-HASH-BASELINE — Pass-2 (feat-integrity-pass-2, intentional bump)
 =====================================================================
 This file records the DNA hash invariant per release pass.
 
-Pass-1 (HEAD = c326e62 → a10a4ba, branch feat-optional-recipient-id, PUSHED)
+Pass-1 (branch feat-optional-recipient-id, PUSHED)
 ---------------------------------------------------------------------
+Built from: a10a4ba (tip of feat-optional-recipient-id at the time the
+recorded wasm shas were built; the C-class integrity-touching range
+spans c326e62 → a10a4ba inclusive).
 Coordinator-only changes (C0/C1/C2/C3, C4-C7b + module split, migration
 scaffold, docs, deploy handoff). The pass-1 INVARIANT was: every commit
 in that branch held the DNA hash byte-identical so the coordinator
@@ -15,6 +18,8 @@ hot-swap path was viable.
 
 Pass-2 (branch feat-integrity-pass-2, FINAL)
 ---------------------------------------------------------------------
+Built from: 891acc9 (pass-2 FINAL; the commit that produced the
+recorded wasm shas).
 Integrity zome changes (I-H validated hive membership infrastructure +
 I-A receiver-initiated tombstone + I-C offline DM inbox) intentionally
 bump the DNA hash. The pass-1 invariant is dead on this branch — it is
@@ -41,6 +46,8 @@ sha256 holds byte-identical.
 
 Pass-2.5 (coordinator-only follow-up, branch feat-integrity-pass-2)
 -------------------------------------------------------------------
+Built from: 2cde900 (the commit that produced the recorded coordinator
+wasm sha).
 MigrationMarkerV2 (additive forward-compatible superset of V1) +
 get_migration_marker_v2 reader + mark_migrated_v2 writer +
 scripts/migrate-dna.ts hive-identity track + DNA_MIGRATION_GUIDE
