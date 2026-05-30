@@ -10,15 +10,15 @@
  * tests exercise. C4 is therefore a meaningful defense-in-depth narrowing
  * for the realistic attacker.
  *
- * **It does NOT close H-1** against a modified-coordinator adversary —
- * see the long doc-comment on `fetch_pair_ss_with_hive_check` in
- * `queries.rs` and the "C4 — what this DOES and DOES NOT defend against"
- * section of `docs/HUMM_TAURI_COORDINATOR_INTEGRATION.md`. A modified
- * coordinator can publish arbitrary `Hive` and `Dynamic` links because
- * the integrity validators for those link types are currently no-op
- * stubs (deferred I-D). These tests therefore exercise the structural
- * intersection only; they would NOT detect a modified-coordinator
- * Mallory.
+ * **Defense-in-depth posture.** Pass-2's I-H validators (`Hive` and
+ * `Dynamic` link validators recompute the expected base from each
+ * link's target-entry header fields and reject mismatches) close the
+ * cryptographic H-1 gap that the original I-D row in the integration
+ * guide flagged. C4's intersection is now the FIRST-stage filter on
+ * top of those integrity-enforced link constraints rather than a
+ * standalone control. These tests still exercise the structural
+ * intersection only; the per-link integrity validators have their own
+ * coverage in `cargo test -p content_integrity --lib`.
  *
  * Fixture — three players:
  *   - alice   : victim / caller. Her active hive is SHARED_HIVE; she

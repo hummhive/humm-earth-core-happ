@@ -11,9 +11,10 @@ their hives.
 
 For the full per-change reference, see
 [`HUMM_TAURI_COORDINATOR_INTEGRATION.md`](./HUMM_TAURI_COORDINATOR_INTEGRATION.md)
-(pass-2 section appended) and
-[`DNA_MIGRATION_GUIDE.md`](./DNA_MIGRATION_GUIDE.md) (pass-2 migration
-flow section appended).
+(pass-1 historical context, with a pass-2 banner at the top that
+redirects here) and
+[`DNA_MIGRATION_GUIDE.md`](./DNA_MIGRATION_GUIDE.md) (pass-2.5 migration
+mechanics).
 
 ## TL;DR
 
@@ -223,11 +224,11 @@ The write externs stay local-only by design — granting them
   `GroupMemberList` entries (separate from this DNA's `HiveMembership`)
   remain author-asserted. Treating them as load-bearing would require
   a third integrity entry type (`GroupMembership`); deferred.
-- **Tryorama coverage.** Host-side cargo tests (26 integrity + 11
-  coordinator = 37 total, all green) are the load-bearing proof.
-  Tryorama tests for I-H, I-A, I-C are scaffolded but the harness is
-  not yet paired in this repo. When it lands, the existing test
-  fixtures port directly.
+- **Tryorama coverage.** Host-side cargo tests (26 integrity + 22
+  coordinator = 48 total, all green at pass-2.5 HEAD `2cde900`) are
+  the load-bearing proof. Tryorama tests for I-H, I-A, I-C are
+  scaffolded but the harness is not yet paired in this repo. When it
+  lands, the existing test fixtures port directly.
 
 ## Hash invariants for verification
 
@@ -246,15 +247,19 @@ Recorded in `.baseline-hashes.txt` at the repo root.
 
 - **Branch:** `feat-integrity-pass-2` (from `a10a4ba` on
   `feat-optional-recipient-id`).
-- **Commit:** `1fa4d37` — `feat(integrity): pass-2 validated hive
-  membership + delete authority + offline inbox`.
-- **21 files changed**, 2809 insertions, 532 deletions (3 new
-  integrity-zome modules + 6 new coordinator modules + 6 updated
-  coordinator files + 2 updated integrity files + baseline hash record).
+- **Pass-2 integrity commit:** `1fa4d37` — `feat(integrity): pass-2
+  validated hive membership + delete authority + offline inbox`
+  (21 files changed, 2809 insertions, 532 deletions).
+- **Pass-2 FINAL (after coding-standards cleanup):** `891acc9` —
+  `style(pass-2): strip task-ID labels per CODING_STANDARDS standard 3`.
+  Sets the DNA hash invariant for the pass-2 release.
+- **Pass-2.5 coordinator-only extension:** `2cde900` — `feat(coordinator):
+  pass-2.5 migration tooling — MigrationMarkerV2 + hive-identity track`.
+  HEAD as of this writing; DNA hash byte-identical to pass-2 FINAL.
 - **Authoritative mirror:** `~/humm-earth-core-happ` (Linux). Use
   `git -C /mnt/c/proj/github/hummhive/humm-earth-core-happ merge --ff-only
   wsl/feat-integrity-pass-2` (or equivalent fetch path) to sync the
-  Windows mirror after this commit lands.
+  Windows mirror after each commit lands.
 
 ## Migration commands (operational)
 

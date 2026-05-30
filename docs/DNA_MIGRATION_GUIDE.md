@@ -302,7 +302,7 @@ Failures land in the `failures` array with one of:
 ### `mark-hive-migrated` (owner, step 5)
 
 ```bash
-NEW_DNA_HASH_BASE64=$(hc dna hash workdir/humm_earth_core.dna) \
+NEW_DNA_HASH_BASE64=$(hc dna hash dnas/humm_earth_core/workdir/humm_earth_core.dna) \
 NEW_APP_ID=humm-earth-core@2 \
 ADMIN_PORT=4444 npx tsx scripts/migrate-dna.ts mark-hive-migrated \
   humm-earth-core@1 \
@@ -322,7 +322,7 @@ bundle OR by editing the JSON directly.
 ### `mark-migrated` (either side, step 5; per-entry)
 
 ```bash
-NEW_DNA_HASH_BASE64=$(hc dna hash workdir/humm_earth_core.dna) \
+NEW_DNA_HASH_BASE64=$(hc dna hash dnas/humm_earth_core/workdir/humm_earth_core.dna) \
 ADMIN_PORT=4444 npx tsx scripts/migrate-dna.ts mark-migrated \
   humm-earth-core@1 \
   /tmp/migrate/remap.json
@@ -595,9 +595,9 @@ practice this is what the four-phase pass-2 flow degenerates to when
 no integrity changes ship — write a hive-bundle by hand or skip
 mark-hive-migrated entirely.
 
-Pre-pass-2 details preserved in
-[`git log -- docs/DNA_MIGRATION_GUIDE.md`](https://) for the original
-narrative if you need it.
+The pre-pass-2 narrative is preserved in the `docs/DNA_MIGRATION_GUIDE.md`
+history (see `git log --follow -- docs/DNA_MIGRATION_GUIDE.md` from a
+local checkout) if you need it.
 
 ---
 

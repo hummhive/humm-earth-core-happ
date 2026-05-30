@@ -229,34 +229,47 @@ entry under their OWN `hive_id` — which fails the intersection.
 
 #### What this DOES NOT defend against (load-bearing — read this)
 
-**This function does NOT close H-1** against any attacker willing to
-run modified coordinator WASM (the standard Holochain adversary —
-coordinator code is not a security boundary). Today the integrity zome
-validators for `LinkTypes::Hive` and `LinkTypes::Dynamic` are no-op
-`Ok(Valid)` stubs
+> **Pass-2 update:** The integrity-zome gap below was the original
+> motivation for I-D in pass-1's "deferred" plan. **Pass-2 has shipped
+> the I-H validators that close this gap** — the `Hive` and `Dynamic`
+> link validators now recompute the expected base from the target
+> entry's validated header fields and reject mismatches, and writer
+> membership in the named hive is enforced via the `HiveMembership`
+> chain walk. The text below is preserved as the pre-pass-2 reality.
+> See [`PASS_2_DEPLOY_HANDOFF.md`](./PASS_2_DEPLOY_HANDOFF.md) for the
+> pass-2 ship state.
+
+**At pass-1 HEAD, this function did NOT close H-1** against any
+attacker willing to run modified coordinator WASM (the standard
+Holochain adversary — coordinator code is not a security boundary).
+The integrity zome validators for `LinkTypes::Hive` and
+`LinkTypes::Dynamic` were no-op `Ok(Valid)` stubs
 (the `RegisterCreateLink` and `StoreRecord::CreateLink` arms of the
 integrity zome's `validate(op: Op)` dispatcher for both `LinkTypes::Hive`
-and `LinkTypes::Dynamic`); a modified-coordinator Mallory can directly publish
-arbitrary `Hive` and `Dynamic` links pointing at her poison entry,
-landing it in BOTH sets the intersection consults — including the
-victim's active hive's dynamic path. The intersection therefore returns
-the poisoned entry.
+and `LinkTypes::Dynamic`); a modified-coordinator Mallory could
+directly publish arbitrary `Hive` and `Dynamic` links pointing at her
+poison entry, landing it in BOTH sets the intersection consulted —
+including the victim's active hive's dynamic path. The intersection
+therefore returned the poisoned entry.
 
-Closing H-1 properly requires integrity-level validators that prove
+Closing H-1 properly required integrity-level validators that prove
 (a) the `Hive` author-path link's base equals the link author, and
 (b) the `Dynamic` link's author has writer rights to the hive named by
-the base path. Both are DNA-hash-bumping changes deferred to the
-second-pass scope (see "What was NOT done" → second-pass items at the
-end of this doc).
+the base path. Both shipped in pass-2 as part of the I-H validated
+hive-membership infrastructure (see "Integrity-layer items — shipped
+in pass-2" below).
 
-**Until those integrity validators ship, the TS-side trust checks
-remain the load-bearing control:**
+**At pass-1 HEAD, until those integrity validators shipped, the
+TS-side trust checks were the load-bearing control:**
 
 - `from_agent` from C1 (cryptographically attested by the conductor).
 - Decrypt-and-verify the SS body using the expected sender's pubkey;
   reject SS that fails MAC/signature verification.
 - Treat C4 as a defense-in-depth narrowing, not a cryptographic
   guarantee.
+
+At pass-2 HEAD the integrity validators are the cryptographic
+guarantee; the TS-side trust checks above are kept as defense-in-depth.
 
 **humm-tauri call site:** `src/api/content/sharedSecret/index.ts`
 `fetchPairFromAuthor` (~line 600). The TS-side filter against
@@ -482,40 +495,29 @@ humm-tauri devs don't re-discover them by accident:
   conflicts in humm-tauri's blob-store (see planning doc "Dependency
   refresh" section).
 
-### Integrity-layer items — **second pass, separate branch**
+### Integrity-layer items — **shipped in pass-2**
 
-These all change the DNA hash → forks the network → require a planned
-migration / user wipe. They are the natural second-pass scope. From the
-ecosystem research at
-`holochain-ecosystem/HAPP_COORDINATOR_CHANGES.md` (a sibling checkout
-adjacent to this repo)
-(deferred I-class) and from this pass's reviewer findings:
+The deferred items below have ALL shipped on `feat-integrity-pass-2`
+(commit `1fa4d37`, pass-2 FINAL at `891acc9`). See
+[`PASS_2_DEPLOY_HANDOFF.md`](./PASS_2_DEPLOY_HANDOFF.md) for the
+ship-state details. The table below is the original pass-1-era
+"deferred I-class" plan, preserved as historical context with each
+row annotated with its pass-2 outcome.
 
-| ID | Name | Driving doc | Why required |
+| ID | Name | Driving doc | Pass-2 outcome |
 |---|---|---|---|
-| **I-A** | Receiver-initiated native HC tombstone for DMs | `humm-tauri/.newTasks/T_DM_DELETE_IMPL.md` §"DNA changes (Tier B)" | Restrict deletes in `validate_delete_encrypted_content` to author OR `original_entry.public_key_acl.reader`. Today it returns `Valid` unconditionally. |
-| **I-B** | Dual sender-key fields in `EncryptedContentHeader` | `humm-tauri/.newTasks/T_SECURITY_SENDER_IDENTITY_UNATTESTED.md` §"Scope of fix" §1 | New `sender_signing_pubkey: String` carrying the Tauri-keyring Ed25519 key separate from `revision_author_signing_public_key`. New validator enforces `action.author == header.revision_author_signing_public_key`. |
-| **I-C** | DHT Inbox link type + `DmProbeLog` private entry | (ecosystem research) | New link type + new private entry type for offline-deliverable DM signaling. |
-| **I-D (NEW — from this pass's reviewers)** | **Hive/Dynamic link integrity validators (true H-1 fix)** | This pass's security review SEC-1; planning doc's C4 caveat | Today `LinkTypes::Hive` and `LinkTypes::Dynamic` validators are no-op `Ok(Valid)` stubs in the integrity zome's `validate(op: Op)` dispatcher (both `RegisterCreateLink` and `StoreRecord::CreateLink` arms). Add: (a) Hive author-path link's base MUST equal link author; (b) Dynamic link's author MUST have writer rights to the hive named by the base path. Without these, C4's intersection is a defense-in-depth narrowing but NOT a cryptographic H-1 guarantee. |
+| **I-A** | Receiver-initiated native HC tombstone for DMs | `humm-tauri/.newTasks/T_DM_DELETE_IMPL.md` §"DNA changes (Tier B)" | **Shipped.** `validate_delete_encrypted_content` now restricts deletes to author OR any agent listed in `public_key_acl.{owner\|admin\|writer\|reader}`. |
+| **I-B** | Dual sender-key fields in `EncryptedContentHeader` | `humm-tauri/.newTasks/T_SECURITY_SENDER_IDENTITY_UNATTESTED.md` §"Scope of fix" §1 | **Closed without code change.** humm-tauri's conductor-keyring binding (`agentPubkey.ts`) already binds the AgentPubKey's inner 32 bytes to the Ed25519 signing key, so a separate `sender_signing_pubkey` header field would be redundant. |
+| **I-C** | DHT Inbox link type + `DmProbeLog` private entry | (ecosystem research) | **Shipped.** New `Inbox` link type + `DmProbeLog` private entry + `InboxEvent` discriminator + `probe_inbox` / `send_to_inbox` / `consume_inbox_item` / `record_probe` / `get_last_probe` externs. |
+| **I-H (was I-D in this doc's pass-1 framing)** | Validated hive-membership infrastructure (the true H-1 fix) | This doc's pass-1 SEC-1; planning doc's C4 caveat | **Shipped.** NEW `HiveGenesis` + `HiveMembership` entries + `HiveRole` enum. Every hive-scoped link validator (`Hive` / `Dynamic` / `HummContent*` / `HummContentId`) recomputes the expected base path from the target entry's validated header fields and rejects links whose claimed base does not match. |
 
-The second-pass branch should pick these up as a coherent unit — they
-all share the migration story (existing users wipe + re-bootstrap), so
-it makes sense to ship them together rather than bumping the DNA hash
-multiple times in succession. Suggested branch ordering inside that
-pass:
-
-1. **I-D first** (closes the real C4 H-1 gap — directly enables the
-   security claim humm-tauri's TS layer currently has to enforce).
-2. **I-B second** (the dual-keypair issue — humm-tauri has two
-   signing keys, the current header only attests one).
-3. **I-A third** (delete authorization at the integrity layer —
-   completes the DM lifecycle).
-4. **I-C last** (new entry/link types for offline DM delivery).
-
-Each one needs its own validator tests in the integrity zome (`cargo
-test -p content_integrity`); the DNA-hash invariant check from this pass
-becomes the inverse check in the second pass (hash MUST change in a
-predictable, reproducible way).
+The pass-2 branch shipped them as a coherent unit since they share the
+migration story (existing users migrate forward via the pass-2.5
+tooling). Each one has its own validator tests in the integrity zome
+(`cargo test -p content_integrity --lib` — 26 tests green at pass-2.5
+HEAD `2cde900`); the DNA-hash invariant from pass-1 inverted into the
+pass-2 invariant (hash MUST change, recorded in
+[`.baseline-hashes.txt`](../.baseline-hashes.txt)).
 
 ---
 
@@ -562,10 +564,14 @@ of patterns we inherited:
   all-rooms and all-attachments listings. The TODO is self-flagged in
   the upstream source so it's not a novel disclosure — just a heads-up
   that copying presence's pattern verbatim inherits the gap.
-- **humm-earth-core-happ (this repo) at HEAD** — every link validator
-  is a stub. Pass 2's I-D item closes this with author-vs-link-base
-  enforcement on `LinkTypes::Hive` and writer-membership enforcement on
-  `LinkTypes::Dynamic`.
+- **humm-earth-core-happ (this repo) at pass-1 HEAD** — every link
+  validator was a stub. **Pass-2's I-H item closed this** with
+  author-vs-link-base enforcement on `LinkTypes::Hive`, writer-membership
+  enforcement on `LinkTypes::Dynamic`, and path-recomputation +
+  author-binding on `HummContent*` / `HummContentId`. The integrity
+  zome's `validate(op: Op)` dispatcher now wires every link type to
+  a real validator on both `RegisterCreateLink` and
+  `StoreRecord::CreateLink` arms.
 
 **Lesson for humm-tauri developers:** when reading "this is enforced
 at the integrity layer" anywhere in this codebase (or in ecosystem
