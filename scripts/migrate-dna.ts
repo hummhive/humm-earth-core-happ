@@ -7,54 +7,115 @@
  * installations must be present on the same conductor with distinct
  * app-ids.
  *
- * This is the *coordinator-side* migration tool — it shuttles entries
- * through the existing `get_messages_since` (export) and
- * `create_encrypted_content` (import) externs. No new zome surface is
- * required for the migration itself; the surface is two scripts and a
- * remap file.
+ * Two coordinated tracks ship in this tool:
  *
- *   1. `export <app-id> <out.bundle.json>`
- *      Connect to the OLD app's AppWebsocket; call
- *      `get_messages_since({ since_seq: 0 })` to pull every Record
- *      from the local source chain; decode each Record's entry into an
- *      `EncryptedContent` payload; write a self-contained bundle file.
+ *  - **Per-entry track** (`export` → `import` → `mark-migrated`) — the
+ *    pass-1 baseline. Shuttles every live `EncryptedContent` entry from
+ *    the old chain onto the new chain via `create_encrypted_content`
+ *    and writes forward-pointer markers onto the old chain so old
+ *    clients can detect the move.
+ *  - **Hive-identity track** (`migrate-hive` → `grant-memberships` →
+ *    `mark-hive-migrated`) — pass-2 addition. The pass-2 integrity zome
+ *    requires every `EncryptedContent` to carry a `hive_genesis_hash`
+ *    (cryptographic hive identity) plus an optional
+ *    `author_membership_hash`. Before the per-entry `import` can
+ *    succeed, the hive owner MUST publish a `HiveGenesis` on the new
+ *    DNA and grant memberships to the cell agents who will re-import
+ *    their entries. The hive-bundle file captures
+ *    `old_hive_id → new_genesis_hash` so `import` can stamp the new
+ *    field onto every entry.
  *
- *   2. `import <app-id> <in.bundle.json> <out.remap.json>`
- *      Connect to the NEW app's AppWebsocket; iterate the bundle;
- *      replay each entry via `create_encrypted_content` (with the
- *      caller's new `revision_author_signing_public_key`); record the
- *      `old_action_hash -> new_action_hash` map to disk.
+ * # Command pipeline (pass-2)
  *
- *   3. `mark-migrated <old-app-id> <in.remap.json>`
- *      Connect to the OLD app's AppWebsocket; for each successfully-
- *      imported entry, call `mark_migrated` to write a forward-pointer
- *      `MigrationMarkerV1` onto the old chain. Old clients that later
- *      query the same action hash via `get_migration_marker` see the
- *      marker and can prompt the user to upgrade. Idempotent (re-running
- *      writes a fresh marker; latest-from-trusted-author wins).
+ *   1. `migrate-hive <new-app-id> <old-hive-id> <old-anchor-ah> <hive-bundle.json>`
+ *      Owner-side. Creates a `HiveGenesis` on the new DNA for the
+ *      named old hive; appends a hive entry to the hive-bundle. The
+ *      old-anchor-ah identifies the OLD entry the marker will be
+ *      written onto in step 4 (pass `""` to defer; the bundle's
+ *      `old_marker_action_hash` stays null and step 4 skips it with
+ *      a warning).
  *
- * The remap file is the load-bearing handoff to the host
- * (humm-tauri): every persisted reference (localStorage keys, SS
- * lookups, thread IDs that include action hashes, etc.) MUST be
- * rewritten by walking this map.
+ *   2. `grant-memberships <new-app-id> <hive-bundle.json> <old-hive-id> <role> <member-pubkey-b64> [...]`
+ *      Owner-side. Calls `create_hive_membership` on the new DNA for
+ *      each listed member pubkey at the given role
+ *      (`Owner`|`Admin`|`Writer`|`Reader`). Appends the resulting
+ *      membership hashes into the hive-bundle's `granted_memberships`.
+ *      Members read these hashes during `import` via
+ *      `get_latest_membership` (cached for performance).
+ *
+ *   3. `export <old-app-id> <out.bundle.json>`
+ *      Either side. Identical to the pass-1 export: walks the local
+ *      source chain in `action_seq` order, dedupes via `header.id`
+ *      (latest live wins; deletes drop the id), emits a self-contained
+ *      bundle file.
+ *
+ *   4. `import <new-app-id> <bundle.json> <hive-bundle.json> <out.remap.json>`
+ *      Either side. For every entry in the bundle, looks up
+ *      `header.hive_id` in the hive-bundle, resolves the new
+ *      `hive_genesis_hash` and the caller's `author_membership_hash`
+ *      via a one-time `get_latest_membership` lookup per hive (cached),
+ *      and replays the entry via `create_encrypted_content` with the
+ *      pass-2 fields stamped. Records `old_action_hash -> new_action_hash`
+ *      plus the new genesis hash for downstream rewrite.
+ *
+ *   5. `mark-hive-migrated <old-app-id> <hive-bundle.json>`
+ *      Owner-side. For each hive in the bundle with
+ *      `old_marker_action_hash` populated, calls `mark_migrated_v2` on
+ *      the OLD app to write a V2 marker pointing at the new
+ *      `HiveGenesis`. Members discover the new genesis hash by calling
+ *      `get_migration_marker_v2` against the recorded old anchor.
+ *
+ *   6. `mark-migrated <old-app-id> <in.remap.json> [--v1-only]`
+ *      Either side. For each successfully-imported per-entry record,
+ *      calls `mark_migrated_v2` (default) or `mark_migrated` (with
+ *      `--v1-only`) to write a forward-pointer marker. Old clients
+ *      that later query the same action hash via the appropriate
+ *      reader see the marker and prompt their user to upgrade.
+ *      Idempotent (re-running writes a fresh marker;
+ *      latest-from-trusted-author wins).
+ *
+ * # Marker version selection
+ *
+ *  - V1 (`MigrationMarkerV1`, `mark_migrated`) — the pass-1 marker.
+ *    Recognised by pass-1 and pass-2 readers. Use `--v1-only` against
+ *    OLD apps whose coordinator predates pass-2.5 (the `mark_migrated_v2`
+ *    extern is unavailable there).
+ *  - V2 (`MigrationMarkerV2`, `mark_migrated_v2`) — pass-2.5 addition,
+ *    additive superset of V1. V2 carries the
+ *    `new_hive_genesis_hash_base64` field used by the hive-identity
+ *    track. **V1-only readers see V2 markers as `Ok(None)`** —
+ *    pre-pass-2 hosts cannot discover V2 markers and require a host
+ *    upgrade before they can follow the migration. See
+ *    `docs/DNA_MIGRATION_GUIDE.md` for the receiver-side contract.
+ *
+ * # Remap file
+ *
+ * The remap is the load-bearing handoff to the host (humm-tauri):
+ * every persisted reference (localStorage keys, SS lookups, thread
+ * IDs that include action hashes, etc.) MUST be rewritten by walking
+ * this map. Pass-2 remap records also carry
+ * `new_hive_genesis_hash_base64` so the host can rebuild its
+ * hive-genesis-keyed indices.
  *
  * # SECURITY — receiver-side rules for migration markers
  *
- * The coordinator extern `get_migration_marker` enforces that ONLY
- * updates authored by the original entry's author count as authoritative
- * markers (closes a forge surface where any peer could write a marker
- * on someone else's entry — see the marker security model in
- * docs/DNA_MIGRATION_GUIDE.md). That said, the consuming host
- * (humm-tauri) MUST still:
+ * The coordinator readers `get_migration_marker` and
+ * `get_migration_marker_v2` enforce that ONLY updates authored by the
+ * original entry's author count as authoritative markers (closes a
+ * forge surface where any peer could write a marker on someone else's
+ * entry — see the marker security model in
+ * `docs/DNA_MIGRATION_GUIDE.md`). The consuming host (humm-tauri) MUST
+ * still:
  *
  *   A. Validate the marker's `from_agent` / original-entry-author
  *      matches the trusted partner identity before treating the marker
  *      as a directive.
  *   B. NEVER auto-follow the marker's `new_dna_hash_base64` /
- *      `new_app_id` without explicit human approval. Switching DNA
+ *      `new_app_id` / `new_hive_genesis_hash_base64` without explicit
+ *      human approval. Switching DNA or joining a new HiveGenesis
  *      crosses a trust boundary and must be a user decision.
- *   C. Cross-verify that `new_action_hash_base64` resolves on the new DNA
- *      before redirecting any UI to it. Also handles the
+ *   C. Cross-verify that `new_action_hash_base64` resolves on the new
+ *      DNA before redirecting any UI to it. Also handles the
  *      uninstall/reinstall staleness case.
  *
  * # What is and is NOT migrated
@@ -72,7 +133,9 @@
  *   per `id` survives), deleted entries (excluded entirely),
  *   `Dynamic` links (derived from entry state, not in the entry
  *   payload — the host re-stamps via the normal create flow's
- *   `dynamic_links` arg if it preserves the group context).
+ *   `dynamic_links` arg if it preserves the group context),
+ *   `HiveGenesis`/`HiveMembership` entries (re-published by the
+ *   hive-identity track).
  *
  * # Limitations (read before running)
  *
@@ -80,40 +143,23 @@
  *    version per `id` is re-imported. If your application needs the
  *    full edit history, snapshot separately before migration.
  * 2. **Author pubkey changes.** Each cell in a fresh hApp installation
- *    has a fresh agent pubkey; the new `revision_author_signing_public_key`
- *    is the NEW agent's pubkey, not the old one. The integrity zome
- *    enforces this (`check_author_matches_header` in the integrity
- *    zome).
- * 3. **Pair-shared SS coordination.** Cross-agent shared secrets only
+ *    has a fresh agent pubkey; the new
+ *    `revision_author_signing_public_key` is the NEW agent's pubkey,
+ *    not the old one. The integrity zome enforces this
+ *    (`check_author_matches_header`).
+ * 3. **Owner-first sequencing.** The hive owner MUST run `migrate-hive`
+ *    + `grant-memberships` BEFORE members run `import`. A member whose
+ *    pubkey is not yet granted a HiveMembership on the new DNA cannot
+ *    re-import their entries (integrity rejects the write).
+ * 4. **Pair-shared SS coordination.** Cross-agent shared secrets only
  *    work after BOTH parties have migrated. Sequence carefully.
- * 4. **Encrypted bodies pass through opaquely.** Decryption keys
+ * 5. **Encrypted bodies pass through opaquely.** Decryption keys
  *    (Tauri keyring) MUST be unchanged across the migration, otherwise
  *    the migrated entries are unreadable.
- * 5. **DHT propagation timing.** After import, the new DNA's DHT needs
+ * 6. **DHT propagation timing.** After import, the new DNA's DHT needs
  *    time to gossip newly-created links to other agents' arcs. Expect
  *    a settling window before queries against the new DNA return the
  *    full set.
- *
- * # Usage
- *
- *     # Pre-migration: with the OLD hApp installed and running
- *     npx tsx scripts/migrate-dna.ts export old-happ-id /tmp/bundle.json
- *
- *     # User installs the new .happ (different DNA hash → different app-id)
- *     # via humm-tauri's install flow
- *
- *     # Post-migration: with the NEW hApp installed and running
- *     npx tsx scripts/migrate-dna.ts import new-happ-id /tmp/bundle.json /tmp/remap.json
- *
- *     # Optional but recommended: write forward-pointer markers back to
- *     # the OLD hApp so old-DNA clients can detect "this data has moved"
- *     # and prompt their users to upgrade.
- *     npx tsx scripts/migrate-dna.ts mark-migrated old-happ-id /tmp/remap.json
- *
- *     # The remap file is then consumed by humm-tauri's host-side
- *     # rewrite pass (separate, in humm-tauri's repo) to update every
- *     # localStorage key, SS lookup, and thread-id reference that
- *     # carries an old action hash.
  *
  * # Environment
  *
@@ -121,6 +167,12 @@
  * 4444). The script issues its own short-lived authentication token
  * via `issueAppAuthenticationToken` — no caller-supplied secret
  * required.
+ *
+ * Set `NEW_DNA_HASH_BASE64` to the multibase holohash of the NEW DNA
+ * (run `hc dna hash <new.dna>` to compute it) for use by `mark-migrated`
+ * and `mark-hive-migrated`. Optional; if unset, markers are written
+ * with an empty `new_dna_hash_base64` field and receivers must resolve
+ * the new DNA from `new_app_id` alone.
  */
 
 import {
@@ -134,12 +186,17 @@ import {
   type Record as HolochainRecord,
 } from "@holochain/client";
 import { decode } from "@msgpack/msgpack";
-import * as fs from "node:fs/promises";
-import * as path from "node:path";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { dirname } from "node:path";
 
 const ADMIN_PORT = Number(process.env.ADMIN_PORT ?? 4444);
 const ZOME_NAME = "content";
 const ROLE_NAME = "humm_earth_core";
+const MIGRATION_MARKER_SCHEMA_TAG = "humm-earth-core-happ/migration-marker";
+
+/** Roles accepted by the pass-2 HiveMembership integrity zome. */
+type HiveRole = "Owner" | "Admin" | "Writer" | "Reader";
+const HIVE_ROLES: readonly HiveRole[] = ["Owner", "Admin", "Writer", "Reader"];
 
 /** Bundle entry shape. One per `EncryptedContent` action on the source chain. */
 type BundleEntry = {
@@ -150,11 +207,20 @@ type BundleEntry = {
   /** ISO timestamp of the original action — preserved for diagnostic order. */
   action_timestamp_iso: string;
   /** Decoded EncryptedContent payload. Replayed as-is on the new DNA except
-   * for `revision_author_signing_public_key`, which is restamped. */
+   * for `revision_author_signing_public_key`, which is restamped, AND the
+   * pass-2 `hive_genesis_hash` / `author_membership_hash` fields which are
+   * re-resolved against the hive-bundle + the new DNA. */
   encrypted_content: {
     header: {
       id: string;
       hive_id: string;
+      /** Pass-2 schema: present on bundles sourced from pass-2 DNAs;
+       * absent on pass-1 bundles. The raw decoded value is a Uint8Array
+       * (msgpack ActionHash); `import` ignores this field and re-resolves
+       * the new-DNA hash from the hive-bundle keyed by `hive_id`. */
+      hive_genesis_hash?: Uint8Array;
+      /** Pass-2 schema. Carried for completeness; `import` re-resolves. */
+      author_membership_hash?: Uint8Array | null;
       content_type: string;
       revision_author_signing_public_key: string;
       acl: unknown;
@@ -179,6 +245,10 @@ type RemapRecord = {
   new_action_hash: string;
   content_type: string;
   hive_id: string;
+  /** Pass-2 addition: present iff the entry was imported with a
+   * `hive_genesis_hash` (always true for pass-2 imports, absent for
+   * legacy pass-1 remaps). Multibase holohash string. */
+  new_hive_genesis_hash_base64?: string;
 };
 
 type Remap = {
@@ -193,6 +263,45 @@ type Remap = {
   entries: RemapRecord[];
   /** Entries that failed to re-import; host should retry or surface to user. */
   failures: { id: string; old_action_hash: string; error: string }[];
+};
+
+/** Granted-membership record stored inside a `HiveBundleHive`. */
+type GrantedMembership = {
+  for_agent_base64: string;
+  role: HiveRole;
+  membership_hash_base64: string;
+};
+
+/** Per-hive record inside a `HiveBundle`. */
+type HiveBundleHive = {
+  /** The squuid hive_id on the OLD DNA — the key the per-entry bundle's
+   * `header.hive_id` is matched against during `import`. */
+  old_hive_id: string;
+  /** Multibase holohash of the `HiveGenesis` action on the NEW DNA. */
+  new_genesis_hash_base64: string;
+  /** Display alias stamped on the new `HiveGenesis` (defaults to
+   * `old_hive_id` for continuity). */
+  new_display_id: string;
+  /** Pubkey of the agent that created the new HiveGenesis. Implicit
+   * Owner of the new hive (no membership entry required). */
+  owner_pubkey_base64: string;
+  /** Always `null`: the owner is implicit Owner via the integrity
+   * zome's "genesis author == implicit Owner" rule. Preserved as a
+   * field for forward compatibility — a future migration that requires
+   * an explicit owner membership could populate it. */
+  owner_membership_hash_base64: string | null;
+  /** Multibase holohash of the OLD-DNA entry that `mark-hive-migrated`
+   * will write the V2 marker onto. `null` to defer — the hive will be
+   * SKIPPED by `mark-hive-migrated` with a warning. */
+  old_marker_action_hash_base64: string | null;
+  /** Memberships granted to other agents via `grant-memberships`. */
+  granted_memberships: GrantedMembership[];
+};
+
+type HiveBundle = {
+  schema_version: 1;
+  generated_at_iso: string;
+  hives: HiveBundleHive[];
 };
 
 async function connectAppWs(
@@ -231,6 +340,50 @@ async function connectAppWs(
     );
   }
   return { appWebsocket, cellId: cell.value.cell_id, agentPubKey: appWebsocket.myPubKey };
+}
+
+// ---------------------------------------------------------------------------
+// Hive-bundle I/O helpers
+// ---------------------------------------------------------------------------
+
+/** Load + parse a hive-bundle file, or return an empty bundle if the file
+ * does not exist yet (`migrate-hive` builds the bundle incrementally). */
+async function loadHiveBundle(hiveBundlePath: string): Promise<HiveBundle> {
+  let raw: string;
+  try {
+    raw = await readFile(hiveBundlePath, "utf8");
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === "ENOENT") {
+      return {
+        schema_version: 1,
+        generated_at_iso: new Date().toISOString(),
+        hives: [],
+      };
+    }
+    throw err;
+  }
+  const parsed = JSON.parse(raw) as HiveBundle;
+  if (parsed.schema_version !== 1) {
+    throw new Error(
+      `Unsupported hive-bundle schema_version: ${parsed.schema_version} (expected 1)`,
+    );
+  }
+  return parsed;
+}
+
+async function saveHiveBundle(hiveBundlePath: string, bundle: HiveBundle): Promise<void> {
+  await mkdir(dirname(hiveBundlePath), { recursive: true });
+  await writeFile(hiveBundlePath, JSON.stringify(bundle, null, 2), "utf8");
+}
+
+function findHiveOrThrow(bundle: HiveBundle, oldHiveId: string): HiveBundleHive {
+  const hive = bundle.hives.find((h) => h.old_hive_id === oldHiveId);
+  if (!hive) {
+    throw new Error(
+      `Hive "${oldHiveId}" not found in hive-bundle. Run \`migrate-hive\` first.`,
+    );
+  }
+  return hive;
 }
 
 /**
@@ -394,38 +547,318 @@ async function doExport(appId: string, outPath: string): Promise<void> {
   };
 
   // Convert Uint8Array bytes to base64 for JSON round-trip stability.
+  // Header pass-2 fields (hive_genesis_hash, author_membership_hash)
+  // are also Uint8Array on the wire; preserve as base64 strings under
+  // a `_base64` suffix so the import side can decode them back without
+  // ambiguity. (Import re-resolves these from the hive-bundle, but the
+  // bytes carry diagnostic value for debugging mismatches.)
   const serializable = {
     ...bundle,
     entries: bundle.entries.map((e) => ({
       ...e,
       encrypted_content: {
         ...e.encrypted_content,
+        header: {
+          ...e.encrypted_content.header,
+          hive_genesis_hash: e.encrypted_content.header.hive_genesis_hash
+            ? encodeHashToBase64(e.encrypted_content.header.hive_genesis_hash as ActionHash)
+            : undefined,
+          author_membership_hash:
+            e.encrypted_content.header.author_membership_hash != null
+              ? encodeHashToBase64(
+                  e.encrypted_content.header.author_membership_hash as ActionHash,
+                )
+              : e.encrypted_content.header.author_membership_hash,
+        },
         bytes: Buffer.from(e.encrypted_content.bytes).toString("base64"),
       },
     })),
   };
-  await fs.mkdir(path.dirname(outPath), { recursive: true });
-  await fs.writeFile(outPath, JSON.stringify(serializable, null, 2), "utf8");
+  await mkdir(dirname(outPath), { recursive: true });
+  await writeFile(outPath, JSON.stringify(serializable, null, 2), "utf8");
   console.log(`[export] wrote bundle: ${outPath} (${entries.length} entries)`);
   await appWebsocket.client.close();
 }
 
+// ---------------------------------------------------------------------------
+// Hive-identity track
+// ---------------------------------------------------------------------------
+
+async function doMigrateHive(
+  newAppId: string,
+  oldHiveId: string,
+  oldAnchorActionHashB64: string,
+  hiveBundlePath: string,
+): Promise<void> {
+  if (!oldHiveId) throw new Error("old-hive-id must be a non-empty string");
+  console.log(
+    `[migrate-hive] loading hive-bundle from ${hiveBundlePath} ` +
+      `(will create if missing)...`,
+  );
+  const bundle = await loadHiveBundle(hiveBundlePath);
+  if (bundle.hives.some((h) => h.old_hive_id === oldHiveId)) {
+    throw new Error(
+      `Hive "${oldHiveId}" already present in ${hiveBundlePath}. ` +
+        `Refusing to overwrite — delete the entry or use a different bundle.`,
+    );
+  }
+
+  console.log(
+    `[migrate-hive] connecting to new app "${newAppId}" on port ${ADMIN_PORT}...`,
+  );
+  const { appWebsocket, cellId, agentPubKey } = await connectAppWs(newAppId);
+  const ownerPubkeyB64 = encodeHashToBase64(agentPubKey);
+  console.log(`[migrate-hive] connected. owner=${ownerPubkeyB64}`);
+
+  console.log(
+    `[migrate-hive] creating HiveGenesis with display_id=${JSON.stringify(oldHiveId)}...`,
+  );
+  const response = (await appWebsocket.callZome({
+    cell_id: cellId,
+    zome_name: ZOME_NAME,
+    fn_name: "create_hive_genesis",
+    payload: { display_id: oldHiveId },
+  })) as { genesis: { display_id: string }; hash: ActionHash };
+  const newGenesisHashB64 = encodeHashToBase64(response.hash);
+  console.log(`[migrate-hive] created. new_genesis_hash=${newGenesisHashB64}`);
+
+  const oldMarkerHash = oldAnchorActionHashB64.trim();
+  bundle.hives.push({
+    old_hive_id: oldHiveId,
+    new_genesis_hash_base64: newGenesisHashB64,
+    new_display_id: response.genesis.display_id,
+    owner_pubkey_base64: ownerPubkeyB64,
+    owner_membership_hash_base64: null,
+    old_marker_action_hash_base64: oldMarkerHash === "" ? null : oldMarkerHash,
+    granted_memberships: [],
+  });
+  bundle.generated_at_iso = new Date().toISOString();
+  await saveHiveBundle(hiveBundlePath, bundle);
+  console.log(
+    `[migrate-hive] hive-bundle updated: ${hiveBundlePath} ` +
+      `(${bundle.hives.length} hives total)`,
+  );
+  if (oldMarkerHash === "") {
+    console.warn(
+      `[migrate-hive] NOTE: old_marker_action_hash is null for "${oldHiveId}". ` +
+        `mark-hive-migrated will SKIP this hive. Edit the bundle JSON or ` +
+        `re-run migrate-hive on a fresh bundle to set it.`,
+    );
+  }
+  await appWebsocket.client.close();
+}
+
+async function doGrantMemberships(
+  newAppId: string,
+  hiveBundlePath: string,
+  oldHiveId: string,
+  role: HiveRole,
+  memberPubkeysB64: string[],
+): Promise<void> {
+  if (!HIVE_ROLES.includes(role)) {
+    throw new Error(
+      `Unknown role "${role}". Expected one of: ${HIVE_ROLES.join(", ")}`,
+    );
+  }
+  if (memberPubkeysB64.length === 0) {
+    throw new Error("grant-memberships requires at least one member pubkey");
+  }
+  const bundle = await loadHiveBundle(hiveBundlePath);
+  const hive = findHiveOrThrow(bundle, oldHiveId);
+  const genesisHash = decodeHashFromBase64(hive.new_genesis_hash_base64);
+
+  console.log(
+    `[grant-memberships] connecting to new app "${newAppId}" on port ${ADMIN_PORT}...`,
+  );
+  const { appWebsocket, cellId, agentPubKey } = await connectAppWs(newAppId);
+  const callerPubkeyB64 = encodeHashToBase64(agentPubKey);
+  if (callerPubkeyB64 !== hive.owner_pubkey_base64) {
+    console.warn(
+      `[grant-memberships] WARNING: caller pubkey ${callerPubkeyB64} differs ` +
+        `from hive owner ${hive.owner_pubkey_base64}. The integrity zome ` +
+        `accepts grants from non-owners only if the caller holds Admin+ in ` +
+        `this hive — proceed with caution.`,
+    );
+  }
+
+  let succeeded = 0;
+  const failures: { for_agent_base64: string; error: string }[] = [];
+  for (const memberB64 of memberPubkeysB64) {
+    try {
+      const agent = decodeHashFromBase64(memberB64);
+      const response = (await appWebsocket.callZome({
+        cell_id: cellId,
+        zome_name: ZOME_NAME,
+        fn_name: "create_hive_membership",
+        payload: {
+          hive_genesis_hash: genesisHash,
+          for_agent: agent,
+          role,
+          grantor_membership_hash: null,
+          expiry: null,
+        },
+      })) as { hash: ActionHash };
+      hive.granted_memberships.push({
+        for_agent_base64: memberB64,
+        role,
+        membership_hash_base64: encodeHashToBase64(response.hash),
+      });
+      succeeded++;
+      process.stdout.write(".");
+    } catch (err) {
+      failures.push({ for_agent_base64: memberB64, error: String(err) });
+      process.stdout.write("F");
+    }
+  }
+  process.stdout.write("\n");
+
+  bundle.generated_at_iso = new Date().toISOString();
+  await saveHiveBundle(hiveBundlePath, bundle);
+  console.log(
+    `[grant-memberships] granted ${succeeded} ${role} membership(s) ` +
+      `for hive "${oldHiveId}"; ${failures.length} failed.`,
+  );
+  if (failures.length > 0) {
+    for (const f of failures) {
+      console.error(`  FAILED for ${f.for_agent_base64}: ${f.error}`);
+    }
+    process.exit(1);
+  }
+  await appWebsocket.client.close();
+}
+
+async function doMarkHiveMigrated(
+  oldAppId: string,
+  hiveBundlePath: string,
+): Promise<void> {
+  const bundle = await loadHiveBundle(hiveBundlePath);
+  const targets = bundle.hives.filter(
+    (h) => h.old_marker_action_hash_base64 != null,
+  );
+  const skipped = bundle.hives.length - targets.length;
+  if (skipped > 0) {
+    console.warn(
+      `[mark-hive-migrated] skipping ${skipped} hive(s) without ` +
+        `old_marker_action_hash_base64 set (run migrate-hive with the ` +
+        `old anchor hash, or edit the bundle JSON to populate).`,
+    );
+  }
+  if (targets.length === 0) {
+    console.log(`[mark-hive-migrated] nothing to do.`);
+    return;
+  }
+
+  const newDnaHashBase64 = process.env.NEW_DNA_HASH_BASE64 ?? "";
+  if (!newDnaHashBase64) {
+    console.warn(
+      `[mark-hive-migrated] WARNING: NEW_DNA_HASH_BASE64 not set; markers ` +
+        `will carry new_dna_hash_base64="". Set via ` +
+        `\`NEW_DNA_HASH_BASE64=$(hc dna hash <new.dna>) ...\` to populate.`,
+    );
+  }
+
+  console.log(
+    `[mark-hive-migrated] connecting to old app "${oldAppId}" on port ${ADMIN_PORT}...`,
+  );
+  const { appWebsocket, cellId } = await connectAppWs(oldAppId);
+
+  const migratedAtMicroseconds = Date.now() * 1000;
+  // `new_app_id` for hive-identity markers points at the NEW app
+  // (the one carrying the new HiveGenesis). The hive-bundle does not
+  // record it (multiple new apps could share one hive-bundle in
+  // theory), so we fall back to the NEW_APP_ID env var. Empty string
+  // is acceptable: receivers can still resolve the new DNA via
+  // `new_dna_hash_base64` + the genesis hash — but if BOTH env vars
+  // are unset, receivers have no resolution path from the marker
+  // payload alone and depend on out-of-band info, so we warn parallel
+  // to NEW_DNA_HASH_BASE64.
+  const newAppId = process.env.NEW_APP_ID ?? "";
+  if (!newAppId) {
+    console.warn(
+      `[mark-hive-migrated] WARNING: NEW_APP_ID not set; markers will ` +
+        `carry new_app_id="". Set via \`NEW_APP_ID=<installed_app_id> ...\` ` +
+        `to populate.`,
+    );
+  }
+  let succeeded = 0;
+  const failures: { old_hive_id: string; error: string }[] = [];
+  for (const hive of targets) {
+    // Filter above guarantees this is non-null.
+    const oldMarkerHashB64 = hive.old_marker_action_hash_base64!;
+    const marker = {
+      schema_tag: MIGRATION_MARKER_SCHEMA_TAG,
+      schema_version: 2,
+      new_dna_hash_base64: newDnaHashBase64,
+      new_action_hash_base64: hive.new_genesis_hash_base64,
+      new_app_id: newAppId,
+      migrated_at_microseconds: migratedAtMicroseconds,
+      new_hive_genesis_hash_base64: hive.new_genesis_hash_base64,
+      new_hive_genesis_display_id: hive.new_display_id,
+    };
+    try {
+      await appWebsocket.callZome({
+        cell_id: cellId,
+        zome_name: ZOME_NAME,
+        fn_name: "mark_migrated_v2",
+        payload: {
+          original_action_hash: decodeHashFromBase64(oldMarkerHashB64),
+          marker,
+        },
+      });
+      succeeded++;
+      process.stdout.write(".");
+    } catch (err) {
+      failures.push({ old_hive_id: hive.old_hive_id, error: String(err) });
+      process.stdout.write("F");
+    }
+  }
+  process.stdout.write("\n");
+  console.log(
+    `[mark-hive-migrated] wrote ${succeeded} V2 marker(s); ${failures.length} failed.`,
+  );
+  if (failures.length > 0) {
+    for (const f of failures) {
+      console.error(`  FAILED for hive "${f.old_hive_id}": ${f.error}`);
+    }
+    process.exit(1);
+  }
+  await appWebsocket.client.close();
+}
+
+// ---------------------------------------------------------------------------
+// Per-entry track
+// ---------------------------------------------------------------------------
+
+/** Decode the on-disk bundle's per-entry shape (where `bytes` and the
+ * optional pass-2 header hashes are base64 strings) back into the wire
+ * shape (Uint8Array everywhere). Mirror of the encode block in
+ * `doExport`. */
+type SerializedBundleEntry = Omit<BundleEntry, "encrypted_content"> & {
+  encrypted_content: {
+    header: Omit<
+      BundleEntry["encrypted_content"]["header"],
+      "hive_genesis_hash" | "author_membership_hash"
+    > & {
+      hive_genesis_hash?: string;
+      author_membership_hash?: string | null;
+    };
+    bytes: string;
+  };
+};
+
 async function doImport(
   appId: string,
   bundlePath: string,
+  hiveBundlePath: string,
   remapPath: string,
 ): Promise<void> {
   console.log(`[import] reading bundle from ${bundlePath}...`);
-  const raw = JSON.parse(await fs.readFile(bundlePath, "utf8")) as {
+  const raw = JSON.parse(await readFile(bundlePath, "utf8")) as {
     schema_version: number;
     source_app_id: string;
     source_agent_pubkey_base64: string;
     exported_at_iso: string;
-    entries: (Omit<BundleEntry, "encrypted_content"> & {
-      encrypted_content: Omit<BundleEntry["encrypted_content"], "bytes"> & {
-        bytes: string; // base64
-      };
-    })[];
+    entries: SerializedBundleEntry[];
   };
   if (raw.schema_version !== 1) {
     throw new Error(
@@ -436,6 +869,17 @@ async function doImport(
     `[import] bundle from ${raw.source_app_id} (${raw.source_agent_pubkey_base64}) ` +
       `with ${raw.entries.length} entries.`,
   );
+
+  console.log(`[import] reading hive-bundle from ${hiveBundlePath}...`);
+  const hiveBundle = await loadHiveBundle(hiveBundlePath);
+  if (hiveBundle.hives.length === 0) {
+    throw new Error(
+      `Hive-bundle ${hiveBundlePath} is empty. Run \`migrate-hive\` for ` +
+        `each hive present in the bundle before importing.`,
+    );
+  }
+  const hivesByOldId = new Map(hiveBundle.hives.map((h) => [h.old_hive_id, h]));
+  console.log(`[import] ${hiveBundle.hives.length} hive mapping(s) loaded.`);
 
   console.log(`[import] connecting to target "${appId}" on port ${ADMIN_PORT}...`);
   const { appWebsocket, cellId, agentPubKey } = await connectAppWs(appId);
@@ -448,6 +892,41 @@ async function doImport(
         `expected if you re-installed onto the same lair key — confirm before ` +
         `proceeding.`,
     );
+  }
+
+  // Resolve author_membership_hash for each hive ONCE up-front. Two
+  // cases:
+  // - Caller IS the new hive's owner (genesis author) → null (implicit
+  //   Owner; no membership entry required by the integrity zome).
+  // - Otherwise → call `get_latest_membership` and use the returned
+  //   hash. If `None`, this caller cannot import entries for this
+  //   hive — pre-fail every affected entry with a clear error.
+  const membershipByGenesisB64 = new Map<string, ActionHash | null>();
+  const blockedHiveIds = new Set<string>();
+  for (const hive of hiveBundle.hives) {
+    if (hive.owner_pubkey_base64 === targetAgentBase64) {
+      membershipByGenesisB64.set(hive.new_genesis_hash_base64, null);
+      continue;
+    }
+    const response = (await appWebsocket.callZome({
+      cell_id: cellId,
+      zome_name: ZOME_NAME,
+      fn_name: "get_latest_membership",
+      payload: {
+        agent: agentPubKey,
+        hive_genesis_hash: decodeHashFromBase64(hive.new_genesis_hash_base64),
+      },
+    })) as { hash: ActionHash } | null;
+    if (!response) {
+      blockedHiveIds.add(hive.old_hive_id);
+      console.warn(
+        `[import] no membership for ${targetAgentBase64} in hive ` +
+          `"${hive.old_hive_id}" — entries in this hive will fail. ` +
+          `Ask the hive owner to run grant-memberships for your pubkey.`,
+      );
+      continue;
+    }
+    membershipByGenesisB64.set(hive.new_genesis_hash_base64, response.hash);
   }
 
   const remap: Remap = {
@@ -464,6 +943,27 @@ async function doImport(
   for (const entry of raw.entries) {
     const { header, bytes: bytesBase64 } = entry.encrypted_content;
     const bytes = new Uint8Array(Buffer.from(bytesBase64, "base64"));
+    const hive = hivesByOldId.get(header.hive_id);
+    if (!hive) {
+      remap.failures.push({
+        id: header.id,
+        old_action_hash: entry.old_action_hash,
+        error: `hive_not_in_hive_bundle: ${header.hive_id}`,
+      });
+      process.stdout.write("F");
+      continue;
+    }
+    if (blockedHiveIds.has(hive.old_hive_id)) {
+      remap.failures.push({
+        id: header.id,
+        old_action_hash: entry.old_action_hash,
+        error: `no_membership_in_new_hive: ${hive.old_hive_id}`,
+      });
+      process.stdout.write("F");
+      continue;
+    }
+    const authorMembershipHash =
+      membershipByGenesisB64.get(hive.new_genesis_hash_base64) ?? null;
     // Restamp the signing pubkey to match the new agent. The integrity
     // zome enforces action.author == header.revision_author_signing_public_key
     // (`check_author_matches_header`) — failing this would invalidate every
@@ -471,6 +971,8 @@ async function doImport(
     const input = {
       id: header.id,
       hive_id: header.hive_id,
+      hive_genesis_hash: decodeHashFromBase64(hive.new_genesis_hash_base64),
+      author_membership_hash: authorMembershipHash,
       content_type: header.content_type,
       revision_author_signing_public_key: targetAgentBase64,
       bytes,
@@ -493,6 +995,7 @@ async function doImport(
         new_action_hash: response.hash,
         content_type: header.content_type,
         hive_id: header.hive_id,
+        new_hive_genesis_hash_base64: hive.new_genesis_hash_base64,
       });
       process.stdout.write(".");
     } catch (err) {
@@ -506,8 +1009,8 @@ async function doImport(
   }
   process.stdout.write("\n");
 
-  await fs.mkdir(path.dirname(remapPath), { recursive: true });
-  await fs.writeFile(remapPath, JSON.stringify(remap, null, 2), "utf8");
+  await mkdir(dirname(remapPath), { recursive: true });
+  await writeFile(remapPath, JSON.stringify(remap, null, 2), "utf8");
   console.log(
     `[import] wrote remap: ${remapPath} ` +
       `(${remap.entries.length} succeeded, ${remap.failures.length} failed)`,
@@ -515,8 +1018,8 @@ async function doImport(
   if (remap.failures.length > 0) {
     console.log(
       `[import] failures present — review ${remapPath} 'failures' array, ` +
-        `address root cause (e.g. integrity validator changes, conductor ` +
-        `state) and re-run with the same bundle. Re-imports are NOT ` +
+        `address root cause (e.g. missing hive in hive-bundle, missing ` +
+        `membership) and re-run with the same bundle. Re-imports are NOT ` +
         `idempotent at the action-hash level (a re-run creates fresh ` +
         `actions); dedupe by 'id' on the host side.`,
     );
@@ -526,29 +1029,35 @@ async function doImport(
 }
 
 /**
- * Phase 3 — write `MigrationMarkerV1` forward pointers onto the OLD
- * chain's entries by calling the `mark_migrated` coordinator extern for
- * each successfully-imported entry in the remap.
+ * Per-entry forward-pointer markers onto the OLD chain's entries by
+ * calling `mark_migrated_v2` (default) or `mark_migrated` (with
+ * `--v1-only`) for each successfully-imported entry in the remap.
  *
- * Requires the OLD hApp's coordinator zome to include `mark_migrated`
- * (added in pass-1 follow-up, ships in the same `.happ` rebuild after
- * the coordinator hot-swap that lands the pass-1 changes). If the OLD
- * hApp predates this addition, the call will fail with "no such
- * function" — bump COORDINATOR_WASM_VERSION on the OLD hApp and
- * hot-swap before invoking this phase.
+ * V2 markers carry the same per-entry redirect fields as V1 plus
+ * `new_hive_genesis_hash_base64: null` and
+ * `new_hive_genesis_display_id: null` (this is per-entry, not
+ * hive-identity, so the genesis fields stay None). Pass-2 readers
+ * (`get_migration_marker_v2`) return them via the `MigrationMarker`
+ * enum's `V2` variant.
+ *
+ * `--v1-only` is required when the OLD app's coordinator predates the
+ * pass-2.5 hot-swap (the `mark_migrated_v2` extern is unavailable
+ * there). The OLD chain still receives the redirect, just under the V1
+ * shape.
  *
  * Each marker write is itself an update to the original entry on the
  * OLD chain. Per the coordinator's SECURITY model, only the original
- * author can write a valid marker — and `mark_migrated` is NOT in the
- * cap grant, so only the local UI / this script (running as the
- * original author via lair) can invoke it.
+ * author can write a valid marker — and neither `mark_migrated` nor
+ * `mark_migrated_v2` is in the cap grant, so only the local UI / this
+ * script (running as the original author via lair) can invoke them.
  */
 async function doMarkMigrated(
   oldAppId: string,
   remapPath: string,
+  useV1Only: boolean,
 ): Promise<void> {
   console.log(`[mark-migrated] reading remap from ${remapPath}...`);
-  const remap = JSON.parse(await fs.readFile(remapPath, "utf8")) as {
+  const remap = JSON.parse(await readFile(remapPath, "utf8")) as {
     schema_version: number;
     source_app_id: string;
     target_app_id: string;
@@ -574,7 +1083,8 @@ async function doMarkMigrated(
     `[mark-migrated] ${remap.entries.length} successful imports + ` +
       `${remap.failures.length} failures from ${remap.imported_at_iso}. ` +
       `Failed entries will be SKIPPED (no marker written — host treats ` +
-      `them as 'not migrated yet' on the old DNA).`,
+      `them as 'not migrated yet' on the old DNA). ` +
+      `Marker version: ${useV1Only ? "V1 (legacy)" : "V2 (default)"}.`,
   );
 
   console.log(`[mark-migrated] connecting to old app "${oldAppId}"...`);
@@ -602,12 +1112,6 @@ async function doMarkMigrated(
 
   // Marker DNA hash and app-id come from the remap's target side.
   const newAppId = remap.target_app_id;
-  // `target_dna_hash_base64` is NOT in the remap today (the script writes
-  // remap without explicitly asking the conductor for the new DNA hash —
-  // it can be derived from the new app's appInfo if needed). For the
-  // marker we fetch it now from the OLD app's view of the world is wrong
-  // — we need the NEW DNA's hash. Defer to the user: pass via env, or
-  // omit and accept the marker pointing at app_id alone.
   const newDnaHashBase64 = process.env.NEW_DNA_HASH_BASE64 ?? "";
   if (!newDnaHashBase64) {
     console.warn(
@@ -621,14 +1125,22 @@ async function doMarkMigrated(
   let succeeded = 0;
   const newFailures: { id: string; old_action_hash: string; error: string }[] = [];
   for (const entry of remap.entries) {
-    const marker = {
-      schema_tag: "humm-earth-core-happ/migration-marker",
-      schema_version: 1,
+    const baseMarker = {
+      schema_tag: MIGRATION_MARKER_SCHEMA_TAG,
       new_dna_hash_base64: newDnaHashBase64,
       new_action_hash_base64: entry.new_action_hash,
       new_app_id: newAppId,
       migrated_at_microseconds: migratedAtMicroseconds,
     };
+    const marker = useV1Only
+      ? { ...baseMarker, schema_version: 1 }
+      : {
+          ...baseMarker,
+          schema_version: 2,
+          new_hive_genesis_hash_base64: null,
+          new_hive_genesis_display_id: null,
+        };
+    const fnName = useV1Only ? "mark_migrated" : "mark_migrated_v2";
     const input = {
       original_action_hash: decodeHashFromBase64(entry.old_action_hash),
       marker,
@@ -637,7 +1149,7 @@ async function doMarkMigrated(
       await appWebsocket.callZome({
         cell_id: cellId,
         zome_name: ZOME_NAME,
-        fn_name: "mark_migrated",
+        fn_name: fnName,
         payload: input,
       });
       succeeded++;
@@ -665,7 +1177,7 @@ async function doMarkMigrated(
       mark_migrated_at_iso: new Date().toISOString(),
       mark_migrated_failures: newFailures,
     };
-    await fs.writeFile(remapPath, JSON.stringify(augmented, null, 2), "utf8");
+    await writeFile(remapPath, JSON.stringify(augmented, null, 2), "utf8");
     console.log(
       `[mark-migrated] failure list appended to ${remapPath} as ` +
         `mark_migrated_failures. Address root cause and re-run.`,
@@ -675,53 +1187,108 @@ async function doMarkMigrated(
   await appWebsocket.client.close();
 }
 
+// ---------------------------------------------------------------------------
+// CLI entry point
+// ---------------------------------------------------------------------------
+
+function usage(): string {
+  return (
+    "Usage:\n" +
+    "  migrate-dna.ts export <app-id> <out.bundle.json>\n" +
+    "  migrate-dna.ts migrate-hive <new-app-id> <old-hive-id> <old-anchor-ah-b64-or-empty> <hive-bundle.json>\n" +
+    "  migrate-dna.ts grant-memberships <new-app-id> <hive-bundle.json> <old-hive-id> <role> <member-pubkey-b64> [...]\n" +
+    "  migrate-dna.ts import <new-app-id> <in.bundle.json> <hive-bundle.json> <out.remap.json>\n" +
+    "  migrate-dna.ts mark-migrated <old-app-id> <in.remap.json> [--v1-only]\n" +
+    "  migrate-dna.ts mark-hive-migrated <old-app-id> <hive-bundle.json>\n" +
+    "\n" +
+    "Roles: Owner | Admin | Writer | Reader\n" +
+    "\n" +
+    "Env:\n" +
+    "  ADMIN_PORT             conductor admin websocket port (default 4444)\n" +
+    "  NEW_DNA_HASH_BASE64    new DNA's multibase holohash (for mark-migrated\n" +
+    "                         and mark-hive-migrated; get via `hc dna hash`)\n" +
+    "  NEW_APP_ID             new app's installed_app_id (mark-hive-migrated\n" +
+    "                         marker payload only; optional)\n" +
+    "\n" +
+    "Marker versions:\n" +
+    "  mark-migrated defaults to V2 (mark_migrated_v2 extern). Pass --v1-only\n" +
+    "  when the OLD app's coordinator predates the pass-2.5 hot-swap.\n"
+  );
+}
+
 async function main(): Promise<void> {
   const [mode, ...args] = process.argv.slice(2);
   switch (mode) {
     case "export": {
       const [appId, outPath] = args;
       if (!appId || !outPath) {
-        console.error("Usage: migrate-dna.ts export <app-id> <out.bundle.json>");
+        console.error(usage());
         process.exit(2);
       }
       await doExport(appId, outPath);
       break;
     }
-    case "import": {
-      const [appId, bundlePath, remapPath] = args;
-      if (!appId || !bundlePath || !remapPath) {
-        console.error(
-          "Usage: migrate-dna.ts import <app-id> <in.bundle.json> <out.remap.json>",
-        );
+    case "migrate-hive": {
+      const [newAppId, oldHiveId, oldAnchorB64, hiveBundlePath] = args;
+      if (!newAppId || !oldHiveId || oldAnchorB64 === undefined || !hiveBundlePath) {
+        console.error(usage());
         process.exit(2);
       }
-      await doImport(appId, bundlePath, remapPath);
+      await doMigrateHive(newAppId, oldHiveId, oldAnchorB64, hiveBundlePath);
+      break;
+    }
+    case "grant-memberships": {
+      const [newAppId, hiveBundlePath, oldHiveId, roleArg, ...memberArgs] = args;
+      if (!newAppId || !hiveBundlePath || !oldHiveId || !roleArg || memberArgs.length === 0) {
+        console.error(usage());
+        process.exit(2);
+      }
+      if (!HIVE_ROLES.includes(roleArg as HiveRole)) {
+        console.error(`Unknown role "${roleArg}". Expected: ${HIVE_ROLES.join(", ")}`);
+        process.exit(2);
+      }
+      await doGrantMemberships(
+        newAppId,
+        hiveBundlePath,
+        oldHiveId,
+        roleArg as HiveRole,
+        memberArgs,
+      );
+      break;
+    }
+    case "import": {
+      const [appId, bundlePath, hiveBundlePath, remapPath] = args;
+      if (!appId || !bundlePath || !hiveBundlePath || !remapPath) {
+        console.error(usage());
+        process.exit(2);
+      }
+      await doImport(appId, bundlePath, hiveBundlePath, remapPath);
       break;
     }
     case "mark-migrated": {
-      const [appId, remapPath] = args;
+      // Strip the optional flag before positional matching to keep the
+      // positional contract stable regardless of flag placement.
+      const useV1Only = args.includes("--v1-only");
+      const positional = args.filter((a) => !a.startsWith("--"));
+      const [appId, remapPath] = positional;
       if (!appId || !remapPath) {
-        console.error(
-          "Usage: migrate-dna.ts mark-migrated <old-app-id> <in.remap.json>",
-        );
+        console.error(usage());
         process.exit(2);
       }
-      await doMarkMigrated(appId, remapPath);
+      await doMarkMigrated(appId, remapPath, useV1Only);
+      break;
+    }
+    case "mark-hive-migrated": {
+      const [appId, hiveBundlePath] = args;
+      if (!appId || !hiveBundlePath) {
+        console.error(usage());
+        process.exit(2);
+      }
+      await doMarkHiveMigrated(appId, hiveBundlePath);
       break;
     }
     default:
-      console.error(
-        "Usage:\n" +
-          "  migrate-dna.ts export <app-id> <out.bundle.json>\n" +
-          "  migrate-dna.ts import <app-id> <in.bundle.json> <out.remap.json>\n" +
-          "  migrate-dna.ts mark-migrated <old-app-id> <in.remap.json>\n" +
-          "\n" +
-          "Env:\n" +
-          "  ADMIN_PORT          conductor admin websocket port (default 4444)\n" +
-          "  NEW_DNA_HASH_BASE64    new DNA's multibase holohash (for mark-migrated;\n" +
-          "                      get via `hc dna hash`. Optional; falls back to\n" +
-          "                      app-id-only resolution on the receiver.)",
-      );
+      console.error(usage());
       process.exit(2);
   }
 }

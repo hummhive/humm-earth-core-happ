@@ -4,8 +4,10 @@ Short-form handoff for the humm-tauri team to integrate the pass-2
 integrity-zome changes shipped on `feat-integrity-pass-2`. Pass-2
 **intentionally bumps the DNA hash** and is the first non-additive
 integrity change since pass-1 froze the baseline. Existing data MUST be
-migrated forward via the pass-1 migration scaffold (`scripts/migrate-dna.ts`
-+ `MigrationMarkerV1` reader) before users can keep using their hives.
+migrated forward via the pass-2.5 migration tooling
+(`scripts/migrate-dna.ts`'s four-phase hive-identity + per-entry flow,
++ the `MigrationMarker{V1,V2}` readers) before users can keep using
+their hives.
 
 For the full per-change reference, see
 [`HUMM_TAURI_COORDINATOR_INTEGRATION.md`](./HUMM_TAURI_COORDINATOR_INTEGRATION.md)
@@ -253,3 +255,128 @@ Recorded in `.baseline-hashes.txt` at the repo root.
   `git -C /mnt/c/proj/github/hummhive/humm-earth-core-happ merge --ff-only
   wsl/feat-integrity-pass-2` (or equivalent fetch path) to sync the
   Windows mirror after this commit lands.
+
+## Migration commands (operational)
+
+Pass-2.5 ships the migration tooling that actually moves data forward.
+The full mechanics + per-command reference live in
+[`DNA_MIGRATION_GUIDE.md`](./DNA_MIGRATION_GUIDE.md); below is the
+minimum-viable runbook.
+
+### Owner side (run first)
+
+```bash
+# Env once
+export ADMIN_PORT=4444
+export NEW_APP_ID=humm-earth-core@2
+export NEW_DNA_HASH_BASE64=$(hc dna hash dnas/humm_earth_core/workdir/humm_earth_core.dna)
+# Should print: uhC0kawoZqBxv3Jjvh-TlSQ5aO4U-hwiUNtZxFzXkTOBc5ijKVatw
+
+# Step 1 — create HiveGenesis on the new DNA per hive you own.
+# Third arg = OLD-DNA action hash of the entry the V2 hive-identity
+# marker will land on (typically humm-tauri's "hive setup" anchor for
+# the old squuid hive_id). Pass "" to defer.
+npx tsx scripts/migrate-dna.ts migrate-hive \
+  "$NEW_APP_ID" \
+  hive-abc123 \
+  uhCkk-old-hive-anchor-ah \
+  /tmp/migrate/hive-bundle.json
+
+# Step 2 — grant Writer (or Admin/Reader/Owner) to each member's NEW pubkey.
+npx tsx scripts/migrate-dna.ts grant-memberships \
+  "$NEW_APP_ID" \
+  /tmp/migrate/hive-bundle.json \
+  hive-abc123 \
+  Writer \
+  uhCAk-member-1-new-pubkey uhCAk-member-2-new-pubkey
+
+# Step 3 — export the owner's own pass-1 chain.
+npx tsx scripts/migrate-dna.ts export humm-earth-core@1 /tmp/migrate/bundle.json
+
+# Step 4 — import the owner's entries onto the new DNA, stamping the
+# new fields. Reads hive-bundle to resolve hive_genesis_hash per entry.
+npx tsx scripts/migrate-dna.ts import \
+  "$NEW_APP_ID" \
+  /tmp/migrate/bundle.json \
+  /tmp/migrate/hive-bundle.json \
+  /tmp/migrate/remap.json
+
+# Step 5a — write V2 hive-identity markers on the OLD chain pointing
+# at the new HiveGenesis. Members discover via get_migration_marker_v2
+# against the old anchor.
+npx tsx scripts/migrate-dna.ts mark-hive-migrated \
+  humm-earth-core@1 \
+  /tmp/migrate/hive-bundle.json
+
+# Step 5b — write V2 per-entry markers on the OLD chain for the
+# owner's own entries. Use --v1-only when the OLD app's coordinator
+# predates the pass-2.5 hot-swap (no mark_migrated_v2 extern).
+npx tsx scripts/migrate-dna.ts mark-migrated \
+  humm-earth-core@1 \
+  /tmp/migrate/remap.json
+
+# Share /tmp/migrate/hive-bundle.json with each member via an
+# ENCRYPTED out-of-band channel (Signal, age, password-protected
+# download). The bundle enumerates the hive's full member roster
+# (AgentPubKey + role + membership hash per grantee); treat as
+# operationally sensitive. On multi-user hosts move it out of
+# /tmp into a chmod-700 dir (`mkdir -m 700 ~/.migrate && mv
+# /tmp/migrate/hive-bundle.json ~/.migrate/`).
+```
+
+### Member side (run after owner has finished steps 1-2)
+
+```bash
+export ADMIN_PORT=4444
+export NEW_APP_ID=humm-earth-core@2
+export NEW_DNA_HASH_BASE64=$(hc dna hash dnas/humm_earth_core/workdir/humm_earth_core.dna)
+
+# Receive /tmp/migrate/hive-bundle.json from the owner via an
+# ENCRYPTED out-of-band channel (Signal, age-encrypted email, etc.).
+# Treat as operationally sensitive: the bundle reveals the hive's
+# full member roster. Store under a chmod-700 dir on multi-user hosts.
+
+# Export the member's own pass-1 chain.
+npx tsx scripts/migrate-dna.ts export humm-earth-core@1 /tmp/migrate/bundle.json
+
+# Import — looks up the caller's membership_hash on each hive via
+# get_latest_membership against the new DNA.
+npx tsx scripts/migrate-dna.ts import \
+  "$NEW_APP_ID" \
+  /tmp/migrate/bundle.json \
+  /tmp/migrate/hive-bundle.json \
+  /tmp/migrate/remap.json
+
+# Mark the member's old per-entry chain as migrated.
+npx tsx scripts/migrate-dna.ts mark-migrated \
+  humm-earth-core@1 \
+  /tmp/migrate/remap.json
+```
+
+### Verifying success
+
+- `remap.json.failures` is empty.
+- `hive-bundle.json` has one `hives[*]` entry per migrated hive, each
+  with a non-null `new_genesis_hash_base64`.
+- Querying the new app via `list_my_hives` returns one entry per
+  migrated hive (Owner side: `role: None`; Member side:
+  `role: Some(Writer|...)`).
+- Calling `get_migration_marker_v2(<old_anchor_ah>)` against the OLD
+  app returns `Some(MigrationMarker::V2 { new_hive_genesis_hash_base64:
+  Some(_), ... })`.
+
+### Marker version selection cheat sheet
+
+| Scenario | Use |
+|---|---|
+| OLD app already has pass-2.5 coordinator (V1+V2 readers + `mark_migrated_v2` extern) | Default (V2 markers everywhere) |
+| OLD app has pass-1 coordinator only (no V2 extern) | `mark-migrated --v1-only`; SKIP `mark-hive-migrated` (no V2 extern available — fall back to out-of-band genesis-hash distribution) |
+| Mixed: OLD app has the pass-2.5 hot-swap, but you specifically want pre-pass-2 hosts to also see per-entry markers | `mark-migrated --v1-only` |
+
+### Hash invariants — pass-2.5 follow-up
+
+The pass-2.5 follow-up is coordinator-only and MUST hold the DNA hash
+from pass-2 byte-identical. The coordinator wasm sha256 changes
+because new functions ship; the integrity wasm + DNA hash do not.
+See [`.baseline-hashes.txt`](../.baseline-hashes.txt) for the current
+invariants per pass.

@@ -29,33 +29,59 @@ Lineage within pass-2 branch
 ----------------------------
 - 1fa4d37 initial integrity+coordinator commit  → DNA uhC0kzl0W9BBITBGu-NeUaXPxqxSPj0yTGfDD3UH3EjhfLDQZfZxe
 - a089b45 security fix (drop get_last_probe cap) → DNA unchanged (coordinator-only)
-- HEAD    coding-standards cleanup               → DNA uhC0kawoZqBxv3Jjvh-TlSQ5aO4U-hwiUNtZxFzXkTOBc5ijKVatw (FINAL)
+- 891acc9 coding-standards cleanup               → DNA uhC0kawoZqBxv3Jjvh-TlSQ5aO4U-hwiUNtZxFzXkTOBc5ijKVatw (pass-2 FINAL)
+- HEAD    pass-2.5 migration tooling extension   → DNA UNCHANGED (coordinator-only) — see Pass-2.5 row below
 
 rustc emits source-path metadata into release wasm, so even comment-only
 edits in the integrity zome bump the wasm sha (and therefore the DNA
-hash). The FINAL row above is what the release .happ bundles.
+hash). The "pass-2 FINAL" row above is what the release .happ bundled
+for the integrity-zome change; pass-2.5 ships only coordinator
+changes (MigrationMarkerV2 + script + docs) so the integrity wasm
+sha256 holds byte-identical.
+
+Pass-2.5 (coordinator-only follow-up, branch feat-integrity-pass-2)
+-------------------------------------------------------------------
+MigrationMarkerV2 (additive forward-compatible superset of V1) +
+get_migration_marker_v2 reader + mark_migrated_v2 writer +
+scripts/migrate-dna.ts hive-identity track + DNA_MIGRATION_GUIDE
+rewrite. DNA hash and integrity wasm sha256 are HELD byte-identical
+to pass-2 FINAL.
+
+  DNA hash (HELD):         uhC0kawoZqBxv3Jjvh-TlSQ5aO4U-hwiUNtZxFzXkTOBc5ijKVatw
+  content_integrity.wasm:  cd137fcfde8632c7236497592014b3b1e80548691ee71e5ebbad12cb373275dc (UNCHANGED)
+  content.wasm:            5790b6a459b9b4f4aee9a03f73c7ddf2c808024612862df94644090725b130e8 (NEW — coordinator change)
 
 VERIFICATION
 ------------
 - DNA hash CHANGED from pass-1: ✓ (new bytes, see above)
-- content_integrity.wasm CHANGED: ✓ (new bytes)
-- content.wasm CHANGED: ✓ (new bytes)
-- 37/37 host-side cargo tests pass (26 integrity + 11 coordinator).
+- content_integrity.wasm CHANGED from pass-1: ✓ (new bytes)
+- content.wasm CHANGED from pass-1: ✓ (new bytes)
+- Pass-2 host-side cargo tests: 37/37 (26 integrity + 11 coordinator).
+- Pass-2.5 host-side cargo tests: 48/48 (26 integrity + 22 coordinator;
+  11 new tests cover V1/V2 marker disambiguation, MigrationMarker enum
+  round-trip + external-tag wire-shape pin, decode_marker priority,
+  V2 idempotency, and unknown future schema_version handling).
+- Pass-2.5 DNA hash HELD: ✓ (unchanged from pass-2 FINAL).
+- Pass-2.5 integrity wasm sha256 HELD: ✓ (unchanged from pass-2 FINAL).
 
 The pass-2 invariant is: every subsequent pass-2 release commit MUST
-hold the FINAL hashes above byte-identical until pass-3+ does its own
-intentional bump.
+hold the FINAL DNA hash + integrity wasm sha256 byte-identical until
+pass-3+ does its own intentional integrity-zome bump. Coordinator wasm
+sha256 IS allowed to change (and does, see pass-2.5 row).
 
 Migration story
 ---------------
-The pass-1 migration scaffold (`encrypted_content::migration::*` +
-`scripts/migrate-dna.ts`) activates on this DNA-hash change. Hosts
-running pass-1 see their entries' `get_migration_marker` reader return
-markers pointing at pass-2 entry hashes once authors have published
-forward-pointer markers on the old DNA.
+The pass-1 migration scaffold + the pass-2.5 hive-identity extension
+(`encrypted_content::migration::*` + `scripts/migrate-dna.ts`)
+together activate on the pass-2 DNA-hash change. Hosts running pass-1
+see their entries' `get_migration_marker` reader return V1 markers
+pointing at pass-2 entry hashes once authors have published
+forward-pointer markers; pass-2-aware hosts see V1+V2 markers via
+`get_migration_marker_v2`, with V2 markers additionally carrying the
+new HiveGenesis hash so members discover hive-identity moves.
 
 See:
-- `docs/DNA_MIGRATION_GUIDE.md`        — migration mechanics (extended for pass-2)
+- `docs/DNA_MIGRATION_GUIDE.md`        — migration mechanics (pass-2.5 primary)
 - `docs/HUMM_TAURI_COORDINATOR_INTEGRATION.md`
                                         — wire-shape change list for humm-tauri
-- `docs/PASS_2_DEPLOY_HANDOFF.md`      — post-pass-2 deployment runbook
+- `docs/PASS_2_DEPLOY_HANDOFF.md`      — post-pass-2 deployment runbook + pass-2.5 migration commands

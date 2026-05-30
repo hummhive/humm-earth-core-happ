@@ -56,15 +56,17 @@ pub fn set_cap_tokens() -> ExternResult<()> {
     fns.insert((zome.clone(), "count_links_by_hive".into()));
     fns.insert((zome.clone(), "fetch_pair_ss_with_hive_check".into()));
 
-    // Migration-marker reader. Reads already-public DHT data (walks an
-    // entry's update chain; same data any peer could fetch via
-    // `get_details` directly). `mark_migrated` (the write side) is
-    // intentionally NOT granted by Rule 1 above. The reader applies
-    // its own author-binding filter — only updates by the original
-    // entry's author count as valid markers; see
-    // `get_migration_marker`'s doc-comment — so it does not rely on
-    // the cap surface for forge resistance.
+    // Migration-marker readers (V1 + V2). Read already-public DHT data
+    // (walks an entry's update chain; same data any peer could fetch
+    // via `get_details` directly). The write-side externs
+    // (`mark_migrated`, `mark_migrated_v2`) are intentionally NOT
+    // granted by Rule 1 above. Both readers apply their own
+    // author-binding filter — only updates by the original entry's
+    // author count as valid markers; see `get_migration_marker`'s
+    // doc-comment — so they do not rely on the cap surface for forge
+    // resistance.
     fns.insert((zome.clone(), "get_migration_marker".into()));
+    fns.insert((zome.clone(), "get_migration_marker_v2".into()));
 
     // Hive-membership read externs. Surface DHT-public data
     // (`HiveGenesis` and `HiveMembership` entries are public; the link
@@ -106,8 +108,8 @@ pub fn init(_: ()) -> ExternResult<InitCallbackResult> {
     Ok(InitCallbackResult::Pass)
 }
 
-/// **C7b** — multi-signal dispatcher.
-/// Multi-signal dispatcher.
+/// Multi-signal dispatcher: try-decode an incoming remote signal
+/// against each known wire shape in priority order.
 /// Holochain permits exactly one `recv_remote_signal` extern per zome,
 /// so adding new signal families (DM delete-request, WebRTC signalling)
 /// without breaking the shipped `EncryptedContentSignal` wire path
@@ -133,7 +135,8 @@ pub fn init(_: ()) -> ExternResult<InitCallbackResult> {
 ///   serde round-trip unit tests in
 ///   `encrypted_content::signals::tests` empirically pin this property.
 ///
-/// **Anti-spoof guarantee (C1, preserved through C7b refactor).** Whatever
+/// **Anti-spoof guarantee** (preserved from the original single-signal
+/// path). Whatever
 /// the wire payload claimed about `from_agent` is overwritten with
 /// `call_info()?.provenance` — the lair-attested AgentPubKey of the
 /// caller. A peer cannot impersonate another peer in the emitted
