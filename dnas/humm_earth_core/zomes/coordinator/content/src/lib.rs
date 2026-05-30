@@ -1,4 +1,5 @@
 pub mod encrypted_content;
+pub mod group;
 pub mod hive;
 pub mod inbox;
 pub mod linking;
@@ -75,6 +76,19 @@ pub fn set_cap_tokens() -> ExternResult<()> {
     // Rule 1.
     fns.insert((zome.clone(), "get_latest_membership".into()));
     fns.insert((zome.clone(), "list_my_hives".into()));
+
+    // Group-authority read externs (pass-3). Same rationale as the
+    // hive read surface above: GroupGenesis and GroupMembership entries
+    // are public DHT data and the corresponding link space is public.
+    // The write counterparts (create_group_genesis,
+    // create_group_membership, revoke_group_membership) are excluded by
+    // Rule 1 — granting them Unrestricted would let any peer pollute
+    // another agent's chain with a forged source-chain action.
+    fns.insert((zome.clone(), "get_latest_group_membership".into()));
+    fns.insert((zome.clone(), "list_group_members".into()));
+    fns.insert((zome.clone(), "list_my_groups".into()));
+    fns.insert((zome.clone(), "list_groups_in_hive".into()));
+    fns.insert((zome.clone(), "get_group_genesis".into()));
 
     // Inbox read externs. `probe_inbox` walks the PUBLIC DHT link
     // space keyed off the receiving agent's own pubkey

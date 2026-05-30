@@ -327,9 +327,17 @@ integration tests when the conductor pipeline is exercised.
 
 - Phase A — Integrity core (`Role` refactor + `group.rs` +
   dispatcher + 9 host tests + 3 reviewer gates passed):
-  **CODE COMPLETE, awaiting commit.**
-- Phase B — Coordinator externs + cap grants + `post_commit` signals:
-  **not started.**
+  **COMMITTED** (`00329eb`, `65fcd7a`).
+- Phase B — Coordinator group module (`create_group_genesis`,
+  `create_group_membership`, `revoke_group_membership`,
+  `list_group_members`, `list_my_groups`, `list_groups_in_hive`,
+  `get_latest_group_membership`, `get_group_genesis`) + cap grants
+  for the read externs + `InboxEvent::GroupInvite = 3` discriminator
+  + cross-cutting `list_my_hives` security fix (author guard on
+  founded-hive path): **COMMITTED** *(this commit)*. Existing
+  `Signal` enum auto-dispatches the new group entries/links —
+  humm-tauri receives `Signal::EntryCreated { app_entry:
+  EntryTypes::GroupGenesis(..) }` etc. via the generic pathway.
 - Phase C — `AclSpec` reshape + variant-dispatch validators (the
   wire-breaking change): **not started.**
 - Phase D — Migration tooling extends (`scripts/migrate-dna.ts`

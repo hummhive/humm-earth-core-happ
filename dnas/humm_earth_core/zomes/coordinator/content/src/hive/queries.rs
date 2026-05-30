@@ -140,12 +140,22 @@ pub fn list_my_hives(_: ()) -> ExternResult<Vec<ListedHive>> {
         let Some(record) = get(target_ah.clone(), GetOptions::network())? else {
             continue;
         };
-        // Try HiveGenesis first.
+        // Try HiveGenesis first. The Inbox is open-write by design (any
+        // peer can publish a HiveInvite link at any pubkey), so we MUST
+        // verify the local agent actually authored the genesis before
+        // surfacing it as "I founded this hive". Without this check, a
+        // hostile peer can pollute the local agent's hive list with
+        // arbitrary `role: None` entries (UI confusion / griefing; no
+        // privilege escalation since integrity validators still gate
+        // every action against the real author identity).
         if let Some(genesis) = record
             .entry()
             .to_app_option::<HiveGenesis>()
             .map_err(|e| wasm_error!(e))?
         {
+            if record.action().author() != &my_pubkey {
+                continue;
+            }
             out.push(ListedHive {
                 hive_genesis_hash: target_ah,
                 display_id: genesis.display_id,

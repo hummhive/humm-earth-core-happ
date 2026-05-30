@@ -36,6 +36,13 @@ pub enum InboxEvent {
     DmDelete = 1,
     /// A hive invitation; target is the `HiveMembership` action hash.
     HiveInvite = 2,
+    /// A group invitation; target is the `GroupMembership` action hash
+    /// (for grantees) or the `GroupGenesis` action hash (for the
+    /// creator's own self-write). Mirrors `HiveInvite` one level down
+    /// the sovereignty hierarchy — `list_my_groups` walks the inbox
+    /// link set filtered on this byte just as `list_my_hives` does for
+    /// `HiveInvite`.
+    GroupInvite = 3,
 }
 
 impl InboxEvent {
@@ -47,6 +54,7 @@ impl InboxEvent {
             0 => Ok(Self::DmCreate),
             1 => Ok(Self::DmDelete),
             2 => Ok(Self::HiveInvite),
+            3 => Ok(Self::GroupInvite),
             other => Err(other),
         }
     }
@@ -162,6 +170,7 @@ mod tests {
             InboxEvent::DmCreate,
             InboxEvent::DmDelete,
             InboxEvent::HiveInvite,
+            InboxEvent::GroupInvite,
         ] {
             let byte = variant.as_byte();
             let decoded = InboxEvent::from_byte(byte).expect("known byte should decode");
@@ -171,9 +180,9 @@ mod tests {
 
     #[test]
     fn inbox_event_unknown_byte_is_err() {
-        // Sentinel: a future variant adding byte 3 would still need to
-        // bump receivers; pre-bump, byte 3 must be Invalid.
-        assert!(InboxEvent::from_byte(3).is_err());
+        // Sentinel: a future variant adding byte 4 would still need to
+        // bump receivers; pre-bump, byte 4 must be Invalid.
+        assert!(InboxEvent::from_byte(4).is_err());
         assert!(InboxEvent::from_byte(255).is_err());
     }
 
@@ -184,6 +193,7 @@ mod tests {
         assert_eq!(InboxEvent::DmCreate.as_byte(), 0);
         assert_eq!(InboxEvent::DmDelete.as_byte(), 1);
         assert_eq!(InboxEvent::HiveInvite.as_byte(), 2);
+        assert_eq!(InboxEvent::GroupInvite.as_byte(), 3);
     }
 
     fn agent_pubkey(byte: u8) -> AgentPubKey {
