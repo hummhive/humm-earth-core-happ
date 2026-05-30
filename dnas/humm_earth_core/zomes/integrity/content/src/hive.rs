@@ -298,6 +298,12 @@ pub fn validate_delete_hive_genesis(
 ///    `check_hive_authority` with `required_role = Admin`).
 /// 3. NOT grant a role HIGHER than their own (Owner is the only role
 ///    that can grant Owner; Admin can grant Admin/Writer/Reader; etc.).
+/// 4. **G-4.4 grant-window containment (pass-4 back-port).** If the
+///    grantor proved authority via an *expiring* hive membership
+///    (Path 2), the new membership must itself expire no later than
+///    the grantor's. Closes the parallel delegation-window-extension
+///    attack at the hive layer (matrix #10 hive-layer analogue;
+///    pass-3's group-layer rule G-4.4 is mirrored here).
 pub fn validate_create_hive_membership(
     action: EntryCreationAction,
     membership: HiveMembership,
@@ -344,7 +350,97 @@ pub fn validate_create_hive_membership(
         }
     }
 
-    Ok(ValidateCallbackResult::Valid)
+    // Rule 4 — grant-window containment (G-4.4 hive-layer back-port).
+    // Mirrors the pass-3 group-layer enforce_grant_window. The
+    // hive-layer flavour drops the `timestamp` parameter — the only
+    // re-verification needed (grantor-IS-genesis-author) is
+    // timestamp-independent, unlike the group version's Path-B
+    // re-verification which calls check_hive_authority with the
+    // action timestamp.
+    enforce_hive_grant_window(grantor, &membership)
+}
+
+/// G-4.4 (hive-layer back-port) — grant-window containment. If the
+/// grantor's authority for THIS grant rests on an *expiring* hive
+/// membership (Path 2), the new membership must itself expire no
+/// later than the grantor's window. Closes the
+/// delegation-window-extension attack at the hive layer.
+///
+/// The constraint applies ONLY when Path 2 is the grantor's actual
+/// authority basis. A grantor who could prove authority via the
+/// hive-genesis-author route (Path 1) is unconstrained — they may
+/// mint permanent hive memberships even while personally carrying an
+/// (irrelevant) expiring witness.
+///
+/// Path attribution rule (mirrors the hardened group version):
+/// - No `grantor_membership_hash` → Path 1 (the grantor IS the
+///   genesis author; Rule 2's check_hive_authority validated that).
+///   Unconstrained.
+/// - `grantor_membership_hash` present but witness is for a
+///   different agent / different hive → witness does NOT back this
+///   grantor's Path-2 authority; Path 1 was the actual basis.
+///   Unconstrained.
+/// - `grantor_membership_hash` present AND witness backs Path 2 AND
+///   the grantor is independently the hive genesis author → Path 1
+///   was ALSO viable, and Owner dominates the expiring Path-2
+///   witness. Unconstrained.
+/// - Otherwise → Path 2 is the only basis; the window must be
+///   contained.
+///
+/// The Path-1 re-verification re-fetches the hive genesis. The
+/// conductor's validation-package cache deduplicates the underlying
+/// `must_get_valid_record` against Rule 2's earlier fetch.
+///
+/// Note: no `timestamp` parameter — unlike the group analogue
+/// (`crate::group::enforce_grant_window`), this routine performs no
+/// timestamp-bearing authority checks. The grantor's witness expiry
+/// was already validated against the action timestamp by Rule 2's
+/// `check_hive_authority`; here we only compare grant windows
+/// (witness expiry vs new-grant expiry), both of which are
+/// timestamps-as-data on entries.
+fn enforce_hive_grant_window(
+    grantor: &AgentPubKey,
+    membership: &HiveMembership,
+) -> ExternResult<ValidateCallbackResult> {
+    let Some(grantor_hash) = membership.grantor_membership_hash.as_ref() else {
+        // Path 1 grantor — no membership window to contain.
+        return Ok(ValidateCallbackResult::Valid);
+    };
+    let (_witness_author, grantor_membership) = fetch_membership(grantor_hash)?;
+    if &grantor_membership.for_agent != grantor
+        || grantor_membership.hive_genesis_hash != membership.hive_genesis_hash
+    {
+        // Witness does not back this grantor's Path-2 authority for
+        // this hive; their authority must have come via Path 1.
+        return Ok(ValidateCallbackResult::Valid);
+    }
+    // Path-1 re-verification: even if the witness backs Path 2, the
+    // grantor may ALSO be the hive genesis author (Path 1 viable);
+    // their permanent Owner role dominates the expiring Path-2
+    // witness and the window is unconstrained.
+    let (genesis_author, _) = fetch_genesis(&membership.hive_genesis_hash)?;
+    if &genesis_author == grantor {
+        return Ok(ValidateCallbackResult::Valid);
+    }
+    let Some(grantor_expiry) = grantor_membership.expiry else {
+        // Permanent Path-2 authority — unconstrained.
+        return Ok(ValidateCallbackResult::Valid);
+    };
+    match membership.expiry {
+        Some(new_expiry) if new_expiry <= grantor_expiry => {
+            Ok(ValidateCallbackResult::Valid)
+        }
+        Some(new_expiry) => Ok(ValidateCallbackResult::Invalid(format!(
+            "granted expiry {new_expiry:?} exceeds the grantor membership's \
+             expiry {grantor_expiry:?}; an expiring grantor may not extend \
+             the delegation window",
+        ))),
+        None => Ok(ValidateCallbackResult::Invalid(
+            "an expiring grantor may not mint a permanent (no-expiry) \
+             membership"
+                .into(),
+        )),
+    }
 }
 
 /// HiveMembership entries are immutable. Role changes happen by issuing
@@ -647,5 +743,64 @@ mod tests {
                 "self-grant of {role:?} must be Invalid; got {result:?}",
             );
         }
+    }
+
+    // -----------------------------------------------------------------
+    // Pass-4 — G-4.4 hive grant-window back-port (pre-fetch branch).
+    //
+    // The no-witness fast path (grantor relied on the hive-genesis-
+    // author Path 1) is host-reachable: enforce_hive_grant_window
+    // returns Valid without any fetch. The fetch-dependent branches
+    // (witness-backed Path-2 expiry containment, Path-1 re-verification
+    // when both witnesses are present) require a live conductor and
+    // are covered by Tryorama (`tryorama-grant-window.test.ts`).
+    // -----------------------------------------------------------------
+
+    #[test]
+    fn hive_grant_window_unconstrained_without_grantor_membership() {
+        // No grantor_membership_hash → Path 1 grantor (genesis author);
+        // enforce_hive_grant_window short-circuits to Valid without
+        // any fetch. Even an expiring grant is permitted because the
+        // grantor's permanent Owner role dominates.
+        let bob = agent_pubkey(2);
+        let membership = HiveMembership {
+            hive_genesis_hash: action_hash(9),
+            for_agent: bob,
+            role: HiveRole::Writer,
+            grantor_membership_hash: None,
+            expiry: Some(Timestamp(1_000)),
+        };
+        let result =
+            enforce_hive_grant_window(&agent_pubkey(3), &membership)
+                .expect("Path 1 short-circuit requires no fetch");
+        assert!(
+            matches!(result, ValidateCallbackResult::Valid),
+            "expected Valid, got {result:?}",
+        );
+    }
+
+    #[test]
+    fn hive_grant_window_unconstrained_for_permanent_new_grant_when_no_witness() {
+        // Same fast path with `expiry: None` on the new grant —
+        // permanent grant from a Path-1 grantor is the canonical
+        // bootstrap pattern (the hive owner mints a permanent member).
+        // enforce_hive_grant_window must accept regardless of what
+        // `expiry` value the new grant carries when the witness is
+        // None.
+        let bob = agent_pubkey(2);
+        let membership = HiveMembership {
+            hive_genesis_hash: action_hash(9),
+            for_agent: bob,
+            role: HiveRole::Owner,
+            grantor_membership_hash: None,
+            expiry: None,
+        };
+        let result =
+            enforce_hive_grant_window(&agent_pubkey(3), &membership)
+                .expect("Path 1 short-circuit requires no fetch");
+        assert!(
+            matches!(result, ValidateCallbackResult::Valid),
+            "expected Valid, got {result:?}",
+        );
     }
 }

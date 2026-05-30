@@ -26,23 +26,26 @@
 //!   identity (pass-1 `check_author_matches_header`) + optional
 //!   target HiveGenesis existence.
 //!
-//! ## What is NOT enforced this pass (G-6.2 deferred)
+//! ## Pass-4 — G-6.2 recipient-set integrity SHIPPED
 //!
-//! The recipient-set integrity check — "every pubkey in
-//! `public_key_acl.{owner,admin,writer,reader}` must hold a matching
-//! `GroupMembership` in the same-or-higher bucket of `group_acl`" —
-//! is documented but DEFERRED to a follow-up sub-commit (Phase C.1).
-//! Until then, `public_key_acl` on `HiveGroup` content is treated as
-//! an unauthenticated routing hint at commit time. Decryption gating
-//! (via SharedSecrets) is unaffected; recipient-list FORGERY (Mallory
-//! adds her pubkey to the reader list to receive remote-signal
-//! notifications even without group membership) is the residual
-//! attack pending G-6.2.
+//! `AclSpec::HiveGroup` now carries a `recipient_witnesses:
+//! Vec<RecipientWitness>` field. Every pubkey listed in
+//! `public_key_acl.{owner,admin,writer,reader}` MUST be backed by a
+//! witness that points at a real, validated [`crate::group::GroupMembership`]
+//! in a group that lives in the entry's `group_acl` at a dominating
+//! bucket. The validator checks the cross-reference at commit time
+//! (cardinality bound + bidirectional set-equality + per-witness
+//! membership fetch + bucket-dominance + role-satisfaction + expiry).
+//! Closes attack #5: a modified coordinator can no longer inject a
+//! foreign pubkey into the reader bucket of a private group post to
+//! receive remote-signal notifications. Decryption gating via
+//! SharedSecrets was always intact; this hardens the routing-fan-out
+//! attribution to match.
 use hdi::hash_path::path::Component;
 use hdi::prelude::*;
 
-use crate::group::check_group_authority;
-use crate::hive::{check_hive_authority, Role};
+use crate::group::{check_group_authority, fetch_group_membership};
+use crate::hive::{check_hive_authority, role_satisfies, Role};
 
 #[hdk_entry_helper]
 #[derive(Clone, PartialEq)]
@@ -96,6 +99,83 @@ pub struct AclByGroupGenesis {
     pub reader: Vec<ActionHash>,
 }
 
+/// ACL bucket discriminator for [`RecipientWitness`] and the
+/// bucket-dominance rule in [`validate_hivegroup_acl`].
+///
+/// Order-derived dominance: `Owner > Admin > Writer > Reader`. A
+/// witness in a higher bucket satisfies every lower bucket too — if
+/// Alice holds group-Admin in an admin-bucket group, humm-tauri may
+/// stamp her as the Writer- or Reader-bucket witness using the same
+/// admin-bucket membership. Matches the pass-3 link-validator
+/// semantics for `HummContent{Owner,Admin,Writer,Reader}` (admin ⊆
+/// writer ⊆ reader).
+///
+/// The variant set + ordering MUST stay byte-stable across releases;
+/// see [`bucket_required_role`] for the witness-role-satisfaction
+/// mapping that depends on it.
+#[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Debug)]
+pub enum AclBucket {
+    Owner,
+    Admin,
+    Writer,
+    Reader,
+}
+
+impl AclBucket {
+    /// Does `self` dominate `other`? `self` dominates `other` iff its
+    /// role is at least as high — an Owner-bucket witness satisfies
+    /// Admin/Writer/Reader; an Admin-bucket witness satisfies
+    /// Writer/Reader; etc. Used by the bidirectional cross-check in
+    /// [`validate_hivegroup_acl`] step 5.
+    pub fn dominates(self, other: AclBucket) -> bool {
+        role_satisfies(bucket_required_role(self), bucket_required_role(other))
+    }
+}
+
+/// The role a [`crate::group::GroupMembership`] must satisfy to back a
+/// witness in `bucket`. Owner-bucket → group Owner; Admin → group
+/// Admin; Writer → group Writer; Reader → group Reader.
+///
+/// Centralised so the validator + future helpers cannot drift from the
+/// single source-of-truth ordering on [`AclBucket`].
+pub(crate) fn bucket_required_role(bucket: AclBucket) -> Role {
+    match bucket {
+        AclBucket::Owner => Role::Owner,
+        AclBucket::Admin => Role::Admin,
+        AclBucket::Writer => Role::Writer,
+        AclBucket::Reader => Role::Reader,
+    }
+}
+
+/// Per-recipient membership witness stamped on every
+/// `AclSpec::HiveGroup` entry by the writer. The writer asserts:
+///
+/// - `pubkey` holds the membership at `membership_hash`,
+/// - that membership grants `bucket`-level role (or higher), AND
+/// - the membership's `group_genesis_hash` is in the corresponding
+///   bucket of the entry's `group_acl` (Owner-bucket → `group_acl.owner`;
+///   Admin → `admin ∪ owner`; Writer → `admin ∪ writer ∪ owner`;
+///   Reader → all four).
+///
+/// The validator re-verifies every assertion at commit time via
+/// `must_get_valid_record(membership_hash)`. A modified coordinator
+/// stamping a witness for a pubkey that is not a real group member
+/// (attack #5) fails at the per-witness fetch / role / group-match
+/// check; the entry is rejected and never reaches the DHT.
+///
+/// Why per-witness, not per-pubkey on a map: keeps the witness
+/// authoring locally cheap (one `get_latest_group_membership` per
+/// pubkey + bucket the humm-tauri helper already pre-computes for the
+/// roster) and validator iteration cost bounded by
+/// [`HIVEGROUP_MAX_WITNESSES`].
+#[hdk_entry_helper]
+#[derive(Clone, PartialEq)]
+pub struct RecipientWitness {
+    pub pubkey: AgentPubKey,
+    pub bucket: AclBucket,
+    pub membership_hash: ActionHash,
+}
+
 /// Maximum recipient count on a `DirectMessage`. Bounds the
 /// per-content fanout amplification surface (a modified coordinator
 /// otherwise could write a DM with thousands of recipients,
@@ -117,6 +197,16 @@ pub const DM_MAX_RECIPIENTS: usize = 32;
 /// piece of content is already an outlier); revisit if production
 /// usage demands more.
 pub const GROUP_ACL_MAX_GROUPS: usize = 64;
+
+/// Maximum recipient_witnesses count per HiveGroup entry. Each witness
+/// triggers one `must_get_valid_record` at commit time; unbounded
+/// would be a validator-DoS surface (a modified coordinator could
+/// stamp thousands of witnesses, forcing every validating peer to
+/// issue O(N) network calls per entry). 256 covers any realistic
+/// group-scoped content (a 256-recipient group is already an outlier;
+/// mirrors the [`DM_MAX_RECIPIENTS`] rationale at higher cardinality
+/// since group fan-out is naturally larger than DM fan-out).
+pub const HIVEGROUP_MAX_WITNESSES: usize = 256;
 
 /// First-class per-scope authority contract on every `EncryptedContent`
 /// entry. Variant-dispatched at commit time.
@@ -141,6 +231,16 @@ pub enum AclSpec {
         /// [`crate::group::check_group_authority`]. `Some(hash)` =
         /// author's authorising `GroupMembership` (Path C).
         author_group_membership_hash: Option<ActionHash>,
+        /// G-6.2: per-recipient membership witnesses. MUST cover every
+        /// pubkey in [`EncryptedContentHeader::public_key_acl`]
+        /// `.{owner, admin, writer, reader}` exactly once (validator-
+        /// checked one-to-one). Each witness must point at a real
+        /// [`crate::group::GroupMembership`] for the named pubkey,
+        /// granting a role that satisfies the bucket, in a group that
+        /// is in the corresponding (or higher) bucket of `group_acl`,
+        /// and unexpired at the entry's `action.timestamp`.
+        /// Cardinality bounded by [`HIVEGROUP_MAX_WITNESSES`].
+        recipient_witnesses: Vec<RecipientWitness>,
     },
     /// Direct sender↔recipient(s). Pair or small-group; cross-hive
     /// viable (no hive/group membership check on recipients). The
@@ -259,6 +359,7 @@ fn run_content_validators(
             author_membership_hash,
             group_acl,
             author_group_membership_hash,
+            recipient_witnesses,
         } => validate_hivegroup_acl(
             author,
             timestamp,
@@ -266,6 +367,8 @@ fn run_content_validators(
             author_membership_hash.as_ref(),
             group_acl,
             author_group_membership_hash.as_ref(),
+            recipient_witnesses,
+            &content.header.public_key_acl,
         ),
         AclSpec::DirectMessage { recipients } => {
             validate_directmessage_acl(author, recipients, &content.header.public_key_acl)
@@ -291,10 +394,31 @@ fn run_content_validators(
 /// group hash in `group_acl` MUST resolve to a `GroupGenesis` in the
 /// same hive (closes cross-hive group claim, attack #9).
 ///
-/// **Recipient-set integrity** (G-6.2) is documented but NOT
-/// enforced this commit; see the module doc comment for the deferral.
-/// Until G-6.2 lands, `public_key_acl` on HiveGroup content is an
-/// unauthenticated routing hint.
+/// **G-6.2 recipient-set integrity (pass-4).** The `recipient_witnesses`
+/// list MUST cover every pubkey in `public_key_acl` exactly once
+/// (bidirectional cross-check) and each witness MUST resolve to a
+/// real, unexpired, role-sufficient [`crate::group::GroupMembership`]
+/// for the named pubkey in a group present in the corresponding (or
+/// higher) bucket of `group_acl`. Closes attack #5: recipient-list
+/// forgery for routing fan-out.
+///
+/// ## Step order (fail-fast)
+///
+/// 1. Cardinality bound on `group_acl` (cheap, pre-fetch).
+/// 2. Hive Writer+ authority (1 fetch).
+/// 3. Per-group cross-hive consistency + per-group Writer+ authority
+///    (≤ 3 fetches per group, bounded by [`GROUP_ACL_MAX_GROUPS`]).
+/// 4. Cardinality bound on `recipient_witnesses` (cheap, pre-fetch).
+/// 5. Bidirectional set-equality between `public_key_acl` buckets and
+///    witnesses with bucket-dominance check (cheap, pre-fetch — pure
+///    string compares + role-table lookups).
+/// 6. Per-witness [`crate::group::GroupMembership`] verification
+///    (1 fetch per witness, bounded by [`HIVEGROUP_MAX_WITNESSES`]).
+///
+/// Steps 1-3 stay pre-witness so hive/group authority failure short-
+/// circuits the entire validator before any witness-fetch cost.
+/// Steps 4-5 are pre-fetch within the witness suite so the cheap
+/// cross-check rejections fire before the per-witness fetches.
 fn validate_hivegroup_acl(
     author: &AgentPubKey,
     timestamp: &Timestamp,
@@ -302,10 +426,12 @@ fn validate_hivegroup_acl(
     author_membership_hash: Option<&ActionHash>,
     group_acl: &AclByGroupGenesis,
     author_group_membership_hash: Option<&ActionHash>,
+    recipient_witnesses: &[RecipientWitness],
+    public_key_acl: &Acl,
 ) -> ExternResult<ValidateCallbackResult> {
-    // Cardinality bound — same amplification mitigation as
-    // DM_MAX_RECIPIENTS. Each group hash forces network calls;
-    // unbounded fan-out is a validator-DoS surface.
+    // Step 1 — group_acl cardinality bound. Same amplification
+    // mitigation as DM_MAX_RECIPIENTS. Each group hash forces network
+    // calls; unbounded fan-out is a validator-DoS surface.
     let total_groups = 1usize
         .saturating_add(group_acl.admin.len())
         .saturating_add(group_acl.writer.len())
@@ -316,7 +442,7 @@ fn validate_hivegroup_acl(
              maximum is GROUP_ACL_MAX_GROUPS = {GROUP_ACL_MAX_GROUPS}",
         )));
     }
-    // Hive authority: Writer+ in the named hive (mirrors pass-2).
+    // Step 2 — hive authority: Writer+ in the named hive (mirrors pass-2).
     let hive_check = check_hive_authority(
         author,
         hive_genesis_hash,
@@ -327,10 +453,10 @@ fn validate_hivegroup_acl(
     if !matches!(hive_check, ValidateCallbackResult::Valid) {
         return Ok(hive_check);
     }
-    // For each group listed in group_acl, the author must hold
-    // Writer+. The same author_group_membership_hash witness is reused
-    // across all groups; this is a deliberate simplification — the
-    // common humm-tauri pattern publishes content under groups the
+    // Step 3 — for each group listed in group_acl, the author must
+    // hold Writer+. The same author_group_membership_hash witness is
+    // reused across all groups; this is a deliberate simplification —
+    // the common humm-tauri pattern publishes content under groups the
     // author is a member of via one specific membership. Cross-group
     // multi-membership writes are still possible by issuing separate
     // entries.
@@ -360,6 +486,231 @@ fn validate_hivegroup_acl(
         )?;
         if !matches!(group_check, ValidateCallbackResult::Valid) {
             return Ok(group_check);
+        }
+    }
+    // Steps 4-6 — G-6.2 recipient-witness verification
+    // (cardinality → bidirectional PKA cross-check → per-witness fetch).
+    validate_recipient_witnesses(
+        recipient_witnesses,
+        public_key_acl,
+        group_acl,
+        timestamp,
+    )
+}
+
+/// G-6.2 — recipient-witness verification. Three sub-checks:
+///
+/// - **Cardinality** (step 4): bounded by [`HIVEGROUP_MAX_WITNESSES`]
+///   so a modified coordinator cannot DoS the validator with thousands
+///   of witnesses.
+/// - **Bidirectional cross-check** (step 5, pre-fetch): every pubkey
+///   in `public_key_acl.{owner,admin,writer,reader}` must be backed by
+///   exactly one witness whose `bucket` dominates the PKA bucket the
+///   pubkey lives in, AND every witness's `pubkey` must appear in the
+///   PKA bucket it claims. No over-claiming, no under-claiming, no
+///   duplicates.
+/// - **Per-witness verification** (step 6, fetch): each witness's
+///   `membership_hash` resolves to a real [`crate::group::GroupMembership`]
+///   for the named pubkey, in a group present in the bucket
+///   (or any dominating bucket) of `group_acl`, granting a role that
+///   satisfies the witness bucket, unexpired at `timestamp`.
+///
+/// Extracted as a free function so the host-side test module can
+/// exercise the pre-fetch branches (steps 4 + 5) without a DHT.
+fn validate_recipient_witnesses(
+    witnesses: &[RecipientWitness],
+    public_key_acl: &Acl,
+    group_acl: &AclByGroupGenesis,
+    timestamp: &Timestamp,
+) -> ExternResult<ValidateCallbackResult> {
+    // Step 4 — cardinality.
+    if witnesses.len() > HIVEGROUP_MAX_WITNESSES {
+        return Ok(ValidateCallbackResult::Invalid(format!(
+            "HiveGroup recipient_witnesses.len() = {} exceeds \
+             HIVEGROUP_MAX_WITNESSES = {}",
+            witnesses.len(),
+            HIVEGROUP_MAX_WITNESSES,
+        )));
+    }
+    // Step 5 — bidirectional cross-check with bucket dominance.
+    if let Some(invalid) = check_witness_pka_bidirectional(witnesses, public_key_acl) {
+        return Ok(invalid);
+    }
+    // Step 6 — per-witness fetch + verification.
+    for witness in witnesses {
+        let result = verify_recipient_witness(witness, group_acl, timestamp)?;
+        if !matches!(result, ValidateCallbackResult::Valid) {
+            return Ok(result);
+        }
+    }
+    Ok(ValidateCallbackResult::Valid)
+}
+
+/// Pre-fetch bidirectional cross-check between PKA buckets and the
+/// witness list. Returns `Some(Invalid)` on any forgery (PKA pubkey
+/// without dominating witness, or witness pubkey not in claimed PKA
+/// bucket, or duplicate witnesses for the same pubkey). Pure string
+/// compares + role-table lookups — host-reachable, no DHT.
+///
+/// The dominance rule (witness bucket ≥ PKA bucket) lets humm-tauri
+/// stamp ONE witness per pubkey at the highest role the pubkey holds:
+/// an Admin-bucket witness automatically satisfies Writer + Reader
+/// PKA entries for the same pubkey, matching the pass-3 link
+/// validator's admin ⊆ writer ⊆ reader semantics.
+fn check_witness_pka_bidirectional(
+    witnesses: &[RecipientWitness],
+    public_key_acl: &Acl,
+) -> Option<ValidateCallbackResult> {
+    // Combined worst-case cost: O(N_witnesses * N_pka) string
+    // comparisons across the forward + reverse passes; with
+    // HIVEGROUP_MAX_WITNESSES = 256 and a similarly-bounded PKA, this
+    // is ≤ 2 * 256 * 256 = 131_072 ~50-char compares per validate call.
+    // Bounded; acceptable as a one-shot commit-time check.
+    // Pre-compute every witness's pubkey-string + bucket exactly once.
+    // The forward and reverse passes both iterate witnesses N_pka and
+    // N_witnesses times respectively; without this pre-pass each
+    // iteration would re-`to_string()` the pubkey, producing
+    // O(N_pka * N_witnesses) String allocations. With it the allocator
+    // pressure is O(N_witnesses).
+    let witness_strings: Vec<(String, AclBucket)> = witnesses
+        .iter()
+        .map(|w| (w.pubkey.to_string(), w.bucket))
+        .collect();
+    // Reject duplicate witnesses for the same pubkey — would let a
+    // coordinator over-stamp a pubkey across multiple buckets to mask
+    // an over-claim. One canonical witness per pubkey, period.
+    {
+        let mut seen: std::collections::HashSet<&str> =
+            std::collections::HashSet::with_capacity(witness_strings.len());
+        for (pubkey_str, _bucket) in &witness_strings {
+            if !seen.insert(pubkey_str.as_str()) {
+                return Some(ValidateCallbackResult::Invalid(format!(
+                    "HiveGroup recipient_witnesses contains duplicate \
+                     pubkey {pubkey_str} (one canonical witness per pubkey)",
+                )));
+            }
+        }
+    }
+    // Forward direction — every PKA pubkey backed by a dominating
+    // witness. Iterates the chained PKA buckets lazily (no Vec).
+    // Owner bucket is a single string (may be empty for non-Owner-
+    // bearing headers); admin/writer/reader are vecs.
+    let pka_iter = std::iter::once((AclBucket::Owner, public_key_acl.owner.as_str()))
+        .filter(|(_, s)| !s.is_empty())
+        .chain(public_key_acl.admin.iter().map(|s| (AclBucket::Admin, s.as_str())))
+        .chain(public_key_acl.writer.iter().map(|s| (AclBucket::Writer, s.as_str())))
+        .chain(public_key_acl.reader.iter().map(|s| (AclBucket::Reader, s.as_str())));
+    for (bucket, pubkey_str) in pka_iter {
+        let backed = witness_strings
+            .iter()
+            .any(|(wp, wb)| wp == pubkey_str && wb.dominates(bucket));
+        if !backed {
+            return Some(ValidateCallbackResult::Invalid(format!(
+                "HiveGroup public_key_acl.{:?} entry {} is not backed by \
+                 any dominating recipient_witness",
+                bucket, pubkey_str,
+            )));
+        }
+    }
+    // Reverse direction — every witness's pubkey appears in the PKA
+    // bucket it claims (no over-claim).
+    for (pubkey_str, bucket) in &witness_strings {
+        let pka_bucket = match bucket {
+            AclBucket::Owner => std::slice::from_ref(&public_key_acl.owner),
+            AclBucket::Admin => public_key_acl.admin.as_slice(),
+            AclBucket::Writer => public_key_acl.writer.as_slice(),
+            AclBucket::Reader => public_key_acl.reader.as_slice(),
+        };
+        if !pka_bucket.iter().any(|s| s == pubkey_str) {
+            return Some(ValidateCallbackResult::Invalid(format!(
+                "HiveGroup recipient_witness for {pubkey_str} claims bucket {:?} \
+                 but pubkey is not in public_key_acl.{:?}",
+                bucket, bucket,
+            )));
+        }
+    }
+    None
+}
+
+/// Per-witness commit-time verification: fetch the cited
+/// [`crate::group::GroupMembership`], confirm grantee identity, group
+/// containment in a dominating `group_acl` bucket, role satisfaction,
+/// and unexpired timing. One `must_get_valid_record` per call.
+fn verify_recipient_witness(
+    witness: &RecipientWitness,
+    group_acl: &AclByGroupGenesis,
+    timestamp: &Timestamp,
+) -> ExternResult<ValidateCallbackResult> {
+    let (_membership_author, membership) = fetch_group_membership(&witness.membership_hash)?;
+    if membership.for_agent != witness.pubkey {
+        return Ok(ValidateCallbackResult::Invalid(format!(
+            "HiveGroup recipient_witness membership {} grants role to {} \
+             but witness claims pubkey {}",
+            witness.membership_hash, membership.for_agent, witness.pubkey,
+        )));
+    }
+    // The membership's group MUST live in a `group_acl` bucket that is
+    // dominated by — or equal to — the witness bucket. Owner-bucket
+    // witnesses only accept Owner-bucket groups; Reader-bucket
+    // witnesses accept any bucket (admin ∪ writer ∪ reader ∪ owner).
+    // Group-bucket acceptance follows AclBucket dominance
+    // (Owner > Admin > Writer > Reader): a witness in bucket X
+    // accepts a membership in any group_acl bucket Y where
+    // X.dominates(Y). Owner-bucket witnesses require the owner group
+    // exactly. Admin accepts owner∪admin; Writer accepts
+    // owner∪admin∪writer; Reader accepts all four. This intentionally
+    // diverges from the per-class link validator semantics in
+    // `validate_create_link_humm_content_acl` (which gates on the
+    // bucket only, e.g. HummContentAdmin → group_acl.admin only):
+    // witnesses use dominance because a single high-bucket witness
+    // must cover the corresponding lower-bucket PKA entries for the
+    // same pubkey under humm-tauri's inclusive-listing convention.
+    //
+    // The match arms inline `.any()` over the chained iterator to
+    // avoid materialising a Vec<&ActionHash> per witness call (bounded
+    // worst case ~16KB of pointer allocations at HIVEGROUP_MAX_WITNESSES *
+    // GROUP_ACL_MAX_GROUPS); the dominance ordering is preserved
+    // because each higher bucket adds groups from the immediately
+    // higher-authority bucket onto the same iterator chain.
+    let group_in_accepted_bucket = match witness.bucket {
+        AclBucket::Owner => group_acl.owner == membership.group_genesis_hash,
+        AclBucket::Admin => std::iter::once(&group_acl.owner)
+            .chain(group_acl.admin.iter())
+            .any(|g| g == &membership.group_genesis_hash),
+        AclBucket::Writer => std::iter::once(&group_acl.owner)
+            .chain(group_acl.admin.iter())
+            .chain(group_acl.writer.iter())
+            .any(|g| g == &membership.group_genesis_hash),
+        AclBucket::Reader => std::iter::once(&group_acl.owner)
+            .chain(group_acl.admin.iter())
+            .chain(group_acl.writer.iter())
+            .chain(group_acl.reader.iter())
+            .any(|g| g == &membership.group_genesis_hash),
+    };
+    if !group_in_accepted_bucket {
+        return Ok(ValidateCallbackResult::Invalid(format!(
+            "HiveGroup recipient_witness membership {} is for group {} \
+             which is not in group_acl bucket {:?} or any dominating bucket",
+            witness.membership_hash, membership.group_genesis_hash, witness.bucket,
+        )));
+    }
+    // Role satisfies the bucket (Admin-bucket → group Admin+ etc.).
+    let required = bucket_required_role(witness.bucket);
+    if !role_satisfies(membership.role, required) {
+        return Ok(ValidateCallbackResult::Invalid(format!(
+            "HiveGroup recipient_witness membership {} grants role {:?}, \
+             required {:?} for bucket {:?}",
+            witness.membership_hash, membership.role, required, witness.bucket,
+        )));
+    }
+    // Unexpired at the entry's timestamp.
+    if let Some(expiry) = membership.expiry {
+        if timestamp > &expiry {
+            return Ok(ValidateCallbackResult::Invalid(format!(
+                "HiveGroup recipient_witness membership {} expired at {:?}; \
+                 action timestamp {:?}",
+                witness.membership_hash, expiry, timestamp,
+            )));
         }
     }
     Ok(ValidateCallbackResult::Valid)
@@ -1039,6 +1390,7 @@ mod tests {
                 reader: vec![],
             },
             author_group_membership_hash: None,
+            recipient_witnesses: vec![],
         }
     }
 
@@ -1832,5 +2184,297 @@ mod tests {
             }
             other => panic!("expected Invalid, got {other:?}"),
         }
+    }
+
+    // ---------------------------------------------------------------------
+    // Pass-4 — G-6.2 recipient-witness verification (pre-fetch branches).
+    //
+    // Steps 4 (cardinality) + 5 (bidirectional cross-check) are host-
+    // reachable; step 6 (per-witness membership fetch) requires a
+    // live conductor and is covered by Tryorama tests
+    // (`tryorama-recipient-witnesses.test.ts`).
+    // ---------------------------------------------------------------------
+
+    /// Build an `AclByGroupGenesis` from a literal owner + bucket hashes.
+    fn group_acl(
+        owner: ActionHash,
+        admin: Vec<ActionHash>,
+        writer: Vec<ActionHash>,
+        reader: Vec<ActionHash>,
+    ) -> AclByGroupGenesis {
+        AclByGroupGenesis { owner, admin, writer, reader }
+    }
+
+    /// PKA with no owner string + arbitrary per-bucket pubkey strings.
+    fn pka_from_buckets(
+        admin: Vec<&AgentPubKey>,
+        writer: Vec<&AgentPubKey>,
+        reader: Vec<&AgentPubKey>,
+    ) -> Acl {
+        Acl {
+            owner: "".into(),
+            admin: admin.into_iter().map(|p| p.to_string()).collect(),
+            writer: writer.into_iter().map(|p| p.to_string()).collect(),
+            reader: reader.into_iter().map(|p| p.to_string()).collect(),
+        }
+    }
+
+    fn witness(pubkey: AgentPubKey, bucket: AclBucket, membership: ActionHash) -> RecipientWitness {
+        RecipientWitness { pubkey, bucket, membership_hash: membership }
+    }
+
+    #[test]
+    fn witnesses_empty_with_nonempty_pka_rejected() {
+        // Forward direction failure: PKA has a reader entry but no
+        // witness backs it.
+        let bob = agent_pubkey(2);
+        let pka = pka_from_buckets(vec![], vec![], vec![&bob]);
+        let acl = group_acl(action_hash(10), vec![], vec![], vec![action_hash(11)]);
+        let result = validate_recipient_witnesses(&[], &pka, &acl, &Timestamp(0))
+            .expect("step 5 is pre-fetch");
+        match result {
+            ValidateCallbackResult::Invalid(msg) => {
+                assert!(
+                    msg.contains("not backed by any dominating recipient_witness"),
+                    "got: {msg}"
+                );
+                assert!(msg.contains(&bob.to_string()), "got: {msg}");
+            }
+            other => panic!("expected Invalid, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn witnesses_missing_pka_entry_rejected() {
+        // PKA has two reader entries; only one is backed by a witness.
+        // The unbacked entry rejects.
+        let bob = agent_pubkey(2);
+        let mallory = agent_pubkey(99);
+        let pka = pka_from_buckets(vec![], vec![], vec![&bob, &mallory]);
+        let acl = group_acl(action_hash(10), vec![], vec![], vec![action_hash(11)]);
+        let witnesses = vec![witness(bob.clone(), AclBucket::Reader, action_hash(20))];
+        let result = validate_recipient_witnesses(&witnesses, &pka, &acl, &Timestamp(0))
+            .expect("step 5 is pre-fetch");
+        match result {
+            ValidateCallbackResult::Invalid(msg) => {
+                assert!(
+                    msg.contains("not backed by any dominating recipient_witness"),
+                    "got: {msg}"
+                );
+                // Either bob or mallory message — the iteration order
+                // is deterministic (owner, admin, writer, reader);
+                // mallory comes after bob in reader vec so bob is
+                // checked first. bob IS backed, so mallory is the
+                // expected failure.
+                assert!(msg.contains(&mallory.to_string()), "got: {msg}");
+            }
+            other => panic!("expected Invalid, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn witnesses_over_claim_without_pka_entry_rejected() {
+        // Reverse direction failure: witness claims a bucket for a
+        // pubkey that is not in the corresponding PKA bucket.
+        let bob = agent_pubkey(2);
+        let mallory = agent_pubkey(99);
+        // PKA has bob in reader; witness over-claims mallory in reader.
+        let pka = pka_from_buckets(vec![], vec![], vec![&bob]);
+        let acl = group_acl(action_hash(10), vec![], vec![], vec![action_hash(11)]);
+        // Two witnesses: one legitimate (bob), one over-claim (mallory).
+        // bob covers the forward-direction check; mallory triggers the
+        // reverse-direction check.
+        let witnesses = vec![
+            witness(bob.clone(), AclBucket::Reader, action_hash(20)),
+            witness(mallory.clone(), AclBucket::Reader, action_hash(21)),
+        ];
+        let result = validate_recipient_witnesses(&witnesses, &pka, &acl, &Timestamp(0))
+            .expect("step 5 is pre-fetch");
+        match result {
+            ValidateCallbackResult::Invalid(msg) => {
+                assert!(msg.contains("claims bucket Reader"), "got: {msg}");
+                assert!(msg.contains(&mallory.to_string()), "got: {msg}");
+                assert!(
+                    msg.contains("not in public_key_acl.Reader"),
+                    "got: {msg}"
+                );
+            }
+            other => panic!("expected Invalid, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn witnesses_step5_passes_when_round_trip_consistent_step6_triggers_fetch() {
+        // Step 5 (bidirectional cross-check) accepts a single Reader-
+        // bucket witness for bob in PKA.reader: the forward and
+        // reverse passes both round-trip cleanly. Step 6 then fires
+        // the membership fetch, which fails host-side because there
+        // is no DHT — we observe Err, not Ok(Invalid). This pins the
+        // step-5 → step-6 boundary for the simplest happy case.
+        //
+        // The dominance-happy-path (Admin-bucket witness backing a
+        // Reader-bucket PKA entry) is covered end-to-end by Tryorama
+        // because asserting on dominance requires the membership to
+        // actually resolve.
+        let bob = agent_pubkey(2);
+        let pka = pka_from_buckets(vec![], vec![], vec![&bob]);
+        let acl = group_acl(action_hash(10), vec![action_hash(11)], vec![], vec![]);
+        let witnesses = vec![witness(bob.clone(), AclBucket::Reader, action_hash(20))];
+        let result = validate_recipient_witnesses(&witnesses, &pka, &acl, &Timestamp(0));
+        assert!(
+            result.is_err(),
+            "expected host fetch error after pre-fetch checks passed; got Ok({:?})",
+            result.ok()
+        );
+    }
+
+    #[test]
+    fn witnesses_reader_cannot_back_admin_pka_step5() {
+        // Bucket-dominance violation: bob is in PKA.admin; only a
+        // Reader-bucket witness is provided. Reader does NOT dominate
+        // Admin — step 5 must reject before any fetch.
+        let bob = agent_pubkey(2);
+        let pka = pka_from_buckets(vec![&bob], vec![], vec![]);
+        let acl = group_acl(action_hash(10), vec![action_hash(11)], vec![], vec![]);
+        let witnesses = vec![witness(bob.clone(), AclBucket::Reader, action_hash(20))];
+        let result = validate_recipient_witnesses(&witnesses, &pka, &acl, &Timestamp(0))
+            .expect("step 5 dominance check is pre-fetch");
+        match result {
+            ValidateCallbackResult::Invalid(msg) => {
+                // Forward direction message — the Admin-bucket PKA
+                // entry has no dominating witness.
+                assert!(
+                    msg.contains("public_key_acl.Admin"),
+                    "got: {msg}"
+                );
+                assert!(
+                    msg.contains("not backed by any dominating recipient_witness"),
+                    "got: {msg}"
+                );
+            }
+            other => panic!("expected Invalid, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn witnesses_exceed_max_count_rejected() {
+        // Cardinality bound (step 4) fires before the cross-check
+        // (step 5). Build HIVEGROUP_MAX_WITNESSES + 1 witnesses and
+        // confirm the cardinality message is the rejection cause.
+        let acl = group_acl(action_hash(10), vec![], vec![], vec![]);
+        let pka = pka_from_buckets(vec![], vec![], vec![]); // contents irrelevant — step 4 fires first
+        let witnesses: Vec<RecipientWitness> = (0..HIVEGROUP_MAX_WITNESSES + 1)
+            .map(|i| {
+                // Spread `i` across the first 4 bytes of the 36-byte
+                // pubkey so no two witnesses collide even if
+                // HIVEGROUP_MAX_WITNESSES is raised above 2^32. A
+                // collision would surface as a dedup hit (step 5)
+                // before the cardinality bound (step 4) fires —
+                // changing the rejection reason from
+                // "exceeds HIVEGROUP_MAX_WITNESSES" to "duplicate
+                // pubkey", which is the wrong invariant to pin in
+                // this test.
+                let mut bytes = vec![0u8; 36];
+                let i_bytes = (i as u32).to_le_bytes();
+                bytes[..4].copy_from_slice(&i_bytes);
+                let pk = AgentPubKey::from_raw_36(bytes);
+                witness(pk, AclBucket::Reader, action_hash(20))
+            })
+            .collect();
+        let result = validate_recipient_witnesses(&witnesses, &pka, &acl, &Timestamp(0))
+            .expect("step 4 cardinality is pre-fetch");
+        match result {
+            ValidateCallbackResult::Invalid(msg) => {
+                assert!(
+                    msg.contains("HIVEGROUP_MAX_WITNESSES"),
+                    "expected cardinality message; got: {msg}"
+                );
+                assert!(
+                    msg.contains(&format!("= {}", HIVEGROUP_MAX_WITNESSES + 1)),
+                    "expected actual count in message; got: {msg}"
+                );
+            }
+            other => panic!("expected Invalid, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn witnesses_duplicate_pubkey_rejected() {
+        // Defense-in-depth: a duplicate-witness-for-same-pubkey forge
+        // (Mallory stamps her pubkey twice across two buckets to mask
+        // an over-claim) is rejected at the dedup check inside step 5.
+        let bob = agent_pubkey(2);
+        let pka = pka_from_buckets(vec![], vec![], vec![&bob]);
+        let acl = group_acl(action_hash(10), vec![], vec![], vec![action_hash(11)]);
+        let witnesses = vec![
+            witness(bob.clone(), AclBucket::Reader, action_hash(20)),
+            witness(bob.clone(), AclBucket::Reader, action_hash(21)),
+        ];
+        let result = validate_recipient_witnesses(&witnesses, &pka, &acl, &Timestamp(0))
+            .expect("dedup is pre-fetch");
+        match result {
+            ValidateCallbackResult::Invalid(msg) => {
+                assert!(msg.contains("duplicate"), "got: {msg}");
+                assert!(msg.contains(&bob.to_string()), "got: {msg}");
+            }
+            other => panic!("expected Invalid, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn witnesses_reader_cannot_back_owner_pka_entry() {
+        // Owner-bucket PKA entry must be backed by an Owner-bucket
+        // (or higher — Owner is the highest) witness. Reader-bucket
+        // witness does NOT satisfy the Owner PKA entry. Confirms
+        // dominance applies uniformly across all four PKA buckets.
+        let alice = agent_pubkey(1);
+        let pka = Acl {
+            owner: alice.to_string(),
+            admin: vec![],
+            writer: vec![],
+            reader: vec![],
+        };
+        let acl = group_acl(action_hash(10), vec![], vec![], vec![]);
+        // Wrong bucket witness — Reader cannot back Owner.
+        let witnesses = vec![witness(alice.clone(), AclBucket::Reader, action_hash(20))];
+        let result = validate_recipient_witnesses(&witnesses, &pka, &acl, &Timestamp(0))
+            .expect("step 5 is pre-fetch");
+        match result {
+            ValidateCallbackResult::Invalid(msg) => {
+                assert!(msg.contains("public_key_acl.Owner"), "got: {msg}");
+                assert!(
+                    msg.contains("not backed by any dominating recipient_witness"),
+                    "got: {msg}"
+                );
+            }
+            other => panic!("expected Invalid, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn acl_bucket_dominance_matrix() {
+        // Pin the dominance ordering — Owner > Admin > Writer > Reader.
+        // Any change to the AclBucket variant order or
+        // bucket_required_role must keep this matrix intact.
+        use AclBucket::*;
+        for higher in [Owner, Admin, Writer, Reader] {
+            assert!(higher.dominates(higher), "{higher:?} dominates self");
+        }
+        // Owner dominates everything.
+        assert!(Owner.dominates(Admin));
+        assert!(Owner.dominates(Writer));
+        assert!(Owner.dominates(Reader));
+        // Admin dominates Writer + Reader, not Owner.
+        assert!(!Admin.dominates(Owner));
+        assert!(Admin.dominates(Writer));
+        assert!(Admin.dominates(Reader));
+        // Writer dominates Reader, not above.
+        assert!(!Writer.dominates(Owner));
+        assert!(!Writer.dominates(Admin));
+        assert!(Writer.dominates(Reader));
+        // Reader dominates only itself.
+        assert!(!Reader.dominates(Owner));
+        assert!(!Reader.dominates(Admin));
+        assert!(!Reader.dominates(Writer));
     }
 }

@@ -572,6 +572,7 @@ mod tests {
                         reader: vec![],
                     },
                     author_group_membership_hash: None,
+                    recipient_witnesses: vec![],
                 },
                 public_key_acl: sample_acl(),
             },
