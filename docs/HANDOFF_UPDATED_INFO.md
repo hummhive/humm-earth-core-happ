@@ -113,7 +113,7 @@ artifacts.
 
 ## What is CHANGING — plan a follow-up
 
-### `EncryptedContentHeader` wire shape (Phase C — NOT committed yet)
+### `EncryptedContentHeader` wire shape (Phase C — COMMITTED *(this commit)*)
 
 **Current pass-2 shape** (what you are integrating against today):
 
@@ -293,6 +293,47 @@ integration tests when the conductor pipeline is exercised.
 
 ---
 
+## What is NOT enforced this commit (G-6.2 recipient-set integrity)
+
+The pass-3 plan's section G-6.2 calls for the integrity validator to
+verify, on every `AclSpec::HiveGroup` content commit, that every pubkey
+listed in `public_key_acl.{owner,admin,writer,reader}` holds a matching
+`GroupMembership` in the same-or-higher bucket of `group_acl`. This
+would close the modified-coordinator forgery where Mallory inserts her
+pubkey into the reader bucket of a private group post to receive the
+remote-signal notification (even though she can't decrypt without the
+shared secret).
+
+**G-6.2 is documented but DEFERRED to a follow-up sub-commit (Phase
+C.1).** Current state:
+- Author authority (Writer+ in the hive AND in every group_acl group)
+  IS enforced. A modified coordinator cannot post group content under
+  groups the author doesn't have authority in.
+- The `group_acl` ActionHash references are validated — each must
+  resolve to a real `GroupGenesis` in the same hive (closes the
+  forge-group-claim attack).
+- The recipient list (`public_key_acl`) is treated as an
+  unauthenticated routing hint. A modified coordinator can add or
+  remove pubkeys; recipients still cannot decrypt without the shared
+  secret, but routing fan-out (`send_remote_signal` recipients) can
+  be manipulated.
+
+**humm-tauri implication.** Treat `public_key_acl` as a hint, not as
+proof of group membership. When you need to verify "is this pubkey
+actually a group member?", call `list_group_members(group_genesis_hash)`
+from the new Phase B externs — that's the cryptographic roster and
+is unforgeable. Don't gate access decisions or trust claims on
+`public_key_acl` alone.
+
+The G-6.2 follow-up will add a `recipient_membership_witnesses` field
+to `AclSpec::HiveGroup`: a `BTreeMap<AgentPubKey, ActionHash>` where
+the writer stamps each recipient's authorising `GroupMembership` hash.
+The validator iterates the map at commit time. When that ships, the
+wire shape gains the field but existing entries (with no map) remain
+valid via an `Option<BTreeMap>` deserialisation. Plan for that future
+addition by NOT baking assumptions about `public_key_acl.reader` being
+authoritative into your UI.
+
 ## What you can do today to make the pass-3 migration easier
 
 1. **Mark client-side group/role/ACL assertions** with a
@@ -339,7 +380,21 @@ integration tests when the conductor pipeline is exercised.
   humm-tauri receives `Signal::EntryCreated { app_entry:
   EntryTypes::GroupGenesis(..) }` etc. via the generic pathway.
 - Phase C — `AclSpec` reshape + variant-dispatch validators (the
-  wire-breaking change): **not started.**
+  wire-breaking change): **COMMITTED** *(this commit)*. New shape is
+  live on the branch — `EncryptedContentHeader { id, display_hive_id,
+  content_type, acl_spec: AclSpec, public_key_acl,
+  revision_author_signing_public_key }`. The four `AclSpec` variants
+  enforce author-authority per scope. **G-6.2 deferred** — see
+  "What is NOT enforced this commit" below. **Bonus hardenings this
+  commit:** M-1 (`validate_update_encrypted_content` now requires
+  `action.author == original_action.author` — closes update-chain
+  hijack across ALL variants; was pre-existing pass-1 gap that pass-3
+  amplified), L-1 (`EncryptedContentUpdates` link now requires link
+  author == base author == target author — closes app-level
+  update-graph poisoning), L-2 (DM rejects duplicate recipients —
+  degenerate self-DM hygiene), plus a `GROUP_ACL_MAX_GROUPS = 64`
+  validator-amplification bound on HiveGroup (analogous to
+  `DM_MAX_RECIPIENTS = 32`).
 - Phase D — Migration tooling extends (`scripts/migrate-dna.ts`
   group track + AclSpec classification): **not started.**
 - Phase E — Full handoff docs

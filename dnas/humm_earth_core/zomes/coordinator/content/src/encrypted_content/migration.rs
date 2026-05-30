@@ -544,7 +544,7 @@ pub fn get_migration_marker_v2(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use content_integrity::Acl;
+    use content_integrity::{Acl, AclByGroupGenesis, AclSpec};
 
     fn sample_acl() -> Acl {
         Acl {
@@ -559,12 +559,20 @@ mod tests {
         EncryptedContent {
             header: EncryptedContentHeader {
                 id: "msg-1".into(),
-                hive_id: "hive-1".into(),
-                hive_genesis_hash: ActionHash::from_raw_36(vec![7u8; 36]),
-                author_membership_hash: None,
+                display_hive_id: "hive-1".into(),
                 content_type: "dm".into(),
                 revision_author_signing_public_key: "uhCAk-original-author".into(),
-                acl: sample_acl(),
+                acl_spec: AclSpec::HiveGroup {
+                    hive_genesis_hash: ActionHash::from_raw_36(vec![7u8; 36]),
+                    author_membership_hash: None,
+                    group_acl: AclByGroupGenesis {
+                        owner: ActionHash::from_raw_36(vec![8u8; 36]),
+                        admin: vec![],
+                        writer: vec![],
+                        reader: vec![],
+                    },
+                    author_group_membership_hash: None,
+                },
                 public_key_acl: sample_acl(),
             },
             bytes: UnsafeBytes::from(vec![0xDE, 0xAD, 0xBE, 0xEF]).into(),
@@ -588,7 +596,7 @@ mod tests {
         let payload = build_marker_payload(&original, &marker).expect("build");
         assert_eq!(payload.header.content_type, "_migrated/dm");
         assert_eq!(payload.header.id, original.header.id);
-        assert_eq!(payload.header.hive_id, original.header.hive_id);
+        assert_eq!(payload.header.display_hive_id, original.header.display_hive_id);
         assert_eq!(
             payload.header.revision_author_signing_public_key,
             original.header.revision_author_signing_public_key
@@ -672,11 +680,8 @@ mod tests {
         let payload = build_marker_v2_payload(&original, &marker).expect("build");
         assert_eq!(payload.header.content_type, "_migrated/dm");
         assert_eq!(payload.header.id, original.header.id);
-        assert_eq!(payload.header.hive_id, original.header.hive_id);
-        assert_eq!(
-            payload.header.hive_genesis_hash,
-            original.header.hive_genesis_hash,
-        );
+        assert_eq!(payload.header.display_hive_id, original.header.display_hive_id);
+        assert_eq!(payload.header.acl_spec, original.header.acl_spec);
         assert_eq!(
             payload.header.revision_author_signing_public_key,
             original.header.revision_author_signing_public_key,
@@ -757,11 +762,8 @@ mod tests {
             Some("hive-1-display".into()),
         );
         let payload = build_marker_v2_payload(&original, &marker).expect("build");
-        assert_eq!(payload.header.hive_id, original.header.hive_id);
-        assert_eq!(
-            payload.header.hive_genesis_hash,
-            original.header.hive_genesis_hash,
-        );
+        assert_eq!(payload.header.display_hive_id, original.header.display_hive_id);
+        assert_eq!(payload.header.acl_spec, original.header.acl_spec);
         let decoded = MigrationMarkerV2::try_from(payload.bytes).expect("decode");
         assert_eq!(
             decoded.new_hive_genesis_hash_base64.as_deref(),

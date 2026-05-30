@@ -324,23 +324,26 @@ pub fn send_dm_call_sdp_data(input: SendDmCallSdpDataInput) -> ExternResult<()> 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use content_integrity::{Acl, EncryptedContent, EncryptedContentHeader};
+    use content_integrity::{Acl, AclByGroupGenesis, AclSpec, EncryptedContent, EncryptedContentHeader};
 
     fn sample_response() -> EncryptedContentResponse {
         EncryptedContentResponse {
             encrypted_content: EncryptedContent {
                 header: EncryptedContentHeader {
                     id: "id-1".into(),
-                    hive_id: "hive-1".into(),
-                    hive_genesis_hash: ActionHash::from_raw_36(vec![9u8; 36]),
-                    author_membership_hash: None,
+                    display_hive_id: "hive-1".into(),
                     content_type: "ct-1".into(),
                     revision_author_signing_public_key: "k".into(),
-                    acl: Acl {
-                        owner: "o".into(),
-                        admin: vec![],
-                        writer: vec![],
-                        reader: vec![],
+                    acl_spec: AclSpec::HiveGroup {
+                        hive_genesis_hash: ActionHash::from_raw_36(vec![9u8; 36]),
+                        author_membership_hash: None,
+                        group_acl: AclByGroupGenesis {
+                            owner: ActionHash::from_raw_36(vec![10u8; 36]),
+                            admin: vec![],
+                            writer: vec![],
+                            reader: vec![],
+                        },
+                        author_group_membership_hash: None,
                     },
                     public_key_acl: Acl {
                         owner: "o".into(),

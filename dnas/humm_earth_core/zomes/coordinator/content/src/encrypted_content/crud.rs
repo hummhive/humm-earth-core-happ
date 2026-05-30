@@ -32,12 +32,10 @@ pub fn create_encrypted_content(
     let encrypted_content = EncryptedContent {
         header: EncryptedContentHeader {
             id: input.id,
-            hive_id: input.hive_id.clone(),
-            hive_genesis_hash: input.hive_genesis_hash.clone(),
-            author_membership_hash: input.author_membership_hash.clone(),
+            display_hive_id: input.display_hive_id,
             content_type: input.content_type.clone(),
             revision_author_signing_public_key: input.revision_author_signing_public_key,
-            acl: input.acl,
+            acl_spec: input.acl_spec,
             public_key_acl: input.public_key_acl,
         },
         bytes: input.bytes,
@@ -49,8 +47,11 @@ pub fn create_encrypted_content(
         original_hash: action_hash.to_string(),
     };
 
-    // temp solution while waiting for pub/sub to be implemented. this will alert
-    // all agents in all hives for every entry created across the network
+    // Local emit (every variant) + best-effort cross-host fan-out to
+    // every agent in public_key_acl.reader. For DirectMessage the
+    // reader bucket IS the validated recipient list; for HiveGroup +
+    // Public it is the routing hint; for OpenWrite it is typically
+    // empty (the entry is its own announcement).
     emit_signal(EncryptedContentSignal {
         action_type: EncryptedContentSignalType::Create,
         data: response.clone(),
@@ -65,7 +66,7 @@ pub fn create_encrypted_content(
         },
     );
 
-    // create original hash pointer link pointing to itslef
+    // OriginalHashPointer (self-link) — every entry.
     create_link(
         action_hash.clone(),
         action_hash.clone(),
@@ -73,7 +74,8 @@ pub fn create_encrypted_content(
         (),
     )?;
 
-    // create link to the author
+    // Author-shape Hive link [author_pubkey, content_type] — every
+    // entry. The integrity validator accepts this path for ALL variants.
     let my_agent_pub_key = agent_info()?.agent_initial_pubkey;
     let author_link_path = Path::from(vec![
         Component::from(my_agent_pub_key.to_string()),
@@ -86,28 +88,29 @@ pub fn create_encrypted_content(
         (),
     )?;
 
-    // acl links
-    create_acl_links(encrypted_content.clone(), action_hash.clone())?;
-
-    // hive link - ignore empty hive_id which is used by hive discovery entries
-    if input.hive_id != "" {
+    // The hive-scoped link bundle (hive-shape Hive link, HummContentId,
+    // Dynamic, HummContent* ACL links) is only meaningful when the
+    // entry binds a hive context. DirectMessage and OpenWrite-without-
+    // target intentionally skip these — the integrity validator
+    // rejects them for those variants. We mirror the contract here.
+    if encrypted_content.header.hive_context().is_some() {
         create_hive_link(encrypted_content.clone(), action_hash.clone())?;
+        create_humm_content_id_link(encrypted_content.clone(), action_hash.clone())?;
+        if let Some(dynamic_links) = input.dynamic_links {
+            create_dynamic_links(
+                encrypted_content.clone(),
+                action_hash.clone(),
+                dynamic_links,
+            )?;
+        }
     }
 
-    // content ID link
-    create_humm_content_id_link(encrypted_content.clone(), action_hash.clone())?;
-
-    // dynamic links
-    if let Some(dynamic_links) = input.dynamic_links {
-        create_dynamic_links(
-            encrypted_content.clone(),
-            action_hash.clone(),
-            dynamic_links,
-        )?;
+    // HummContent{Owner,Admin,Writer,Reader} links require a
+    // group_acl, which only AclSpec::HiveGroup carries. Skip for the
+    // other three variants.
+    if encrypted_content.header.group_acl().is_some() {
+        create_acl_links(encrypted_content.clone(), action_hash.clone())?;
     }
-
-    // time indexing links
-    // time_index_encrypted_content(action_hash.clone(), &encrypted_content.header.content_type)?;
 
     Ok(response)
 }

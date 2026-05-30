@@ -52,28 +52,26 @@ pub struct CreateEncryptedContentInput {
     pub id: String,
     /// Display alias for the hive (preserves the legacy squuid
     /// `hive_id` semantics for UX continuity). NOT load-bearing for
-    /// security — see `hive_genesis_hash` for the cryptographic
-    /// identity. May be the empty string for hive-discovery entries
-    /// that intentionally sit OUTSIDE any hive's content path.
-    pub hive_id: String,
-    /// Cryptographic hive identity. The integrity validator looks
-    /// this hash up via `must_get_valid_record` and verifies it
-    /// references a `HiveGenesis` entry; the action.author of the
-    /// entry being created must hold at least Writer authority in
-    /// this hive (see `author_membership_hash`).
-    pub hive_genesis_hash: ActionHash,
-    /// `None` = the entry's author IS the genesis author for the
-    /// hive (implicit Owner role, no membership entry needed).
-    /// `Some(hash)` = the validator must fetch this `HiveMembership`
-    /// entry and verify it grants the author at least Writer role
-    /// for `hive_genesis_hash`. Coordinators populate this via the
-    /// `get_latest_membership` helper before each write.
-    pub author_membership_hash: Option<ActionHash>,
+    /// security — see `acl_spec` for the cryptographic authority
+    /// contract. May be the empty string for hive-discovery /
+    /// open-write entries that intentionally sit OUTSIDE any hive's
+    /// content path.
+    pub display_hive_id: String,
     pub content_type: String,
     pub revision_author_signing_public_key: String,
     pub bytes: SerializedBytes,
-    pub acl: Acl,
+    /// Pass-3: the per-scope authority contract. The integrity
+    /// validator variant-dispatches off this field — see
+    /// [`content_integrity::AclSpec`] for the four variants
+    /// (HiveGroup, DirectMessage, Public, OpenWrite) and what each
+    /// validator enforces.
+    pub acl_spec: AclSpec,
     pub public_key_acl: Acl,
+    /// Optional Dynamic link labels. Only published for variants that
+    /// bind a hive context (HiveGroup, Public, OpenWrite with target);
+    /// silently ignored for DirectMessage and OpenWrite-without-target
+    /// (the integrity validator rejects Dynamic links targeting
+    /// non-hive-context entries).
     pub dynamic_links: Option<Vec<String>>,
 }
 
