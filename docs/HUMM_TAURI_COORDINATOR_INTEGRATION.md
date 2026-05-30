@@ -1,3 +1,24 @@
+> **Pass-3 update (`feat-integrity-pass-3-groups`, in flight, not yet
+> pushed):** the integrity zome has shipped a second non-additive
+> change — new `GroupGenesis` + `GroupMembership` entry types, new
+> group-discovery link types, and a full
+> `EncryptedContentHeader.acl_spec: AclSpec` wire reshape that
+> collapses the four pass-2 load-bearing fields (`hive_id`,
+> `hive_genesis_hash`, `author_membership_hash`, `acl`) into a
+> discriminated union with four variants (`HiveGroup`,
+> `DirectMessage`, `Public`, `OpenWrite`). The DNA hash bumps again
+> with pass-3; humm-tauri is doing a pass-1 → pass-3 leapfrog (the
+> pass-2 wire shape was never integrated downstream). **The canonical
+> wire-shape reference for pass-3 is
+> [`HUMM_TAURI_ACLSPEC_INTEGRATION.md`](./HUMM_TAURI_ACLSPEC_INTEGRATION.md)**;
+> deploy mechanics in
+> [`PASS_3_DEPLOY_HANDOFF.md`](./PASS_3_DEPLOY_HANDOFF.md); per-feature
+> implementation guide in
+> [`HUMM_TAURI_FEATURE_ENABLEMENT.md`](./HUMM_TAURI_FEATURE_ENABLEMENT.md);
+> ongoing delta view in
+> [`HANDOFF_UPDATED_INFO.md`](./HANDOFF_UPDATED_INFO.md). The pass-2
+> content below remains historical reference.
+>
 > **Pass-2 update (`feat-integrity-pass-2`, commit `1fa4d37`):**
 > The integrity zome has shipped its first non-additive change. DNA hash
 > has changed from

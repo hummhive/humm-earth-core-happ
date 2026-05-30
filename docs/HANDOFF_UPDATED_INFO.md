@@ -405,9 +405,18 @@ authoritative into your UI.
   `classification-overrides.json` mechanism — defaults to `Public`
   for unknown types in the meantime (rationale + humm-tauri
   re-stamp guidance in the migration guide).
-- Phase E — Full handoff docs
-  (`HUMM_TAURI_ACLSPEC_INTEGRATION.md` and
-  `HUMM_TAURI_FEATURE_ENABLEMENT.md`): **not started.**
+- Phase E — Full handoff docs (
+  [`HUMM_TAURI_ACLSPEC_INTEGRATION.md`](./HUMM_TAURI_ACLSPEC_INTEGRATION.md),
+  [`PASS_3_DEPLOY_HANDOFF.md`](./PASS_3_DEPLOY_HANDOFF.md),
+  [`HUMM_TAURI_FEATURE_ENABLEMENT.md`](./HUMM_TAURI_FEATURE_ENABLEMENT.md),
+  + banner updates on
+  [`HUMM_TAURI_COORDINATOR_INTEGRATION.md`](./HUMM_TAURI_COORDINATOR_INTEGRATION.md)
+  and [`PASS_2_DEPLOY_HANDOFF.md`](./PASS_2_DEPLOY_HANDOFF.md)):
+  **COMMITTED** *(this commit)*. The four pass-3 docs are now the
+  canonical reference set for humm-tauri's pass-1 → pass-3 leapfrog
+  integration. This file remains the rolling delta view (e.g.
+  Phase F outcomes will land here when the wasm builds + hashes are
+  recorded).
 - Phase F — Verification + new `.baseline-hashes.txt` Pass-3 section +
   ff-merge: **not started.**
 
