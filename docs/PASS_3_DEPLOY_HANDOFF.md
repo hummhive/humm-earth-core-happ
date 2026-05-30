@@ -1,5 +1,22 @@
 # Pass-3 deploy handoff — humm-tauri integration
 
+> **Superseded for new deployments by pass-4.** Pass-4 ships on
+> branch `feat-integrity-pass-4-recipient-witnesses` and bumps the
+> DNA hash again, closing G-6.2 (recipient-set integrity for
+> `AclSpec::HiveGroup` `public_key_acl`) and back-porting G-4.4 to
+> `HiveMembership`. New integrators should start at
+> [`PASS_4_DEPLOY_HANDOFF.md`](./PASS_4_DEPLOY_HANDOFF.md); the
+> pass-3 → pass-4 wire-shape delta is one new field on the
+> `HiveGroup` variant (`recipient_witnesses: RecipientWitness[]`),
+> documented in
+> [`HUMM_TAURI_ACLSPEC_INTEGRATION.md`](./HUMM_TAURI_ACLSPEC_INTEGRATION.md)
+> § 4 + § 5.
+>
+> This document remains the canonical reference for the pass-3
+> shape itself (the four `AclSpec` variants, the variant-dispatch
+> validators, group authority + grant-window). Pass-4 only adds; it
+> does not subtract.
+
 Short-form handoff for the humm-tauri team to integrate the pass-3
 integrity-zome changes shipped on `feat-integrity-pass-3-groups`.
 Pass-3 **intentionally bumps the DNA hash** (the AclSpec reshape is a
@@ -14,7 +31,9 @@ For the full per-change reference, see
 [`HUMM_TAURI_FEATURE_ENABLEMENT.md`](./HUMM_TAURI_FEATURE_ENABLEMENT.md)
 (feature-by-feature implementation guide). For an ongoing
 "what-changed-since-pass-2.5" delta visible to devs polling the repo,
-see [`HANDOFF_UPDATED_INFO.md`](./HANDOFF_UPDATED_INFO.md).
+see [`HANDOFF_UPDATED_INFO.md`](./HANDOFF_UPDATED_INFO.md). For a
+per-pass concrete-task mapping to humm-tauri files + features, see
+[`HUMM_TAURI_PASS_ROADMAP.md`](./HUMM_TAURI_PASS_ROADMAP.md).
 
 ## TL;DR
 
@@ -294,17 +313,18 @@ with `expiry: Some(past_ts)`; humm-tauri distinguishes by checking the
 - The pass-2 hive-authority chain (`check_hive_authority`,
   `HiveMembership` grant model) — extended for use by group Path B.
 
-### NOT closed this pass (G-6.2 deferred)
+### NOT closed THIS pass — G-6.2 (closed in pass-4)
 
 - **Recipient-set integrity on HiveGroup `public_key_acl`** — Mallory
   adding her pubkey to the reader bucket of a private group post to
   receive remote-signal notifications. Decryption gating
   (SharedSecrets) is unaffected, but signal routing can be
-  manipulated. The G-6.2 follow-up will add a
-  `recipient_membership_witnesses` field to the HiveGroup variant;
-  validator will iterate and verify each at commit time. Until then,
-  humm-tauri MUST treat `public_key_acl` on HiveGroup as a routing
-  hint and use `list_group_members` for authority decisions.
+  manipulated. **Closed in pass-4** by the `recipient_witnesses`
+  field on `AclSpec::HiveGroup`; see
+  [`PASS_4_DEPLOY_HANDOFF.md`](./PASS_4_DEPLOY_HANDOFF.md). Until
+  humm-tauri lands the pass-4 wire-shape change, treat
+  `public_key_acl` on HiveGroup as a routing hint and use
+  `list_group_members` for authority decisions.
 
 ## Hash invariants for verification
 

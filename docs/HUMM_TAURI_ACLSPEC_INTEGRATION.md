@@ -1,9 +1,21 @@
-# humm-tauri × pass-3 AclSpec integration
+# humm-tauri × pass-3/4 AclSpec integration
 
 The canonical reference for humm-tauri devs implementing the pass-3
-wire-shape migration. Where `PASS_3_DEPLOY_HANDOFF.md` covers the
-deploy mechanics, this doc covers **what each call site looks like
-on the humm-tauri side after pass-3**.
+wire-shape migration AND the pass-4 G-6.2 `recipient_witnesses`
+addition. Where `PASS_4_DEPLOY_HANDOFF.md` covers the deploy
+mechanics, this doc covers **what each call site looks like on the
+humm-tauri side after pass-3 + pass-4**.
+
+> **Pass-4 status (G-6.2 SHIPPED).** The `AclSpec::HiveGroup`
+> variant now carries a required `recipient_witnesses:
+> RecipientWitness[]` field. Every HiveGroup write site MUST stamp
+> witnesses covering every pubkey in `public_key_acl` exactly once.
+> See § 2 (variant shape), § 3 (per-modal wiring), § 5
+> (`stampWitnessesFromGroupAcl` helper recipe), and
+> [`PASS_4_DEPLOY_HANDOFF.md`](./PASS_4_DEPLOY_HANDOFF.md) for the
+> end-to-end migration story. Pre-pass-4 HiveGroup callsites — which
+> never went live on pass-3 in humm-tauri (pass-1 → pass-4 leapfrog)
+> — need ONE update each: add the witnesses arg.
 
 > **Status note.** This doc is the wire-shape contract. For the
 > living "what changed since pass-2.5" view, see
@@ -12,18 +24,17 @@ on the humm-tauri side after pass-3**.
 > what new files are needed, smoke tests), see
 > [`HUMM_TAURI_FEATURE_ENABLEMENT.md`](./HUMM_TAURI_FEATURE_ENABLEMENT.md).
 >
-> humm-tauri is doing a **pass-1 → pass-3 leapfrog**: the pass-2
+> humm-tauri is doing a **pass-1 → pass-4 leapfrog**: the pass-2
 > wire shape (`hive_genesis_hash` / `author_membership_hash` /
 > `acl` at the top of the header) was never integrated downstream,
-> so pass-3 lands directly. The pass-2.5 handoff docs are still
+> so pass-4 lands directly. The pass-2.5 handoff docs are still
 > useful for the hive-identity track (`HiveGenesis`,
 > `HiveMembership`, `migrate-hive`, `grant-memberships`); ALL of
-> those are preserved unchanged by pass-3.
-
+> those are preserved unchanged by pass-3 and pass-4.
 ## 1. The new header shape
 
 ```ts
-// pass-3 EncryptedContentHeader (what arrives back from
+// pass-3+pass-4 EncryptedContentHeader (what arrives back from
 // get_encrypted_content + what you stamp on create_encrypted_content)
 type EncryptedContentHeader = {
   id: string;
@@ -40,6 +51,12 @@ type AclSpec =
         author_membership_hash: ActionHash | null;
         group_acl: AclByGroupGenesis;
         author_group_membership_hash: ActionHash | null;
+        // PASS-4 (G-6.2) — required. Every pubkey in `public_key_acl`
+        // must appear exactly once across these witnesses, each
+        // backed by a real GroupMembership in a dominating bucket of
+        // `group_acl`. See § 5 for the stampWitnessesFromGroupAcl
+        // helper recipe.
+        recipient_witnesses: RecipientWitness[];
       } }
   | { DirectMessage: { recipients: AgentPubKey[] } }
   | { Public: {
@@ -53,6 +70,15 @@ type AclByGroupGenesis = {
   admin: ActionHash[];
   writer: ActionHash[];
   reader: ActionHash[];
+};
+
+// PASS-4 (G-6.2) — per-recipient membership witness.
+type AclBucket = 'Owner' | 'Admin' | 'Writer' | 'Reader';
+
+type RecipientWitness = {
+  pubkey: AgentPubKey;
+  bucket: AclBucket;          // which PKA bucket this witness claims
+  membership_hash: ActionHash; // the cited GroupMembership
 };
 
 type Acl = {
@@ -112,14 +138,26 @@ Exhaustive mapping over every shipped + planned content type. The
 | Planned `humm-sidecar-group-message-v1`         | `HiveGroup`                                         | Cross-hive group chat. Members in different hives hold `GroupMembership` granted by the hive owner. |
 | Planned `hummhive-core-agent-directory-v1`      | **`OpenWrite { target: None }`**                    | Cross-network agent discovery. |
 | Planned `hummhive-core-sidecar-manifest-v1`     | **`OpenWrite { target: None }`**                    | Sidecar marketplace. |
+| `hummhive-core-pre-signed-invite-v1`            | **`Public { hive_genesis_hash }`**                  | Pre-signed invite link (Discord-style one-click join). Author MUST hold Writer+ in the hive. Bob (outsider) fetches the entry directly — `Public` is world-readable. Payload: `{intended_role, intended_group_memberships, expiry, max_uses, hmac_secret}`. See § E.4.l in `HUMM_TAURI_FEATURE_ENABLEMENT.md`. |
+| `hummhive-core-invite-redemption-v1`            | **`OpenWrite { target: Some(hive_genesis) }`**      | Outsider's "I accept this invite" signal back to the hive owner. Bob does NOT need pre-existing hive membership. Payload: `{invite_action_hash, opaque_token}`. Alice's app verifies HMAC + mints `HiveMembership` (+ optional `GroupMembership`s per invite payload). See § E.4.l. |
 | Planned streaming manifests                     | Polymorphic (`Public` / `HiveGroup` / `DirectMessage`) | See § E.4.h in `HUMM_TAURI_FEATURE_ENABLEMENT.md`. |
 
 ## 3. Per-modal wiring (what changes in your TS)
 
+> **Pass-4 (G-6.2) note.** Every `AclSpec::HiveGroup` write below
+> must thread `recipient_witnesses` through the variant. The
+> per-modal examples elide the witness array for brevity; in real
+> code, call the `stampWitnessesFromGroupAcl(...)` helper from § 5
+> immediately before `create_encrypted_content` and stamp the
+> result onto `acl_spec.HiveGroup.recipient_witnesses`. Examples
+> that don't show `AclSpec::HiveGroup` (Public posts, DMs,
+> member-request, hive-discovery) are unchanged by pass-4.
+
 ### `ManageGroup` (Add Group)
 
 ```ts
-// pass-3
+// pass-3+pass-4 — GroupGenesis + GroupMembership writes are not
+// HiveGroup content, so no recipient_witnesses thread through here.
 const { hash: groupGenesisHash } = await callZome({
   zome_name: 'content',
   fn_name: 'create_group_genesis',
@@ -206,10 +244,10 @@ invite-accept flow iterates this map and calls
 expired since invite issue, the per-group create fails gracefully;
 the rest succeed.
 
-### `Compose` (public post)
+### `Compose` (public post — pass-4 unchanged)
 
 ```ts
-// Swap the hardcoded buildPublicAcl(ownerSigningKey) for:
+// Public variant — no recipient_witnesses needed (HiveGroup-only).
 await callZome({
   zome_name: 'content',
   fn_name: 'create_encrypted_content',
@@ -239,6 +277,49 @@ await callZome({
 For the upcoming per-content ACL picker (Compose's "ACL UI is a
 later slice" comment), surface the four variants as a chooser. See
 § E.4.f in `HUMM_TAURI_FEATURE_ENABLEMENT.md`.
+
+### `Compose` (group-scoped post — pass-4)
+
+```ts
+// HiveGroup variant — recipient_witnesses REQUIRED (pass-4 G-6.2).
+// Stamp witnesses via the centralised helper from § 5 before the
+// write so a missing/expired membership surfaces as a user-facing
+// error rather than a doomed commit.
+const groupAcl = {
+  owner: ownerGroupGenesisHash,
+  admin: [adminGroupGenesisHash],
+  writer: writerGroupGenesisHashes,
+  reader: readerGroupGenesisHashes,
+};
+const publicKeyAcl = await deriveHiveGroupPublicKeyAcl(groupAcl);
+const recipient_witnesses = await stampWitnessesFromGroupAcl({
+  callZome: zomeCaller,
+  groupAcl,
+  publicKeyAcl,
+});
+await callZome({
+  zome_name: 'content',
+  fn_name: 'create_encrypted_content',
+  payload: {
+    id: postId,
+    display_hive_id: activeHive.displayId,
+    content_type: 'hummhive-core-blob-metadata-v1', // or other group-scoped type
+    revision_author_signing_public_key: encodeHashToBase64(myPubKey),
+    bytes: encryptedBytes,
+    acl_spec: {
+      HiveGroup: {
+        hive_genesis_hash: activeHiveGenesisHash,
+        author_membership_hash: myHiveMembershipHash ?? null,
+        group_acl: groupAcl,
+        author_group_membership_hash: myGroupMembershipHash ?? null,
+        recipient_witnesses, // <-- pass-4 G-6.2
+      },
+    },
+    public_key_acl: publicKeyAcl,
+    dynamic_links: null,
+  },
+});
+```
 
 ### DM sidecar (`sendDirectMessage`)
 
@@ -345,12 +426,22 @@ export type AclByGroupGenesis = {
   reader: ActionHash[];
 };
 
+// PASS-4 (G-6.2) — per-recipient membership witness.
+export type AclBucket = 'Owner' | 'Admin' | 'Writer' | 'Reader';
+
+export type RecipientWitness = {
+  pubkey: AgentPubKey;
+  bucket: AclBucket;
+  membership_hash: ActionHash;
+};
+
 export type AclSpec =
   | { HiveGroup: {
         hive_genesis_hash: ActionHash;
         author_membership_hash: ActionHash | null;
         group_acl: AclByGroupGenesis;
         author_group_membership_hash: ActionHash | null;
+        recipient_witnesses: RecipientWitness[]; // PASS-4 (G-6.2)
       } }
   | { DirectMessage: { recipients: AgentPubKey[] } }
   | { Public: {
@@ -397,14 +488,14 @@ export type GroupGenesisResponse = { genesis: GroupGenesis; hash: ActionHash };
 export type GroupMembershipResponse = { membership: GroupMembership; hash: ActionHash };
 ```
 
-## 5. `derrivePublicKeyAcl` migration
+## 5. `derrivePublicKeyAcl` migration + `stampWitnessesFromGroupAcl`
 
 For `HiveGroup` content, humm-tauri's `derrivePublicKeyAcl` helper
 (currently using `groupApi.listHolochainPublicKeys`) should switch to
 `list_group_members(group_genesis_hash)`:
 
 ```ts
-// pass-3 derrivePublicKeyAcl for HiveGroup
+// pass-3+pass-4 derrivePublicKeyAcl for HiveGroup
 async function deriveHiveGroupPublicKeyAcl(
   groupGenesisHashes: { owner: ActionHash; admin: ActionHash[]; writer: ActionHash[]; reader: ActionHash[] },
 ): Promise<Acl> {
@@ -425,12 +516,43 @@ async function deriveHiveGroupPublicKeyAcl(
 }
 ```
 
+### Pass-4 — `stampWitnessesFromGroupAcl`
+
+Every `AclSpec::HiveGroup` write MUST carry one
+`RecipientWitness` per pubkey in `public_key_acl`. Centralise the
+stamping logic in ONE helper humm-tauri calls from every HiveGroup
+write site (Manage*, Compose-with-group-scope, group-SS provisioning,
+sidecar group-message, etc.). The full recipe lives in
+[`PASS_4_DEPLOY_HANDOFF.md`](./PASS_4_DEPLOY_HANDOFF.md) §
+"REQUIRED humm-tauri callsite update"; the short version:
+
+```ts
+const recipient_witnesses = await stampWitnessesFromGroupAcl({
+  callZome,    // bound to the content zome
+  groupAcl,    // AclByGroupGenesis
+  publicKeyAcl, // Acl
+});
+```
+
+The helper walks every pubkey in `publicKeyAcl`, finds the highest
+bucket it appears in, looks up
+`get_latest_group_membership(agent, group_genesis_hash)` against
+each group in that-or-higher `groupAcl` buckets, and stamps the
+first hit. Bucket dominance (Owner > Admin > Writer > Reader) means
+ONE Admin-bucket witness covers a pubkey listed in
+admin + writer + reader buckets simultaneously.
+
+If any pubkey has no qualifying membership the helper throws —
+surface as "this person is no longer a group member" rather than
+committing a doomed entry.
+
 For other variants:
 - **DirectMessage**: `public_key_acl.reader = recipients` (pinned by
-  validator); other buckets empty.
+  validator); other buckets empty. No witnesses needed.
 - **Public**: `public_key_acl.reader = ['*']` (routing hint) or
-  empty; other buckets empty.
-- **OpenWrite**: `public_key_acl` empty by convention.
+  empty; other buckets empty. No witnesses needed.
+- **OpenWrite**: `public_key_acl` empty by convention. No witnesses
+  needed.
 
 ## 6. Threat-model deltas (what each attack used to look like)
 
@@ -440,12 +562,12 @@ For other variants:
 | 2 | Self-mint admin group via `hiveWideRole: admin` | Any writer | `validate_create_group_genesis` requires hive Owner for system role groups |
 | 3 | Self-promote via ManageMember | `GroupMemberListApi.add` succeeds | `validate_create_group_membership` rule 1 (no self-grant) + rule 3 (no escalation) |
 | 4 | Mint privileged invite | `InviteApi.add` succeeds for any writer | Invite-accept calls `create_group_membership` → validators catch |
-| 5 | Forge `public_key_acl` on group content | acl unvalidated | **DEFERRED (G-6.2)** — `public_key_acl` is a routing hint this pass |
+| 5 | Forge `public_key_acl` on group content | acl unvalidated | **PASS-4 G-6.2 SHIPPED** — `recipient_witnesses` required on every `AclSpec::HiveGroup` write; bidirectional PKA↔witness cross-check + per-witness `must_get_valid_record` |
 | 6 | Forge `acl` group squuid | acl unvalidated | `AclByGroupGenesis` is ActionHash-keyed; validators require real `GroupGenesis` |
 | 7 | Author group content without group-write authority | Hive-level check only | `validate_hivegroup_acl` per-group `check_group_authority` |
 | 8 | Revoked / expired member writes | Revocation client-side | G-4 expiry + read-time expiry check |
 | 9 | Cross-hive group claim | acl unvalidated | `group.hive_genesis_hash == header hive_genesis_hash` check |
-| 10 | Delegation-window extension | Pre-existing pass-2 gap | G-4.4 enforce_grant_window |
+| 10 | Delegation-window extension (group + hive layers) | Pre-existing gap | G-4.4 `enforce_grant_window` in group.rs (pass-3); `enforce_hive_grant_window` in hive.rs (pass-4 back-port) |
 | 11 | Forge `Invite` revoke | InvitePurge unvalidated | Same as #4 |
 | 12 | Spoof a DM | DM unvalidated | DM validator: author ∈ recipients + reader pin |
 | 13 | Cross-network fake hive-discovery target | N/A | OpenWrite target HiveGenesis check |
@@ -485,7 +607,17 @@ pass-3:
 | `does not match original action author` | Update on someone else's entry | Block at UI; only the original author may update |
 | `link author X does not match base entry author Y` | Link author mismatch | Don't publish updates links for entries you don't own |
 | `granting Owner role requires group Owner or hive Admin+` | Privilege escalation attempt | Surface "you don't have authority" |
-| `granted expiry exceeds grantor membership's expiry` | G-4.4 grant-window-containment violation | Surface "your role expires earlier than the grant" |
+| `granted expiry exceeds grantor membership's expiry` | G-4.4 grant-window-containment violation (group OR hive layer) | Surface "your role expires earlier than the grant" |
+| `recipient_witnesses.len() = X exceeds HIVEGROUP_MAX_WITNESSES = 256` | Over-cap HiveGroup witness fan-out | Block at UI; cap the recipient set or split into separate entries |
+| `public_key_acl.<Bucket> entry … is not backed by any dominating recipient_witness` | Pubkey listed in PKA without a stamped witness | The `stampWitnessesFromGroupAcl` helper raised after the PKA was built; either remove the pubkey from PKA or grant them the required `GroupMembership` |
+| `recipient_witness for … claims bucket … but pubkey is not in public_key_acl.<Bucket>` | Witness over-claim (witness present without matching PKA entry) | Bug in your witness-stamping path; ensure PKA + witnesses are derived from the same source |
+| `recipient_witnesses contains duplicate pubkey …` | Same pubkey stamped across two witnesses | Stamp at the highest bucket only; dominance covers lower buckets |
+| `recipient_witness membership … grants role to X but witness claims pubkey Y` | Wrong `membership_hash` stamped for the pubkey | Refresh `get_latest_group_membership` for the pubkey before stamping |
+| `recipient_witness membership … is for group … which is not in group_acl bucket … or any dominating bucket` | Membership comes from a group outside `group_acl` | Use a group present in `group_acl`, or extend `group_acl` |
+| `recipient_witness membership … grants role X, required Y for bucket Z` | Pubkey's role is insufficient for the claimed bucket | Stamp at the bucket their role actually satisfies |
+| `recipient_witness membership … expired at …` | Cited `GroupMembership` is past its expiry | Re-fetch latest membership; expired members must be re-granted before they can receive group-scoped content |
+| `granted expiry exceeds the grantor membership's expiry … an expiring grantor may not extend the delegation window` | Hive-layer G-4.4 violation | Surface "your hive role expires earlier than the grant" |
+| `an expiring grantor may not mint a permanent (no-expiry) membership` | Hive-layer G-4.4 (permanent-grant case) | Block at UI when the grantor's hive membership has an expiry |
 
 ## 9. Inbox discriminator bump
 
@@ -500,22 +632,32 @@ notification feed), match on tag bytes `[0, 1, 2, 3]`.
 
 ## 10. Quick start checklist
 
-When you start the pass-3 migration:
+When you start the pass-4 migration (humm-tauri's pass-1 → pass-4
+leapfrog):
 
 1. Update `humm-tauri/src/types/contentSchema.ts` to the new wire
-   shape (§ 4).
+   shape (§ 4) — includes `RecipientWitness`, `AclBucket`, and the
+   `recipient_witnesses` field on `AclSpec::HiveGroup`.
 2. Update `humm-tauri/src/api/core/hummContent/hummContentWrites.ts`
    `addEntry` to take `AclSpec` instead of `acl: Acl`.
 3. Replace each call site's `acl: { ... }` with the right
    `acl_spec: { Variant: { ... } }` per § 2.
-4. Wire `create_group_genesis` / `create_group_membership` /
+4. **NEW (pass-4)**: drop the `stampWitnessesFromGroupAcl` helper
+   (§ 5 short version; full recipe in
+   [`PASS_4_DEPLOY_HANDOFF.md`](./PASS_4_DEPLOY_HANDOFF.md)) into
+   `humm-tauri/src/api/core/acl/` and call it from every
+   `AclSpec::HiveGroup` write site immediately before
+   `create_encrypted_content`.
+5. Wire `create_group_genesis` / `create_group_membership` /
    `revoke_group_membership` into the existing
    `MembersAndGroups` UI flows (§ 3).
-5. Update `derrivePublicKeyAcl` to use `list_group_members` for
+6. Update `derrivePublicKeyAcl` to use `list_group_members` for
    `HiveGroup` content (§ 5).
-6. Run cross-hive smoke tests from
-   [`PASS_3_DEPLOY_HANDOFF.md`](./PASS_3_DEPLOY_HANDOFF.md) § "Cross-hive
-   smoke-test checklist".
+7. Run cross-hive smoke tests from
+   [`PASS_3_DEPLOY_HANDOFF.md`](./PASS_3_DEPLOY_HANDOFF.md) + the
+   pass-4 additions in
+   [`PASS_4_DEPLOY_HANDOFF.md`](./PASS_4_DEPLOY_HANDOFF.md)
+   § "Cross-hive smoke-test checklist".
 
 For the feature-by-feature implementation guide (which files change,
 new sidecars/components needed, smoke tests per feature), see

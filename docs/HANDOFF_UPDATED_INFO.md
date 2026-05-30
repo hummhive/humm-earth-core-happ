@@ -1,46 +1,94 @@
-# Handoff updated info — pass-3 in flight
+# Handoff updated info — pass-4 in flight
 
-**Audience:** humm-tauri devs currently integrating against the pass-2 /
-pass-2.5 handoff notes
-([`PASS_2_DEPLOY_HANDOFF.md`](./PASS_2_DEPLOY_HANDOFF.md),
-[`HUMM_TAURI_COORDINATOR_INTEGRATION.md`](./HUMM_TAURI_COORDINATOR_INTEGRATION.md),
-[`DNA_MIGRATION_GUIDE.md`](./DNA_MIGRATION_GUIDE.md)).
+**Audience:** humm-tauri devs. The currently-shipping integration
+target on the humm-tauri side is pass-2.5 (coordinator hot-swap
+work, nearing completion). Pass-3 and pass-4 layer on top: pass-3
+reshapes `EncryptedContentHeader` (one wire-shape break) and
+pass-4 adds one new required field on the `HiveGroup` variant
+(`recipient_witnesses`). Once pass-2.5 lands downstream, the
+recommended path is **leapfrog directly to pass-4** — both
+changes are mechanical and well-documented, and pass-4 is the
+current security-complete target.
 
-**Purpose:** living delta between the pass-2.5 docs and the in-flight
-pass-3 work on branch `feat-integrity-pass-3-groups`. Re-pull this file
-periodically — it is updated after every pass-3 phase commit so you can
-catch upstream shifts before they bite.
+Reference docs to start at:
+[`HUMM_TAURI_PASS_ROADMAP.md`](./HUMM_TAURI_PASS_ROADMAP.md)
+(per-pass concrete-task mapping — start here if you want a
+task-list view of "what's required when we land pass-N"),
+[`PASS_4_DEPLOY_HANDOFF.md`](./PASS_4_DEPLOY_HANDOFF.md) (deploy +
+migration mechanics),
+[`HUMM_TAURI_ACLSPEC_INTEGRATION.md`](./HUMM_TAURI_ACLSPEC_INTEGRATION.md)
+(per-modal wiring + types),
+[`HUMM_TAURI_FEATURE_ENABLEMENT.md`](./HUMM_TAURI_FEATURE_ENABLEMENT.md)
+(feature-by-feature implementation guide).
 
-**Status of pass-3 itself:** branch lives on
-`feat-integrity-pass-3-groups` (off `chore-pass-2.5-cleanup` tip
-`e82f196`); NOT pushed; NOT merged to `main`. The DNA hash will bump
-again when pass-3 lands.
+**Purpose:** living delta between the pass-3 docs and the in-flight
+pass-4 work on branch `feat-integrity-pass-4-recipient-witnesses`.
+Re-pull this file periodically — it is updated after every pass-4
+phase commit so you can catch upstream shifts before they bite.
+
+**Status of pass-4 itself:** branch lives on
+`feat-integrity-pass-4-recipient-witnesses` (off
+`feat-integrity-pass-3-groups` tip `b1e72aa`); NOT pushed; NOT
+merged to `main`. The DNA hash WILL bump again when pass-4 lands.
 
 ---
 
-## TL;DR — what to do right now
+## TL;DR — what's new since pass-3
+
+- **G-6.2 recipient-set integrity SHIPPED in pass-4** (Phase 4-A/B/C).
+  `AclSpec::HiveGroup` gains a required `recipient_witnesses:
+  RecipientWitness[]` field; the validator enforces every PKA
+  pubkey is backed by a real `GroupMembership` in a dominating
+  bucket of `group_acl`. Closes attack #5 — `public_key_acl` on
+  HiveGroup is now load-bearing, not just a routing hint.
+- **G-4.4 back-ported to `HiveMembership`.** An expiring Path-2
+  hive grantor can no longer extend the delegation window or mint
+  permanent grants. Pass-3 closed this at the group layer; pass-4
+  mirrors it one level up.
+- **One required humm-tauri callsite change**: stamp
+  `recipient_witnesses` on every `AclSpec::HiveGroup` write. Use the
+  `stampWitnessesFromGroupAcl` helper recipe documented in
+  [`PASS_4_DEPLOY_HANDOFF.md`](./PASS_4_DEPLOY_HANDOFF.md) §
+  "REQUIRED humm-tauri callsite update" and referenced from
+  [`HUMM_TAURI_ACLSPEC_INTEGRATION.md`](./HUMM_TAURI_ACLSPEC_INTEGRATION.md)
+  § 5. Non-HiveGroup variants (DM, Public, OpenWrite) are unchanged.
+
+---
+
+## Available features (post-pass-3, no DNA work needed)
+
+Pass-3 already shipped every primitive needed for **pre-signed
+invite links** (Discord-style one-click join). humm-tauri can ship
+E.4.l in
+[`HUMM_TAURI_FEATURE_ENABLEMENT.md`](./HUMM_TAURI_FEATURE_ENABLEMENT.md)
+in parallel with the pass-4 wire-shape migration — no waiting on
+pass-4. The flow uses only `AclSpec::Public` (invite entry) +
+`AclSpec::OpenWrite` (redemption) + existing `create_hive_membership`
+(mint) + existing inbox links (notification). See E.4.l for the
+8-step recipe.
+
+---
+
+## TL;DR — original pass-3 → pass-4 transition guidance
 
 - **Keep going with the pass-2.5 integration.** Nothing in pass-3
   invalidates the pass-2 externs you're calling
   (`create_hive_genesis`, `create_hive_membership`, `list_my_hives`,
   `get_latest_membership`) or the pass-2 entry types
   (`HiveGenesis`, `HiveMembership`). Those names + signatures + wire
-  shapes survive pass-3 unchanged.
-- **One wire-shape break is coming** (Phase C, not yet committed):
-  `EncryptedContentHeader` will reshape — `hive_id`, `hive_genesis_hash`,
-  `author_membership_hash`, and `acl` collapse into a single
-  `acl_spec: AclSpec` discriminated-union field. The work you do today
-  building hive-scoped headers is not wasted; it becomes one variant
-  (`AclSpec::HiveGroup`) of the new enum. Plan a follow-up patch when
-  pass-3 lands. See "What is CHANGING" below for the exact migration
-  shape.
-- **Group / role / ACL enforcement is moving from client-side
-  convention to integrity-zome enforcement.** If you're stubbing or
-  asserting group membership in TS today, mark those sites with a
-  `// pass-3-target` comment so the future migration is grep-able.
-- **DNA hash WILL bump again with pass-3** — re-run the migration
-  tooling once pass-3 ships.
-
+  shapes survive pass-3 + pass-4 unchanged.
+- **One wire-shape break shipped in pass-3** (Phase C):
+  `EncryptedContentHeader` reshaped — `hive_id`, `hive_genesis_hash`,
+  `author_membership_hash`, and `acl` collapsed into a single
+  `acl_spec: AclSpec` discriminated-union field.
+- **One wire-shape addition shipping in pass-4** (Phase 4-A/B):
+  `AclSpec::HiveGroup` gains `recipient_witnesses:
+  RecipientWitness[]`. Required on every HiveGroup write.
+- **Group / role / ACL enforcement is FULLY MOVED** from client-side
+  convention to integrity-zome enforcement (pass-3 closed authority;
+  pass-4 closes routing-fan-out attribution).
+- **DNA hash WILL bump again with pass-4** — re-run the migration
+  tooling once pass-4 ships.
 ---
 
 ## What is UNCHANGED — your pass-2.5 work stands
@@ -293,46 +341,47 @@ integration tests when the conductor pipeline is exercised.
 
 ---
 
-## What is NOT enforced this commit (G-6.2 recipient-set integrity)
+## What is enforced now (formerly deferred) — pass-4 G-6.2 SHIPPED
 
-The pass-3 plan's section G-6.2 calls for the integrity validator to
-verify, on every `AclSpec::HiveGroup` content commit, that every pubkey
-listed in `public_key_acl.{owner,admin,writer,reader}` holds a matching
-`GroupMembership` in the same-or-higher bucket of `group_acl`. This
-would close the modified-coordinator forgery where Mallory inserts her
-pubkey into the reader bucket of a private group post to receive the
-remote-signal notification (even though she can't decrypt without the
-shared secret).
+Pass-3 deferred G-6.2 (recipient-set integrity on
+`AclSpec::HiveGroup` `public_key_acl`). **Pass-4 closes it.** The
+integrity validator now verifies, on every `AclSpec::HiveGroup`
+content commit, that every pubkey listed in
+`public_key_acl.{owner,admin,writer,reader}` holds a matching
+`GroupMembership` in a dominating bucket of `group_acl`.
 
-**G-6.2 is documented but DEFERRED to a follow-up sub-commit (Phase
-C.1).** Current state:
-- Author authority (Writer+ in the hive AND in every group_acl group)
-  IS enforced. A modified coordinator cannot post group content under
-  groups the author doesn't have authority in.
-- The `group_acl` ActionHash references are validated — each must
-  resolve to a real `GroupGenesis` in the same hive (closes the
-  forge-group-claim attack).
-- The recipient list (`public_key_acl`) is treated as an
-  unauthenticated routing hint. A modified coordinator can add or
-  remove pubkeys; recipients still cannot decrypt without the shared
-  secret, but routing fan-out (`send_remote_signal` recipients) can
-  be manipulated.
+**Wire shape (pass-4):** `AclSpec::HiveGroup` gains
+`recipient_witnesses: Vec<RecipientWitness>` where each
+`RecipientWitness = { pubkey, bucket, membership_hash }`. The
+validator enforces:
+- Cardinality bound: `recipient_witnesses.len() <=
+  HIVEGROUP_MAX_WITNESSES = 256`.
+- Bidirectional set-equality between `public_key_acl` buckets and
+  witnesses (with bucket dominance — an Admin-bucket witness
+  covers Admin + Writer + Reader PKA entries for the same pubkey).
+- Per-witness `must_get_valid_record(membership_hash)`: the cited
+  `GroupMembership` must grant the named pubkey a role that
+  satisfies the claimed bucket, in a group present in the
+  corresponding (or higher) bucket of `group_acl`, unexpired at
+  the entry's `action.timestamp`.
 
-**humm-tauri implication.** Treat `public_key_acl` as a hint, not as
-proof of group membership. When you need to verify "is this pubkey
-actually a group member?", call `list_group_members(group_genesis_hash)`
-from the new Phase B externs — that's the cryptographic roster and
-is unforgeable. Don't gate access decisions or trust claims on
-`public_key_acl` alone.
+**humm-tauri implication.** `public_key_acl` on HiveGroup content
+is now **load-bearing**. Every HiveGroup write site MUST stamp
+`recipient_witnesses` covering every PKA pubkey. Use the
+centralised `stampWitnessesFromGroupAcl` helper documented in
+[`PASS_4_DEPLOY_HANDOFF.md`](./PASS_4_DEPLOY_HANDOFF.md) §
+"REQUIRED humm-tauri callsite update" and referenced from
+[`HUMM_TAURI_ACLSPEC_INTEGRATION.md`](./HUMM_TAURI_ACLSPEC_INTEGRATION.md)
+§ 5. A bad / missing / expired membership in any of the helper's
+`get_latest_group_membership` lookups raises an error before the
+`create_encrypted_content` call — surface it as "this person is
+no longer a member" rather than committing a doomed entry.
 
-The G-6.2 follow-up will add a `recipient_membership_witnesses` field
-to `AclSpec::HiveGroup`: a `BTreeMap<AgentPubKey, ActionHash>` where
-the writer stamps each recipient's authorising `GroupMembership` hash.
-The validator iterates the map at commit time. When that ships, the
-wire shape gains the field but existing entries (with no map) remain
-valid via an `Option<BTreeMap>` deserialisation. Plan for that future
-addition by NOT baking assumptions about `public_key_acl.reader` being
-authoritative into your UI.
+The cryptographic-roster pattern from pass-3 still applies for
+authority decisions: use `list_group_members(group_genesis_hash)`
+when you need "is this pubkey actually a group member?"; that
+roster is the source of truth for both the witness-stamping helper
+AND any UI gating logic.
 
 ## What you can do today to make the pass-3 migration easier
 
@@ -384,8 +433,8 @@ authoritative into your UI.
   live on the branch — `EncryptedContentHeader { id, display_hive_id,
   content_type, acl_spec: AclSpec, public_key_acl,
   revision_author_signing_public_key }`. The four `AclSpec` variants
-  enforce author-authority per scope. **G-6.2 deferred** — see
-  "What is NOT enforced this commit" below. **Bonus hardenings this
+  enforce author-authority per scope. **G-6.2 SHIPPED in pass-4**
+  (see Pass-4 phase status below). **Bonus hardenings this
   commit:** M-1 (`validate_update_encrypted_content` now requires
   `action.author == original_action.author` — closes update-chain
   hijack across ALL variants; was pre-existing pass-1 gap that pass-3
@@ -399,12 +448,13 @@ authoritative into your UI.
   content-type → AclSpec classifier + new wire-shape import +
   schema_version 1/2 acceptance): **COMMITTED** *(this commit)*.
   `DNA_MIGRATION_GUIDE.md` updated with the pass-3 wire-shape
-  migration section + classification table. **Phase D.1 deferred**:
-  the legacy-group → `GroupGenesis` track (`migrate-group` /
-  `grant-group-memberships`) and per-bundle
-  `classification-overrides.json` mechanism — defaults to `Public`
-  for unknown types in the meantime (rationale + humm-tauri
-  re-stamp guidance in the migration guide).
+  `DNA_MIGRATION_GUIDE.md` updated with the pass-3 wire-shape
+  migration section + classification table. **Phase D.1 deferred**
+  (still — separate branch `feat-migration-d1-group-track` per the
+  pass-4 plan): the legacy-group → `GroupGenesis` track
+  (`migrate-group` / `grant-group-memberships`) and per-bundle
+  `classification-overrides.json` mechanism. Defaults to `Public`
+  for unknown types in the meantime.
 - Phase E — Full handoff docs (
   [`HUMM_TAURI_ACLSPEC_INTEGRATION.md`](./HUMM_TAURI_ACLSPEC_INTEGRATION.md),
   [`PASS_3_DEPLOY_HANDOFF.md`](./PASS_3_DEPLOY_HANDOFF.md),
@@ -418,11 +468,38 @@ authoritative into your UI.
   Phase F outcomes will land here when the wasm builds + hashes are
   recorded).
 - Phase F — Verification + new `.baseline-hashes.txt` Pass-3 section +
-  ff-merge: **not started.**
+  ff-merge: **COMMITTED** (pass-3 final tip `b1e72aa`).
 
-This file is the *interim* communication channel until Phase E ships
-the full integration docs. Treat it as authoritative for "what
-changed since the pass-2.5 handoff" until then.
+---
+
+## Pass-4 phase status
+
+- Phase 4-A/B/C — Integrity zome G-6.2 (`RecipientWitness` +
+  `AclBucket` + reshape `AclSpec::HiveGroup` +
+  `validate_recipient_witnesses` w/ bidirectional PKA cross-check
+  + per-witness fetch + bucket dominance + 9 host tests) AND G-4.4
+  hive back-port (`enforce_hive_grant_window` + rule 4 in
+  `validate_create_hive_membership` + 2 host tests) + coordinator
+  fixture updates: **COMMITTED** (`9dc0690`). 69 host integrity +
+  22 host coordinator tests green; release wasm clean, zero
+  warnings; 3 reviewer gates passed.
+- Phase 4-D — `scripts/migrate-dna.ts` classifier comment refresh
+  (no behavior change; classifier still throws on HiveGroup until
+  D.1 ships): **COMMITTED** (`be6a93b`).
+- Phase 4-E — Handoff docs (this file + new
+  [`PASS_4_DEPLOY_HANDOFF.md`](./PASS_4_DEPLOY_HANDOFF.md) +
+  updates to
+  [`HUMM_TAURI_ACLSPEC_INTEGRATION.md`](./HUMM_TAURI_ACLSPEC_INTEGRATION.md)
+  + banner on
+  [`PASS_3_DEPLOY_HANDOFF.md`](./PASS_3_DEPLOY_HANDOFF.md) +
+  E.4.l section in
+  [`HUMM_TAURI_FEATURE_ENABLEMENT.md`](./HUMM_TAURI_FEATURE_ENABLEMENT.md)):
+  **COMMITTED** *(this commit)*.
+- Phase 4-F — Verification + new `.baseline-hashes.txt` Pass-4
+  section + ff-merge: pending.
+
+This file is the *interim* communication channel for pass-4. Treat
+it as authoritative for "what changed since the pass-3 handoff".
 
 ---
 

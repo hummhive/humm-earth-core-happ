@@ -444,6 +444,115 @@ work waits on that future DNA bump.
 
 ---
 
+## E.4.l — Pre-signed invite links (Discord-style one-click join)
+
+**Capability.** Hive Owner/Admin generates a shareable URL like
+`humm://hive/invite?hive=<b64>&invite=<b64>&token=<HMAC>`. The
+recipient clicks; the humm-tauri Tauri app opens; the user sees
+"Join <hive name> as <role>?"; one click → they're in. Closes the
+UX gap between "send an invite" (existing flow, requires inviter
+to manually grant a pre-existing pubkey) and "share a link"
+(Discord/Slack/Notion-style frictionless onboarding).
+
+**DNA primitives — pass-3 already provides everything; no DNA
+changes needed.** The flow composes existing variants and externs:
+
+| Step | What humm-tauri does | Pass-3 primitive |
+|---|---|---|
+| 1 | Alice writes the invite | `create_encrypted_content` with `content_type: 'hummhive-core-pre-signed-invite-v1'` + `AclSpec::Public { hive_genesis_hash }`. Validator requires Alice holds Writer+ in the hive. Payload (plaintext-readable JSON): `{intended_role, intended_group_memberships, expiry, max_uses, hmac_secret}`. |
+| 2 | Alice generates the URL | Pure app-level construction: `humm://hive/invite?hive=<hive_genesis_b64>&invite=<invite_action_hash_b64>&token=<HMAC(invite_action_hash, hmac_secret)>`. |
+| 3 | Alice shares the URL | DM, email, Discord, QR code, etc. — no DNA layer. |
+| 4 | Bob clicks the URL → humm-tauri opens | Tauri URL handler (`tauri.conf.json` → `allowlist`/`scheme`) dispatches to a new Accept-Invite modal. Modal calls `get_encrypted_content(invite_action_hash)`. Public entries are world-readable; Bob does NOT need hive membership. |
+| 5 | Bob's app verifies the HMAC | Pure TS/JS: recompute HMAC(invite.action_hash, invite.payload.hmac_secret) and compare to the `token` query param. Detects post-publication tampering. |
+| 6 | Bob signals acceptance | `create_encrypted_content` with `content_type: 'hummhive-core-invite-redemption-v1'` + `AclSpec::OpenWrite { target_hive_genesis_hash: Some(hive_genesis) }`. Bob does NOT need pre-existing hive membership; the OpenWrite validator only checks author identity + target HiveGenesis existence. Payload references `{invite_action_hash, opaque_token}`. |
+| 7 | Alice's app sees Bob's redemption | Existing `Inbox::HiveInvite` link (byte 2) OR polling pattern (mirrors the existing member-request flow). Alice's running humm-tauri process auto-detects via signal or periodic poll. |
+| 8 | Alice mints Bob's membership | Existing `create_hive_membership` (pass-2). Bonus: `create_group_membership` per `intended_group_memberships` from the invite payload. The `create_hive_membership` extern already self-writes an `Inbox::HiveInvite` link from Bob's pubkey → Bob's `list_my_hives` surfaces the new hive automatically. |
+
+**Bob's experience**: one click → wait a few seconds → "you joined
+<hive name>". **Alice's experience**: invisible. If Alice's app is
+online, the redemption is processed in the background. If Alice is
+offline, Bob's redemption waits in Alice's inbox until she comes
+online (same as member-request flow).
+
+**Modified-coordinator resistance.** Pass-3's
+`check_author_matches_header` + the action-author signature mean
+the invite's signing pubkey is cryptographically attributable to
+Alice; Bob's HMAC verification confirms the invite content hasn't
+been tampered with after Alice published it. Alice's app verifies
+the redemption's `invite_action_hash` matches an invite she
+actually published (`action.author == her pubkey`) before minting
+Bob's membership.
+
+**humm-tauri existing files touched.**
+- `src-tauri/tauri.conf.json` — register the `humm://` URL scheme
+  + corresponding handler. Tauri docs:
+  https://tauri.app/v2/guides/distribution/sign-up
+- `src-tauri/src/lib.rs` (or equivalent) — wire the URL handler to
+  emit a Tauri event the React side picks up.
+- `src/api/content/hiveInvite/index.ts` (or new) — `createInvite`
+  helper that posts the Public entry + computes the URL.
+- `src/api/core/hummContent/hummContentWrites.ts:addEntry` — only
+  matters that it accepts `AclSpec::Public` + `AclSpec::OpenWrite`
+  payloads (pass-3 ACLSpec wire shape, already documented).
+
+**humm-tauri new files / components needed.**
+- NEW UI: `src/containers/CreateInvite/` — modal: pick role +
+  groups + expiry; show generated URL + copy-to-clipboard.
+- NEW UI: `src/containers/AcceptInvite/` — landing page reached
+  via URL handler; shows "Join <hive name> as <role>?" + accept
+  button. Bob clicks → emits the OpenWrite redemption.
+- NEW background processor: `src/sidecars/invite-redemption/` —
+  polls Alice's own inbox for `hummhive-core-invite-redemption-v1`
+  entries targeting her hives, verifies the invite-action-hash
+  exists + is hers, processes the redemption (mint
+  HiveMembership + optional GroupMemberships).
+- NEW content schema entries in `src/types/contentSchema.ts`:
+  ```ts
+  export type PreSignedInvitePayload = {
+    intended_role: HiveRole;
+    intended_group_memberships: Array<{
+      group_genesis_hash_base64: string;
+      role: HiveRole;
+    }>;
+    expiry_microseconds: number | null;   // null = no expiry
+    max_uses: number | null;              // null = unlimited
+    hmac_secret_base64: string;           // random per-invite
+  };
+
+  export type InviteRedemptionPayload = {
+    invite_action_hash_base64: string;
+    opaque_token_base64: string; // recomputed HMAC, for auditing
+  };
+  ```
+
+**Migration story.** No data migration (forward-looking feature;
+pass-1/2 had no invite-link concept). humm-tauri can ship this
+**right now** against the pass-3 DNA hash — no need to wait for
+pass-4. The pass-4 wire-shape change to `AclSpec::HiveGroup`
+doesn't affect this flow because both the invite entry (`Public`)
+and redemption entry (`OpenWrite`) live in variants pass-4 leaves
+unchanged.
+
+**Acceptance / smoke tests.**
+- Alice (hive Owner) creates an invite for "Writer" role. URL
+  generated. Bob (no hive membership, different network) clicks.
+  His humm-tauri opens; Accept-Invite modal shows "Join <hive>
+  as Writer". Bob clicks accept. Within 30s, Bob's `list_my_hives`
+  shows the new hive.
+- HMAC tampering: a modified URL with a flipped byte in the token
+  → Bob's verifier rejects pre-redemption with "invite content has
+  been modified".
+- Modified-coordinator attempt to forge an invite: Mallory tries
+  to write an invite claiming Alice as author. Rejected by
+  `check_author_matches_header` (pass-1 invariant).
+- Stale invite redemption: Alice receives a redemption for an
+  `invite_action_hash` she never published. App-side check
+  rejects; no `HiveMembership` is minted.
+- Expired invite: invite payload `expiry_microseconds` is past.
+  Alice's processor rejects the redemption without minting.
+
+---
+
 ## Quick reference — which features need new humm-tauri files
 
 | Feature | NEW files |
@@ -459,6 +568,7 @@ work waits on that future DNA bump.
 | E.4.i — Sidecar marketplace | NEW: `src/api/content/agentDirectory/`, `.../sidecarManifest/`, NEW UI optional |
 | E.4.j — Personal vault | None today |
 | E.4.k — Paid content | N/A (deferred) |
+| E.4.l — Pre-signed invite links | NEW UI: `src/containers/CreateInvite/`, `src/containers/AcceptInvite/`; NEW sidecar: `src/sidecars/invite-redemption/`; Tauri URL-scheme handler in `src-tauri/`; new content schema for invite + redemption payloads |
 
 ## Quick reference — which features carry data migration
 
@@ -475,6 +585,7 @@ work waits on that future DNA bump.
 | E.4.i — Sidecar marketplace | Forward-looking; no migration |
 | E.4.j — Personal vault | Same as E.4.g (singleton personal group via classifier default + re-stamp) |
 | E.4.k — Paid content | N/A (deferred) |
+| E.4.l — Pre-signed invite links | Forward-looking; no data migration. Ship against pass-3 DNA (no need to wait for pass-4 — uses `Public` + `OpenWrite` variants that pass-4 leaves unchanged). |
 
 This doc is the contract; humm-tauri implementation lives downstream
 and will reference these section IDs in commit messages and code
