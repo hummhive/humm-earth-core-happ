@@ -63,16 +63,26 @@ pub struct HiveGenesis {
     pub created_at_microseconds: i64,
 }
 
-/// Role granted by a [`HiveMembership`]. Ordered such that
+/// Role granted by a membership entry. Ordered such that
 /// `Owner > Admin > Writer > Reader` for permission containment
 /// (`role_satisfies` enforces this).
+///
+/// Shared across the hive layer ([`HiveMembership`]) and the group
+/// layer ([`crate::group::GroupMembership`]); matches the humm-tauri
+/// `AclRole = owner|admin|writer|reader` vocabulary 1:1.
 #[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Debug)]
-pub enum HiveRole {
+pub enum Role {
     Owner,
     Admin,
     Writer,
     Reader,
 }
+
+/// Pass-2 compatibility alias. Identical to [`Role`] in every respect
+/// (same variants, same serialization); retained so existing
+/// `HiveRole` references across the integrity + coordinator crates
+/// resolve unchanged after the rename.
+pub use self::Role as HiveRole;
 
 /// A role grant. Mirrors Moss `StewardPermission`: every grant carries a
 /// reference to the grantor's own authorising membership (or `None` if
@@ -105,7 +115,7 @@ pub enum HiveRole {
 pub struct HiveMembership {
     pub hive_genesis_hash: ActionHash,
     pub for_agent: AgentPubKey,
-    pub role: HiveRole,
+    pub role: Role,
     pub grantor_membership_hash: Option<ActionHash>,
     pub expiry: Option<Timestamp>,
 }
@@ -114,13 +124,13 @@ pub struct HiveMembership {
 /// satisfy lower ones; equal satisfies equal. The order
 /// `Owner > Admin > Writer > Reader` is hard-coded here; this function
 /// is THE single source of truth for the ordering.
-pub fn role_satisfies(held: HiveRole, required: HiveRole) -> bool {
-    fn rank(r: HiveRole) -> u8 {
+pub fn role_satisfies(held: Role, required: Role) -> bool {
+    fn rank(r: Role) -> u8 {
         match r {
-            HiveRole::Owner => 4,
-            HiveRole::Admin => 3,
-            HiveRole::Writer => 2,
-            HiveRole::Reader => 1,
+            Role::Owner => 4,
+            Role::Admin => 3,
+            Role::Writer => 2,
+            Role::Reader => 1,
         }
     }
     rank(held) >= rank(required)
@@ -183,7 +193,7 @@ pub fn check_hive_authority(
     agent: &AgentPubKey,
     genesis_hash: &ActionHash,
     membership_hash: Option<&ActionHash>,
-    required_role: HiveRole,
+    required_role: Role,
     timestamp: &Timestamp,
 ) -> ExternResult<ValidateCallbackResult> {
     // Always anchor to the genesis. This catches "genesis_hash points at
@@ -309,7 +319,7 @@ pub fn validate_create_hive_membership(
         grantor,
         &membership.hive_genesis_hash,
         membership.grantor_membership_hash.as_ref(),
-        HiveRole::Admin,
+        Role::Admin,
         timestamp,
     )?;
     if !matches!(grantor_check, ValidateCallbackResult::Valid) {
@@ -319,12 +329,12 @@ pub fn validate_create_hive_membership(
     // Rule 3 — grantor cannot grant a role higher than their own. We
     // already know the grantor satisfies Admin; if they're attempting
     // to grant Owner, they must themselves be Owner.
-    if matches!(membership.role, HiveRole::Owner) {
+    if matches!(membership.role, Role::Owner) {
         let owner_check = check_hive_authority(
             grantor,
             &membership.hive_genesis_hash,
             membership.grantor_membership_hash.as_ref(),
-            HiveRole::Owner,
+            Role::Owner,
             timestamp,
         )?;
         if !matches!(owner_check, ValidateCallbackResult::Valid) {

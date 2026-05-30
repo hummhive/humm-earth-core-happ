@@ -1,10 +1,12 @@
 pub mod encrypted_content;
 pub mod globals;
+pub mod group;
 pub mod hive;
 pub mod inbox;
 
 pub use encrypted_content::*;
 pub use globals::*;
+pub use group::*;
 pub use hive::*;
 pub use inbox::*;
 
@@ -23,6 +25,10 @@ pub enum EntryTypes {
     /// probe-log; the entry is invisible to peers anyway).
     #[entry_type(visibility = "private")]
     DmProbeLog(DmProbeLog),
+    /// Group root-of-trust + role-grant entries. Appended at the END to
+    /// keep existing entry-type indices (0..=3) stable post-pass-2.
+    GroupGenesis(GroupGenesis),
+    GroupMembership(GroupMembership),
 }
 
 #[derive(Serialize, Deserialize)]
@@ -43,6 +49,11 @@ pub enum LinkTypes {
     /// [`InboxEvent`] discriminator. Appended at the END to keep all
     /// existing variant indices stable post-pass-2.
     Inbox,
+    /// Group discovery links. Appended at the END to keep existing
+    /// link-type indices (0..=11) stable post-pass-2.
+    AgentToGroupMemberships,
+    GroupToGroupMemberships,
+    HiveToGroups,
 }
 
 #[hdk_extern]
@@ -150,6 +161,12 @@ fn dispatch_delete_entry(action: Delete) -> ExternResult<ValidateCallbackResult>
             validate_delete_hive_membership(action, original_action, membership)
         }
         EntryTypes::DmProbeLog(_) => Ok(ValidateCallbackResult::Valid),
+        EntryTypes::GroupGenesis(genesis) => {
+            validate_delete_group_genesis(action, original_action, genesis)
+        }
+        EntryTypes::GroupMembership(membership) => {
+            validate_delete_group_membership(action, original_action, membership)
+        }
     }
 }
 #[hdk_extern]
@@ -176,6 +193,15 @@ pub fn validate(op: Op) -> ExternResult<ValidateCallbackResult> {
                     )
                 }
                 EntryTypes::DmProbeLog(_) => Ok(ValidateCallbackResult::Valid),
+                EntryTypes::GroupGenesis(genesis) => {
+                    validate_create_group_genesis(EntryCreationAction::Create(action), genesis)
+                }
+                EntryTypes::GroupMembership(membership) => {
+                    validate_create_group_membership(
+                        EntryCreationAction::Create(action),
+                        membership,
+                    )
+                }
             },
             OpEntry::UpdateEntry {
                 app_entry, action, ..
@@ -190,6 +216,12 @@ pub fn validate(op: Op) -> ExternResult<ValidateCallbackResult> {
                     validate_update_hive_membership(action, membership)
                 }
                 EntryTypes::DmProbeLog(_) => Ok(ValidateCallbackResult::Valid),
+                EntryTypes::GroupGenesis(genesis) => {
+                    validate_update_group_genesis(action, genesis)
+                }
+                EntryTypes::GroupMembership(membership) => {
+                    validate_update_group_membership(action, membership)
+                }
             },
             _ => Ok(ValidateCallbackResult::Valid),
         },
@@ -205,6 +237,12 @@ pub fn validate(op: Op) -> ExternResult<ValidateCallbackResult> {
                     validate_update_hive_membership(action, membership)
                 }
                 EntryTypes::DmProbeLog(_) => Ok(ValidateCallbackResult::Valid),
+                EntryTypes::GroupGenesis(genesis) => {
+                    validate_update_group_genesis(action, genesis)
+                }
+                EntryTypes::GroupMembership(membership) => {
+                    validate_update_group_membership(action, membership)
+                }
             },
             _ => Ok(ValidateCallbackResult::Valid),
         },
@@ -268,6 +306,25 @@ pub fn validate(op: Op) -> ExternResult<ValidateCallbackResult> {
             ),
             LinkTypes::Inbox => {
                 validate_create_link_inbox(action, base_address, target_address, tag)
+            }
+            LinkTypes::AgentToGroupMemberships => {
+                validate_create_link_agent_to_group_memberships(
+                    action,
+                    base_address,
+                    target_address,
+                    tag,
+                )
+            }
+            LinkTypes::GroupToGroupMemberships => {
+                validate_create_link_group_to_group_memberships(
+                    action,
+                    base_address,
+                    target_address,
+                    tag,
+                )
+            }
+            LinkTypes::HiveToGroups => {
+                validate_create_link_hive_to_groups(action, base_address, target_address, tag)
             }
             // OriginalHashPointer is a self-link / chain pointer; no
             // structural recompute is feasible without re-deriving the
@@ -356,6 +413,15 @@ pub fn validate(op: Op) -> ExternResult<ValidateCallbackResult> {
                 target_address,
                 tag,
             ),
+            LinkTypes::AgentToGroupMemberships => {
+                validate_delete_group_link(action, original_action, "AgentToGroupMemberships")
+            }
+            LinkTypes::GroupToGroupMemberships => {
+                validate_delete_group_link(action, original_action, "GroupToGroupMemberships")
+            }
+            LinkTypes::HiveToGroups => {
+                validate_delete_group_link(action, original_action, "HiveToGroups")
+            }
             LinkTypes::OriginalHashPointer => Ok(ValidateCallbackResult::Valid),
             LinkTypes::TimePath => Ok(ValidateCallbackResult::Valid),
             LinkTypes::TimeItem => Ok(ValidateCallbackResult::Valid),
@@ -381,6 +447,15 @@ pub fn validate(op: Op) -> ExternResult<ValidateCallbackResult> {
                     )
                 }
                 EntryTypes::DmProbeLog(_) => Ok(ValidateCallbackResult::Valid),
+                EntryTypes::GroupGenesis(genesis) => {
+                    validate_create_group_genesis(EntryCreationAction::Create(action), genesis)
+                }
+                EntryTypes::GroupMembership(membership) => {
+                    validate_create_group_membership(
+                        EntryCreationAction::Create(action),
+                        membership,
+                    )
+                }
             },
             OpRecord::UpdateEntry {
                 app_entry, action, ..
@@ -403,6 +478,12 @@ pub fn validate(op: Op) -> ExternResult<ValidateCallbackResult> {
                     validate_update_hive_membership(action, membership)
                 }
                 EntryTypes::DmProbeLog(_) => Ok(ValidateCallbackResult::Valid),
+                EntryTypes::GroupGenesis(genesis) => {
+                    validate_update_group_genesis(action, genesis)
+                }
+                EntryTypes::GroupMembership(membership) => {
+                    validate_update_group_membership(action, membership)
+                }
             },
             OpRecord::DeleteEntry { action, .. } => dispatch_delete_entry(action),
             OpRecord::CreateLink {
@@ -462,6 +543,25 @@ pub fn validate(op: Op) -> ExternResult<ValidateCallbackResult> {
                 ),
                 LinkTypes::Inbox => {
                     validate_create_link_inbox(action, base_address, target_address, tag)
+                }
+                LinkTypes::AgentToGroupMemberships => {
+                    validate_create_link_agent_to_group_memberships(
+                        action,
+                        base_address,
+                        target_address,
+                        tag,
+                    )
+                }
+                LinkTypes::GroupToGroupMemberships => {
+                    validate_create_link_group_to_group_memberships(
+                        action,
+                        base_address,
+                        target_address,
+                        tag,
+                    )
+                }
+                LinkTypes::HiveToGroups => {
+                    validate_create_link_hive_to_groups(action, base_address, target_address, tag)
                 }
                 LinkTypes::OriginalHashPointer => Ok(ValidateCallbackResult::Valid),
                 LinkTypes::TimePath => Ok(ValidateCallbackResult::Valid),
@@ -560,6 +660,19 @@ pub fn validate(op: Op) -> ExternResult<ValidateCallbackResult> {
                         create_link.target_address,
                         create_link.tag,
                     ),
+                    LinkTypes::AgentToGroupMemberships => validate_delete_group_link(
+                        action,
+                        create_link.clone(),
+                        "AgentToGroupMemberships",
+                    ),
+                    LinkTypes::GroupToGroupMemberships => validate_delete_group_link(
+                        action,
+                        create_link.clone(),
+                        "GroupToGroupMemberships",
+                    ),
+                    LinkTypes::HiveToGroups => {
+                        validate_delete_group_link(action, create_link.clone(), "HiveToGroups")
+                    }
                     LinkTypes::OriginalHashPointer => Ok(ValidateCallbackResult::Valid),
                     LinkTypes::TimePath => Ok(ValidateCallbackResult::Valid),
                     LinkTypes::TimeItem => Ok(ValidateCallbackResult::Valid),
