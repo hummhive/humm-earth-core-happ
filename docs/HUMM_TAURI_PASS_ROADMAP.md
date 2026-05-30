@@ -223,24 +223,34 @@ need to wait for pass-4):**
 
 ## D.1 — group migration track (`feat-migration-d1-group-track`)
 
-**DNA status:** ⏳ planned (separate branch; no DNA bump — tooling
-only). Required to migrate **pre-existing group-scoped content**
-from pass-1/2 to a HiveGroup wire shape on the pass-4 DNA. Without
-D.1, the classifier defaults to `Public` for unknown content types
-and operators must manually re-stamp HiveGroup entries on the new
-DNA after migration.
+**DNA status:** ✅ shipped on branch `feat-migration-d1-group-track`
+(off the pass-4 tip; no DNA bump — tooling only). Migrates
+**pre-existing group-scoped content** from pass-1/2 to a HiveGroup
+wire shape on the pass-4 DNA. Without D.1, the classifier defaults to
+`Public` for unknown content types and operators must manually
+re-stamp HiveGroup entries on the new DNA after migration; with D.1,
+a per-bundle `classification-overrides.json` drives the re-stamp
+automatically with correct `recipient_witnesses`.
 
-**What will change in this repo (D.1 scope):**
-- `scripts/migrate-dna.ts` gains `migrate-group`,
+**What shipped in this repo (D.1 scope):**
+- `scripts/migrate-dna.ts` gained `migrate-group`,
   `grant-group-memberships`, `mark-group-migrated` CLI commands
   (parallel to the existing hive-identity track).
 - Per-bundle `classification-overrides.json` mechanism — operator
-  authors per-old-action-hash overrides before running `import`.
-- `classifyAclSpec` HiveGroup branch becomes functional: walks
-  `get_latest_group_membership` per PKA pubkey to populate
-  `recipient_witnesses`.
-- `docs/DNA_MIGRATION_GUIDE.md` gains a "Group track +
-  classification overrides" section.
+  authors per-old-action-hash overrides before running `import`
+  (optional 5th `import` arg).
+- `buildHiveGroupAclSpec` (in `doImport`) resolves the override's
+  old group squuids → new `GroupGenesis` hashes and stamps
+  `recipient_witnesses` from the migrated groups' live rosters
+  (re-verified via `get_latest_group_membership`). The
+  `classifyAclSpec` HiveGroup branch stays a guard that throws for
+  blanket content-type → HiveGroup mappings without a per-entry
+  override.
+- Witness-bucket dominance arithmetic extracted to
+  `scripts/acl-bucket.ts` (pure) + 9 vitest unit tests in
+  `tests/src/migration/witness-bucket.test.ts`.
+- `docs/DNA_MIGRATION_GUIDE.md` § "Pass-4 + Phase D.1" documents the
+  commands + the overrides file format.
 
 **humm-tauri tasks (when D.1 ships):**
 - 🔵 Surface a post-migration UI wizard that consumes the D.1 CLI

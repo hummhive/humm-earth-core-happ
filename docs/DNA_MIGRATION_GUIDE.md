@@ -432,20 +432,126 @@ once real groups exist.
   the classifier throws a clear error: HiveGroup classification
   requires the group-migration track (Phase D.1, deferred).
 
-### Deferred — Phase D.1 (group track + classification overrides)
+### Pass-4 + Phase D.1 (group track + classification overrides) — SHIPPED
 
-The pass-3 plan calls for a `migrate-group` / `grant-group-memberships`
-command pair that materialises legacy humm-tauri group squuids as
-`GroupGenesis` entries on the new DNA, plus a per-bundle
-`classification-overrides.json` mechanism so operators can re-route
-specific entries to `HiveGroup` (with the right `group_acl`) without
-editing the script. **Both are deferred to a Phase D.1 follow-up.**
-Until they land, the migration runs without the group track — the
-default-to-`Public` classifier keeps the migration functional and
-the resulting entries readable across the hive; humm-tauri post-
-migration is responsible for creating real `GroupGenesis` entries
-(via the new `create_group_genesis` extern) and re-stamping selected
-entries with `HiveGroup` `acl_spec` when needed.
+Pass-4 makes `public_key_acl` on `AclSpec::HiveGroup` load-bearing
+(G-6.2): every HiveGroup entry must carry `recipient_witnesses`
+covering its recipients. Phase D.1 supplies the migration tooling to
+populate that for legacy group-scoped content. Three new commands +
+a per-bundle overrides file:
+
+#### `migrate-group`
+
+```bash
+npx tsx scripts/migrate-dna.ts migrate-group \
+  <new-app-id> <hive-bundle.json> <old-hive-id> <old-group-id> \
+  [--hive-wide-role <Owner|Admin|Writer|Reader>] \
+  [--creator-membership <hash-b64>] \
+  [--old-marker <hash-b64>]
+```
+
+Creates a `GroupGenesis` on the new DNA under the migrated hive
+matching `<old-hive-id>` (resolved via the hive-bundle), and records
+it under `bundle.hives[hive].groups[]`. `--hive-wide-role` marks a
+hive-wide system role group (requires hive Owner; integrity-enforced).
+`--creator-membership` supplies the creator's authorising
+`HiveMembership` when the caller is not the hive genesis author.
+`--old-marker` records the OLD-DNA `Group` content entry hash so
+`mark-group-migrated` can write a forward-pointer onto it.
+
+#### `grant-group-memberships`
+
+```bash
+npx tsx scripts/migrate-dna.ts grant-group-memberships \
+  <new-app-id> <hive-bundle.json> <old-group-id> <role> \
+  <member-pubkey-b64> [<member-pubkey-b64>...]
+```
+
+Issues one `GroupMembership` per pubkey via `create_group_membership`
+(grantor = the calling agent, who must hold group Admin+; the group
+creator grants via Path A with `grantor_membership_hash: null`).
+Records each grant in `bundle.hives[hive].groups[group].granted_memberships[]`.
+Groups are located by squuid across all hives (squuids are globally
+unique), so no `<old-hive-id>` is needed.
+
+#### `mark-group-migrated` (optional)
+
+```bash
+npx tsx scripts/migrate-dna.ts mark-group-migrated \
+  <old-app-id> <hive-bundle.json>
+```
+
+Writes V2 forward-pointer markers onto every group whose
+`old_marker_action_hash_base64` is set, pointing members at the new
+`GroupGenesis`. Skips groups without a recorded old marker (parallel
+to `mark-hive-migrated`). Honours `NEW_DNA_HASH_BASE64` + `NEW_APP_ID`.
+
+#### `classification-overrides.json`
+
+Authored by the operator BEFORE `import`. Forces specific old-DNA
+entries into `AclSpec::HiveGroup`, naming the migrated groups per
+bucket by their OLD squuids:
+
+```json
+{
+  "schema_version": 1,
+  "entries": {
+    "<old_action_hash_b64>": {
+      "kind": "HiveGroup",
+      "group_acl": {
+        "owner_old_group_id": "<old-group-squuid>",
+        "admin_old_group_ids": [],
+        "writer_old_group_ids": [],
+        "reader_old_group_ids": []
+      }
+    }
+  }
+}
+```
+
+Pass it as the optional 5th arg to `import`:
+
+```bash
+npx tsx scripts/migrate-dna.ts import \
+  <new-app-id> <in.bundle.json> <hive-bundle.json> <out.remap.json> \
+  classification-overrides.json
+```
+
+For each overridden entry the classifier:
+1. Resolves the override's old group squuids to new `GroupGenesis`
+   hashes via the hive-bundle's `groups[]` (fails the entry with a
+   clear error if any group is not yet migrated).
+2. Walks each migrated group's recorded `granted_memberships`,
+   re-verifying each via `get_latest_group_membership` (members
+   revoked/expired since the grant are dropped with a warning).
+3. Stamps one `recipient_witness` per live member at the highest
+   bucket they qualify for (`min(group_bucket, member_role)`, capped
+   at Admin so the single-string `public_key_acl.owner` slot is never
+   contended) and builds the matching `public_key_acl`.
+
+The recipient set is sourced from the migrated groups' live rosters
+(new-DNA pubkeys), NOT the legacy `public_key_acl` (old-DNA pubkeys),
+so the resulting witnesses always validate. Entries WITHOUT an
+override fall through to the content-type classifier + `Public`
+default exactly as before — D.1 is purely additive.
+
+If a `content_type` is blanket-mapped to `HiveGroup` in
+`CONTENT_TYPE_ACL_SPEC` without a per-entry override, the classifier
+throws: `group_acl` + `recipient_witnesses` are not derivable from a
+content_type alone, so a per-entry override is mandatory for HiveGroup.
+
+**Importer authority requirement.** A HiveGroup commit must satisfy
+the author's per-group write authority (the validator's
+`check_group_authority`: Path A group creator, Path B hive Admin+, or
+Path C an explicit group membership). The importer running `import`
+is the author of every re-stamped entry, so they MUST be one of:
+the hive genesis author, a hive Admin+, the creator of the
+`group_acl` groups, OR a member of those groups (the classifier
+auto-resolves the importer's own `GroupMembership` and stamps it as
+`author_group_membership_hash` to satisfy Path C). An importer with
+none of these for a given group will see those overridden entries land
+in `remap.failures[]` — run `import` as the hive owner / a group
+member, or grant the importer the needed membership first.
 
 ### Bundle schema versioning
 

@@ -249,7 +249,7 @@ not need them for pass-2.5 work, but they will be available when
 pass-3 lands:
 
 - `create_group_genesis({ hive_genesis_hash, display_id,
-  hive_wide_role, grantor_hive_membership_hash }) -> GroupGenesisResponse`
+  hive_wide_role, creator_hive_membership_hash }) -> GroupGenesisResponse`
 - `create_group_membership({ group_genesis_hash, for_agent, role,
   grantor_membership_hash, grantor_hive_membership_hash, expiry }) ->
   GroupMembershipResponse`
@@ -448,13 +448,11 @@ AND any UI gating logic.
   content-type → AclSpec classifier + new wire-shape import +
   schema_version 1/2 acceptance): **COMMITTED** *(this commit)*.
   `DNA_MIGRATION_GUIDE.md` updated with the pass-3 wire-shape
-  `DNA_MIGRATION_GUIDE.md` updated with the pass-3 wire-shape
-  migration section + classification table. **Phase D.1 deferred**
-  (still — separate branch `feat-migration-d1-group-track` per the
-  pass-4 plan): the legacy-group → `GroupGenesis` track
-  (`migrate-group` / `grant-group-memberships`) and per-bundle
-  `classification-overrides.json` mechanism. Defaults to `Public`
-  for unknown types in the meantime.
+  migration section + classification table. **Phase D.1** (the
+  legacy-group → `GroupGenesis` track + per-bundle
+  `classification-overrides.json`) was deferred at pass-3 time;
+  it now ships on branch `feat-migration-d1-group-track` — see the
+  Phase D.1 status section below.
 - Phase E — Full handoff docs (
   [`HUMM_TAURI_ACLSPEC_INTEGRATION.md`](./HUMM_TAURI_ACLSPEC_INTEGRATION.md),
   [`PASS_3_DEPLOY_HANDOFF.md`](./PASS_3_DEPLOY_HANDOFF.md),
@@ -496,10 +494,43 @@ AND any UI gating logic.
   [`HUMM_TAURI_FEATURE_ENABLEMENT.md`](./HUMM_TAURI_FEATURE_ENABLEMENT.md)):
   **COMMITTED** *(this commit)*.
 - Phase 4-F — Verification + new `.baseline-hashes.txt` Pass-4
-  section + ff-merge: pending.
+  section + ff-merge: **COMMITTED** (pass-4 final tip `7b918f7`;
+  DNA hash `uhC0kNS2JM6lqmdxr3Q8VK2uhDJFF-wRBz-W73JjJKZnTTMyT8_JS`).
 
-This file is the *interim* communication channel for pass-4. Treat
-it as authoritative for "what changed since the pass-3 handoff".
+---
+
+## Phase D.1 status (branch `feat-migration-d1-group-track`)
+
+Non-DNA-changing migration tooling (off the pass-4 tip). Lets
+operators materialise legacy humm-tauri groups as real
+`GroupGenesis` entries on the new DNA + populate the pass-4
+`recipient_witnesses` on migrated HiveGroup content.
+
+- New CLI commands in `scripts/migrate-dna.ts`: `migrate-group`,
+  `grant-group-memberships`, `mark-group-migrated`.
+- New per-bundle `classification-overrides.json` mechanism (optional
+  5th arg to `import`) — forces specific entries to
+  `AclSpec::HiveGroup`, resolving old group squuids → new
+  `GroupGenesis` hashes + stamping `recipient_witnesses` from the
+  live group rosters.
+- Witness-bucket dominance arithmetic extracted to
+  `scripts/acl-bucket.ts` (pure, dependency-free) + pinned by 9
+  vitest unit tests (`tests/src/migration/witness-bucket.test.ts`)
+  — sanity-checks the bucket assignment without needing a conductor.
+- `tsc --noEmit scripts/migrate-dna.ts`: holds at the 7-error
+  pre-existing baseline (zero new errors).
+- `DNA_MIGRATION_GUIDE.md` § "Pass-4 + Phase D.1" documents all
+  three commands + the overrides file format.
+- DNA hash UNCHANGED — coordinator/tooling only. No integrity-zome
+  edits on this branch.
+- humm-tauri impact: none beyond the pass-4 wire-shape work already
+  on the roadmap. D.1 is operator-side migration tooling; the
+  post-migration re-stamp it enables is the same
+  `stampWitnessesFromGroupAcl` flow documented in
+  [`PASS_4_DEPLOY_HANDOFF.md`](./PASS_4_DEPLOY_HANDOFF.md).
+
+This file is the *interim* communication channel for pass-4 + D.1.
+Treat it as authoritative for "what changed since the pass-3 handoff".
 
 ---
 

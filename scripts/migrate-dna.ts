@@ -189,6 +189,13 @@ import { decode } from "@msgpack/msgpack";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 
+import {
+  cappedWitnessRank,
+  rankToBucket,
+  roleRank,
+  type AclBucketName,
+} from "./acl-bucket.js";
+
 const ADMIN_PORT = Number(process.env.ADMIN_PORT ?? 4444);
 const ZOME_NAME = "content";
 const ROLE_NAME = "humm_earth_core";
@@ -196,8 +203,10 @@ const MIGRATION_MARKER_SCHEMA_TAG = "humm-earth-core-happ/migration-marker";
 
 /** Roles accepted by the pass-2/pass-3 membership integrity zomes.
  *  Wire-form variant names match `Role` in the integrity zome (pass-3
- *  shared between hive + group membership). */
-type HiveRole = "Owner" | "Admin" | "Writer" | "Reader";
+ *  shared between hive + group membership). Alias of the shared
+ *  [`AclBucketName`] union so the dominance helpers in `acl-bucket.ts`
+ *  accept `HiveRole` values directly. */
+type HiveRole = AclBucketName;
 const HIVE_ROLES: readonly HiveRole[] = ["Owner", "Admin", "Writer", "Reader"];
 
 /**
@@ -337,25 +346,27 @@ function classifyAclSpec(
       };
     }
     case "HiveGroup": {
-      // The pass-4 wire shape requires `recipient_witnesses` on every
-      // HiveGroup write — populated by walking
-      // `get_latest_group_membership(agent, group_genesis_hash)` per
-      // PKA pubkey + bucket and stamping the returned membership hash.
-      // That walk requires migrated groups to exist on the new DNA,
-      // which the migrate-group / grant-group-memberships track
-      // (Phase D.1) provides; without D.1 there are no groups to walk.
+      // Reaching this branch means a content_type was mapped to
+      // HiveGroup in CONTENT_TYPE_ACL_SPEC *without* a per-entry
+      // classification-override. The HiveGroup wire shape needs a
+      // concrete group_acl (ActionHash-keyed) + recipient_witnesses,
+      // neither of which is derivable from content_type alone — both
+      // require the operator to name the migrated groups per entry.
       //
-      // Pre-D.1 we surface a clear error so a config that classifies
-      // unknown content_types into HiveGroup does not silently produce
-      // a broken entry. Operators wanting HiveGroup classification
-      // wait for D.1 + author a per-bundle classification-overrides.json.
+      // D.1 supplies that via `classification-overrides.json`: an
+      // override forces an entry into HiveGroup and `buildHiveGroupAclSpec`
+      // (in doImport) resolves the groups + stamps the witnesses,
+      // bypassing this classifier branch entirely. So this throw now
+      // only fires for the genuine misconfiguration "content_type
+      // blanket-mapped to HiveGroup with no per-entry override".
       throw new Error(
-        `HiveGroup classification for content_type "${contentType}" requires ` +
-          `the group-migration track (Phase D.1, not yet shipped). The pass-4 ` +
-          `wire shape adds 'recipient_witnesses: RecipientWitness[]' inside ` +
-          `AclSpec::HiveGroup; populating it requires migrated groups + ` +
-          `memberships on the new DNA. Either change the classification in ` +
-          `CONTENT_TYPE_ACL_SPEC or wait for D.1.`,
+        `HiveGroup classification for content_type "${contentType}" is not ` +
+          `derivable from content_type alone. Use a per-entry ` +
+          `classification-overrides.json (D.1) to name the migrated ` +
+          `group_acl groups for each entry — a blanket ` +
+          `CONTENT_TYPE_ACL_SPEC → HiveGroup mapping cannot populate ` +
+          `group_acl or recipient_witnesses. Remove the mapping or supply ` +
+          `overrides.`,
       );
     }
   }
@@ -431,11 +442,47 @@ type Remap = {
   failures: { id: string; old_action_hash: string; error: string }[];
 };
 
-/** Granted-membership record stored inside a `HiveBundleHive`. */
+/** Granted-membership record stored inside a `HiveBundleHive` (hive
+ * layer) or a `GroupBundleGroup` (group layer). Shared shape. */
 type GrantedMembership = {
   for_agent_base64: string;
   role: HiveRole;
   membership_hash_base64: string;
+};
+
+/** Per-group record stored inside a `HiveBundleHive.groups[]` (D.1
+ * group-migration track). Mirror of `HiveBundleHive` one level down:
+ * a migrated `GroupGenesis` on the new DNA + the memberships granted
+ * into it. The `classification-overrides.json` mechanism resolves an
+ * operator-supplied `owner_old_group_id` / `*_old_group_ids` set to
+ * these records' `new_group_genesis_hash_base64` at import time. */
+type GroupBundleGroup = {
+  /** The squuid group_id on the OLD DNA — the key
+   * `classification-overrides.json` references and the key
+   * `grant-group-memberships` / `mark-group-migrated` match against.
+   * Squuids are globally unique, so a group is locatable across all
+   * hives in the bundle without its parent hive id. */
+  old_group_id: string;
+  /** Multibase holohash of the `GroupGenesis` action on the NEW DNA. */
+  new_group_genesis_hash_base64: string;
+  /** Display alias stamped on the new `GroupGenesis` (defaults to
+   * `old_group_id` for continuity). */
+  new_display_id: string;
+  /** Pubkey of the agent that created the new GroupGenesis (implicit
+   * group Owner via the integrity zome's group-author rule). */
+  creator_pubkey_base64: string;
+  /** `Some(role)` marks a hive-wide system role group (required hive
+   * Owner to create); `null` marks an ordinary custom group. */
+  hive_wide_role: HiveRole | null;
+  /** Multibase holohash of the OLD-DNA `Group` content entry that
+   * `mark-group-migrated` writes the V2 marker onto. `null` to defer
+   * — the group is SKIPPED by `mark-group-migrated` with a warning. */
+  old_marker_action_hash_base64: string | null;
+  /** Memberships granted into this group via
+   * `grant-group-memberships`. Sourced by the classifier's HiveGroup
+   * override path to build both `public_key_acl` and
+   * `recipient_witnesses`. */
+  granted_memberships: GrantedMembership[];
 };
 
 /** Per-hive record inside a `HiveBundle`. */
@@ -462,12 +509,40 @@ type HiveBundleHive = {
   old_marker_action_hash_base64: string | null;
   /** Memberships granted to other agents via `grant-memberships`. */
   granted_memberships: GrantedMembership[];
+  /** D.1 group-migration track: groups migrated under this hive via
+   * `migrate-group`. Optional for back-compat — pre-D.1 bundles have
+   * no `groups` key, and the hive-identity track never reads it. */
+  groups?: GroupBundleGroup[];
 };
 
 type HiveBundle = {
   schema_version: 1;
   generated_at_iso: string;
   hives: HiveBundleHive[];
+};
+
+/** Per-entry override in `classification-overrides.json`. The operator
+ * authors this file BEFORE running `import` to force specific old-DNA
+ * entries into the `HiveGroup` variant (the classifier otherwise
+ * defaults unknown content types to `Public`). `group_acl` is keyed by
+ * OLD group squuids; the classifier resolves them to new
+ * `GroupGenesis` hashes via the hive-bundle's `groups[]`. */
+type ClassificationOverrideEntry = {
+  kind: "HiveGroup";
+  group_acl: {
+    owner_old_group_id: string;
+    admin_old_group_ids: string[];
+    writer_old_group_ids: string[];
+    reader_old_group_ids: string[];
+  };
+};
+
+/** Parsed `classification-overrides.json`. `entries` is keyed by the
+ * OLD-DNA action-hash (multibase) of the entry being overridden — the
+ * same `old_action_hash` that appears in the per-entry bundle. */
+type ClassificationOverrides = {
+  schema_version: 1;
+  entries: Record<string, ClassificationOverrideEntry>;
 };
 
 async function connectAppWs(
@@ -550,6 +625,85 @@ function findHiveOrThrow(bundle: HiveBundle, oldHiveId: string): HiveBundleHive 
     );
   }
   return hive;
+}
+
+/** Locate a migrated group by its OLD squuid across every hive's
+ * `groups[]` in the bundle. Squuids are globally unique, so the parent
+ * hive id is not needed for lookup. Returns the parent hive + the
+ * group record, or `null` if the group has not been migrated yet. */
+function findGroupAcrossHives(
+  bundle: HiveBundle,
+  oldGroupId: string,
+): { hive: HiveBundleHive; group: GroupBundleGroup } | null {
+  for (const hive of bundle.hives) {
+    const group = hive.groups?.find((g) => g.old_group_id === oldGroupId);
+    if (group) return { hive, group };
+  }
+  return null;
+}
+
+/** Same as [`findGroupAcrossHives`] but throws a clear, actionable
+ * error when the group is missing. Used by the classifier override
+ * path + `grant-group-memberships` + `mark-group-migrated`. */
+function findGroupOrThrow(
+  bundle: HiveBundle,
+  oldGroupId: string,
+): { hive: HiveBundleHive; group: GroupBundleGroup } {
+  const found = findGroupAcrossHives(bundle, oldGroupId);
+  if (!found) {
+    throw new Error(
+      `Group "${oldGroupId}" not found in any hive's groups[] in the ` +
+        `hive-bundle. Run \`migrate-group\` for it first.`,
+    );
+  }
+  return found;
+}
+
+/** Load + parse `classification-overrides.json`, or return `null` when
+ * no path is supplied (the common case — most imports use the
+ * content-type classifier + Public default). Validates schema_version
+ * and the per-entry `kind`. */
+async function loadClassificationOverrides(
+  overridesPath: string | undefined,
+): Promise<ClassificationOverrides | null> {
+  if (!overridesPath) return null;
+  const parsed = JSON.parse(
+    await readFile(overridesPath, "utf8"),
+  ) as ClassificationOverrides;
+  if (parsed.schema_version !== 1) {
+    throw new Error(
+      `Unsupported classification-overrides schema_version: ` +
+        `${parsed.schema_version} (expected 1)`,
+    );
+  }
+  for (const [oldActionHash, entry] of Object.entries(parsed.entries ?? {})) {
+    if (entry.kind !== "HiveGroup") {
+      throw new Error(
+        `classification-override for ${oldActionHash} has unsupported ` +
+          `kind "${entry.kind}" (only "HiveGroup" is supported)`,
+      );
+    }
+    if (!entry.group_acl || typeof entry.group_acl.owner_old_group_id !== "string") {
+      throw new Error(
+        `classification-override for ${oldActionHash} is missing a valid ` +
+          `group_acl.owner_old_group_id`,
+      );
+    }
+    for (const field of [
+      "admin_old_group_ids",
+      "writer_old_group_ids",
+      "reader_old_group_ids",
+    ] as const) {
+      if (!Array.isArray(entry.group_acl[field])) {
+        throw new Error(
+          `classification-override for ${oldActionHash} has a non-array ` +
+            `group_acl.${field} (expected an array of old group squuids; ` +
+            `use [] for an empty bucket)`,
+        );
+      }
+    }
+  }
+  return parsed;
 }
 
 /**
@@ -992,6 +1146,264 @@ async function doMarkHiveMigrated(
 }
 
 // ---------------------------------------------------------------------------
+// Group-identity track (D.1)
+// ---------------------------------------------------------------------------
+
+// Witness-bucket dominance helpers (`roleRank`, `rankToBucket`,
+// `cappedWitnessRank`) live in `./acl-bucket.ts` so they are unit-
+// testable without importing this CLI module.
+
+async function doMigrateGroup(
+  newAppId: string,
+  hiveBundlePath: string,
+  oldHiveId: string,
+  oldGroupId: string,
+  hiveWideRole: HiveRole | null,
+  creatorMembershipHashB64: string | null,
+  oldMarkerActionHashB64: string | null,
+): Promise<void> {
+  if (!oldGroupId) throw new Error("old-group-id must be a non-empty string");
+  const bundle = await loadHiveBundle(hiveBundlePath);
+  const hive = findHiveOrThrow(bundle, oldHiveId);
+  if (findGroupAcrossHives(bundle, oldGroupId)) {
+    throw new Error(
+      `Group "${oldGroupId}" already present in the hive-bundle. Refusing ` +
+        `to overwrite — delete the entry or use a different bundle.`,
+    );
+  }
+
+  console.log(
+    `[migrate-group] connecting to new app "${newAppId}" on port ${ADMIN_PORT}...`,
+  );
+  const { appWebsocket, cellId, agentPubKey } = await connectAppWs(newAppId);
+  const creatorPubkeyB64 = encodeHashToBase64(agentPubKey);
+  console.log(`[migrate-group] connected. creator=${creatorPubkeyB64}`);
+
+  console.log(
+    `[migrate-group] creating GroupGenesis display_id=${JSON.stringify(oldGroupId)} ` +
+      `in hive "${oldHiveId}" (hive_wide_role=${hiveWideRole ?? "null"})...`,
+  );
+  const response = (await appWebsocket.callZome({
+    cell_id: cellId,
+    zome_name: ZOME_NAME,
+    fn_name: "create_group_genesis",
+    payload: {
+      hive_genesis_hash: decodeHashFromBase64(hive.new_genesis_hash_base64),
+      display_id: oldGroupId,
+      hive_wide_role: hiveWideRole,
+      creator_hive_membership_hash:
+        creatorMembershipHashB64 && creatorMembershipHashB64 !== ""
+          ? decodeHashFromBase64(creatorMembershipHashB64)
+          : null,
+    },
+  })) as { genesis: { display_id: string }; hash: ActionHash };
+  const newGroupGenesisHashB64 = encodeHashToBase64(response.hash);
+  console.log(
+    `[migrate-group] created. new_group_genesis_hash=${newGroupGenesisHashB64}`,
+  );
+
+  const oldMarkerHash = (oldMarkerActionHashB64 ?? "").trim();
+  (hive.groups ??= []).push({
+    old_group_id: oldGroupId,
+    new_group_genesis_hash_base64: newGroupGenesisHashB64,
+    new_display_id: response.genesis.display_id,
+    creator_pubkey_base64: creatorPubkeyB64,
+    hive_wide_role: hiveWideRole,
+    old_marker_action_hash_base64: oldMarkerHash === "" ? null : oldMarkerHash,
+    granted_memberships: [],
+  });
+  bundle.generated_at_iso = new Date().toISOString();
+  await saveHiveBundle(hiveBundlePath, bundle);
+  console.log(
+    `[migrate-group] hive-bundle updated: ${hiveBundlePath} ` +
+      `(hive "${oldHiveId}" now has ${hive.groups.length} group(s))`,
+  );
+  if (oldMarkerHash === "") {
+    console.warn(
+      `[migrate-group] NOTE: old_marker_action_hash is null for "${oldGroupId}". ` +
+        `mark-group-migrated will SKIP this group. Pass --old-marker <hash-b64> ` +
+        `or edit the bundle JSON to set it.`,
+    );
+  }
+  await appWebsocket.client.close();
+}
+
+async function doGrantGroupMemberships(
+  newAppId: string,
+  hiveBundlePath: string,
+  oldGroupId: string,
+  role: HiveRole,
+  memberPubkeysB64: string[],
+): Promise<void> {
+  if (!HIVE_ROLES.includes(role)) {
+    throw new Error(
+      `Unknown role "${role}". Expected one of: ${HIVE_ROLES.join(", ")}`,
+    );
+  }
+  if (memberPubkeysB64.length === 0) {
+    throw new Error("grant-group-memberships requires at least one member pubkey");
+  }
+  const bundle = await loadHiveBundle(hiveBundlePath);
+  const { group } = findGroupOrThrow(bundle, oldGroupId);
+  const groupGenesisHash = decodeHashFromBase64(group.new_group_genesis_hash_base64);
+
+  console.log(
+    `[grant-group-memberships] connecting to new app "${newAppId}" on port ${ADMIN_PORT}...`,
+  );
+  const { appWebsocket, cellId, agentPubKey } = await connectAppWs(newAppId);
+  const callerPubkeyB64 = encodeHashToBase64(agentPubKey);
+  if (callerPubkeyB64 !== group.creator_pubkey_base64) {
+    console.warn(
+      `[grant-group-memberships] WARNING: caller pubkey ${callerPubkeyB64} ` +
+        `differs from group creator ${group.creator_pubkey_base64}. The ` +
+        `integrity zome accepts grants only from agents holding group Admin+ ` +
+        `(Path A/B/C) — proceed with caution.`,
+    );
+  }
+  // The group creator is the implicit group Owner (Path A); they grant
+  // with grantor_membership_hash = null. A non-creator caller must
+  // supply their own Path-C group-membership witness by editing the
+  // bundle / extending this command — the common migration path is the
+  // creator granting, so null is the default.
+  let succeeded = 0;
+  const failures: { for_agent_base64: string; error: string }[] = [];
+  for (const memberB64 of memberPubkeysB64) {
+    try {
+      const response = (await appWebsocket.callZome({
+        cell_id: cellId,
+        zome_name: ZOME_NAME,
+        fn_name: "create_group_membership",
+        payload: {
+          group_genesis_hash: groupGenesisHash,
+          for_agent: decodeHashFromBase64(memberB64),
+          role,
+          grantor_membership_hash: null,
+          grantor_hive_membership_hash: null,
+          expiry: null,
+        },
+      })) as { hash: ActionHash };
+      group.granted_memberships.push({
+        for_agent_base64: memberB64,
+        role,
+        membership_hash_base64: encodeHashToBase64(response.hash),
+      });
+      succeeded++;
+      process.stdout.write(".");
+    } catch (err) {
+      failures.push({ for_agent_base64: memberB64, error: String(err) });
+      process.stdout.write("F");
+    }
+  }
+  process.stdout.write("\n");
+
+  bundle.generated_at_iso = new Date().toISOString();
+  await saveHiveBundle(hiveBundlePath, bundle);
+  console.log(
+    `[grant-group-memberships] granted ${succeeded} ${role} membership(s) ` +
+      `for group "${oldGroupId}"; ${failures.length} failed.`,
+  );
+  if (failures.length > 0) {
+    for (const f of failures) {
+      console.error(`  FAILED for ${f.for_agent_base64}: ${f.error}`);
+    }
+    process.exit(1);
+  }
+  await appWebsocket.client.close();
+}
+
+async function doMarkGroupMigrated(
+  oldAppId: string,
+  hiveBundlePath: string,
+): Promise<void> {
+  const bundle = await loadHiveBundle(hiveBundlePath);
+  const allGroups = bundle.hives.flatMap((h) => h.groups ?? []);
+  const targets = allGroups.filter((g) => g.old_marker_action_hash_base64 != null);
+  const skipped = allGroups.length - targets.length;
+  if (skipped > 0) {
+    console.warn(
+      `[mark-group-migrated] skipping ${skipped} group(s) without ` +
+        `old_marker_action_hash_base64 set (run migrate-group with ` +
+        `--old-marker, or edit the bundle JSON to populate).`,
+    );
+  }
+  if (targets.length === 0) {
+    console.log(`[mark-group-migrated] nothing to do.`);
+    return;
+  }
+
+  const newDnaHashBase64 = process.env.NEW_DNA_HASH_BASE64 ?? "";
+  if (!newDnaHashBase64) {
+    console.warn(
+      `[mark-group-migrated] WARNING: NEW_DNA_HASH_BASE64 not set; markers ` +
+        `will carry new_dna_hash_base64="". Set via ` +
+        `\`NEW_DNA_HASH_BASE64=$(hc dna hash <new.dna>) ...\` to populate.`,
+    );
+  }
+  const newAppId = process.env.NEW_APP_ID ?? "";
+  if (!newAppId) {
+    console.warn(
+      `[mark-group-migrated] WARNING: NEW_APP_ID not set; markers will ` +
+        `carry new_app_id="".`,
+    );
+  }
+
+  console.log(
+    `[mark-group-migrated] connecting to old app "${oldAppId}" on port ${ADMIN_PORT}...`,
+  );
+  const { appWebsocket, cellId } = await connectAppWs(oldAppId);
+
+  const migratedAtMicroseconds = Date.now() * 1000;
+  let succeeded = 0;
+  const failures: { old_group_id: string; error: string }[] = [];
+  for (const group of targets) {
+    const oldMarkerHashB64 = group.old_marker_action_hash_base64!;
+    // The group marker points members at the NEW GroupGenesis action
+    // hash via `new_hive_genesis_hash_base64` (reused field — the V2
+    // marker schema has no group-specific slot, so the group genesis
+    // travels in the same field the hive-identity track uses for the
+    // hive genesis; receivers disambiguate by the marked entry's
+    // content_type).
+    const marker = {
+      schema_tag: MIGRATION_MARKER_SCHEMA_TAG,
+      schema_version: 2,
+      new_dna_hash_base64: newDnaHashBase64,
+      new_action_hash_base64: group.new_group_genesis_hash_base64,
+      new_app_id: newAppId,
+      migrated_at_microseconds: migratedAtMicroseconds,
+      new_hive_genesis_hash_base64: group.new_group_genesis_hash_base64,
+      new_hive_genesis_display_id: group.new_display_id,
+    };
+    try {
+      await appWebsocket.callZome({
+        cell_id: cellId,
+        zome_name: ZOME_NAME,
+        fn_name: "mark_migrated_v2",
+        payload: {
+          original_action_hash: decodeHashFromBase64(oldMarkerHashB64),
+          marker,
+        },
+      });
+      succeeded++;
+      process.stdout.write(".");
+    } catch (err) {
+      failures.push({ old_group_id: group.old_group_id, error: String(err) });
+      process.stdout.write("F");
+    }
+  }
+  process.stdout.write("\n");
+  console.log(
+    `[mark-group-migrated] wrote ${succeeded} V2 marker(s); ${failures.length} failed.`,
+  );
+  if (failures.length > 0) {
+    for (const f of failures) {
+      console.error(`  FAILED for group "${f.old_group_id}": ${f.error}`);
+    }
+    process.exit(1);
+  }
+  await appWebsocket.client.close();
+}
+
+// ---------------------------------------------------------------------------
 // Per-entry track
 // ---------------------------------------------------------------------------
 
@@ -1012,11 +1424,161 @@ type SerializedBundleEntry = Omit<BundleEntry, "encrypted_content"> & {
   };
 };
 
+/** Build a pass-4 `AclSpec::HiveGroup` wire value + matching
+ * `public_key_acl` for an overridden entry. Resolves the override's
+ * OLD group squuids to NEW `GroupGenesis` hashes via the hive-bundle,
+ * then derives both the recipient set AND the `recipient_witnesses`
+ * from the live group rosters (confirmed via
+ * `get_latest_group_membership`).
+ *
+ * ## Witness/PKA derivation
+ *
+ * The recipient set is sourced from the migrated groups' members
+ * (recorded by `grant-group-memberships`), NOT from the legacy
+ * `public_key_acl` — legacy PKA carries OLD-DNA pubkeys, whereas the
+ * grant step used NEW-DNA pubkeys. For each member, the witness bucket
+ * is `min(group_bucket, member_role)` by rank (so a Reader-role member
+ * of an admin-bucket group is represented as a Reader witness), capped
+ * at Admin so the single-string `public_key_acl.owner` slot is never
+ * contended (an owner-group member is validly representable as an
+ * Admin-bucket witness via the validator's bucket-dominance rule:
+ * Admin accepts owner∪admin groups and Owner-role satisfies Admin).
+ * Each member is stamped exactly once at the highest bucket they
+ * qualify for across all groups they appear in (dedup), satisfying
+ * the validator's one-witness-per-pubkey + bidirectional cross-check.
+ *
+ * A member whose `get_latest_group_membership` lookup returns null
+ * (revoked / expired since the grant) is dropped with a warning — it
+ * is correctly absent from both the PKA and the witnesses, so the
+ * entry stays valid. */
+async function buildHiveGroupAclSpec(
+  override: ClassificationOverrideEntry,
+  parentHive: HiveBundleHive,
+  hiveBundle: HiveBundle,
+  authorMembershipHashBytes: Uint8Array | null,
+  callerPubkey: AgentPubKey,
+  appWebsocket: AppWebsocket,
+  cellId: CellId,
+): Promise<{ acl_spec: unknown; public_key_acl: unknown; display_hive_id: string | null }> {
+  const resolve = (oldGroupId: string): GroupBundleGroup =>
+    findGroupOrThrow(hiveBundle, oldGroupId).group;
+  const ownerGroup = resolve(override.group_acl.owner_old_group_id);
+  const adminGroups = override.group_acl.admin_old_group_ids.map(resolve);
+  const writerGroups = override.group_acl.writer_old_group_ids.map(resolve);
+  const readerGroups = override.group_acl.reader_old_group_ids.map(resolve);
+  const allGroups = [ownerGroup, ...adminGroups, ...writerGroups, ...readerGroups];
+
+  const group_acl = {
+    owner: decodeHashFromBase64(ownerGroup.new_group_genesis_hash_base64),
+    admin: adminGroups.map((g) => decodeHashFromBase64(g.new_group_genesis_hash_base64)),
+    writer: writerGroups.map((g) => decodeHashFromBase64(g.new_group_genesis_hash_base64)),
+    reader: readerGroups.map((g) => decodeHashFromBase64(g.new_group_genesis_hash_base64)),
+  };
+
+  // Resolve the IMPORTER's own authorising group membership so the
+  // integrity validator's per-group `check_group_authority` can pass
+  // via Path C (explicit group membership) for an importer who is a
+  // group member but neither the group creator (Path A) nor a hive
+  // Admin+ (Path B). Without this the validator would reject every
+  // overridden HiveGroup entry for a hive-Writer importer (the
+  // author_group_membership_hash would be null → Path C unavailable).
+  // We stamp the caller's membership in the first group_acl group they
+  // hold one in (owner bucket first — the same witness is reused across
+  // all groups by the validator, matching its documented single-witness
+  // simplification). `null` is correct + sufficient when the importer
+  // IS the group creator or a hive Admin+ (Path A / Path B).
+  let authorGroupMembershipHash: Uint8Array | null = null;
+  for (const g of allGroups) {
+    const mine = (await appWebsocket.callZome({
+      cell_id: cellId,
+      zome_name: ZOME_NAME,
+      fn_name: "get_latest_group_membership",
+      payload: {
+        agent: callerPubkey,
+        group_genesis_hash: decodeHashFromBase64(g.new_group_genesis_hash_base64),
+      },
+    })) as { hash: ActionHash } | null;
+    if (mine) {
+      authorGroupMembershipHash = mine.hash;
+      break;
+    }
+  }
+
+  // Per-pubkey: track the highest achievable witness bucket + the
+  // group whose roster proves it. `groupBucketRank` is the rank of the
+  // group_acl bucket the group sits in; the achievable witness rank is
+  // min(groupBucketRank, memberRoleRank) capped at Admin (3).
+  type Candidate = { rank: number; group: GroupBundleGroup };
+  const best = new Map<string, Candidate>();
+  const consider = (groups: GroupBundleGroup[], groupBucketRank: number) => {
+    for (const g of groups) {
+      for (const m of g.granted_memberships) {
+        const achievable = cappedWitnessRank(groupBucketRank, m.role);
+        const existing = best.get(m.for_agent_base64);
+        if (!existing || achievable > existing.rank) {
+          best.set(m.for_agent_base64, { rank: achievable, group: g });
+        }
+      }
+    }
+  };
+  consider([ownerGroup], roleRank("Owner"));
+  consider(adminGroups, roleRank("Admin"));
+  consider(writerGroups, roleRank("Writer"));
+  consider(readerGroups, roleRank("Reader"));
+
+  const witnesses: { pubkey: Uint8Array; bucket: HiveRole; membership_hash: Uint8Array }[] = [];
+  const public_key_acl = { owner: "", admin: [] as string[], writer: [] as string[], reader: [] as string[] };
+  // Array.from(...) keeps this a real-array for-of (the bare
+  // `for (… of best)` Map iteration would trip TS2802 under this
+  // repo's pre-es2015 downlevel target, adding a new tsc error).
+  for (const [pubkeyB64, candidate] of Array.from(best.entries())) {
+    const agent = decodeHashFromBase64(pubkeyB64);
+    const genesisHash = decodeHashFromBase64(candidate.group.new_group_genesis_hash_base64);
+    // Re-verify the membership is live (re-grants supersede the bundle
+    // hash; revocations drop the member). Use the authoritative latest
+    // hash from the lookup, not the bundle's recorded one.
+    const live = (await appWebsocket.callZome({
+      cell_id: cellId,
+      zome_name: ZOME_NAME,
+      fn_name: "get_latest_group_membership",
+      payload: { agent, group_genesis_hash: genesisHash },
+    })) as { hash: ActionHash } | null;
+    if (!live) {
+      console.warn(
+        `[import] dropping ${pubkeyB64} from HiveGroup recipients: no live ` +
+          `GroupMembership in group "${candidate.group.old_group_id}" ` +
+          `(revoked or expired since grant).`,
+      );
+      continue;
+    }
+    const bucket = rankToBucket(candidate.rank);
+    witnesses.push({ pubkey: agent, bucket, membership_hash: live.hash });
+    if (bucket === "Admin") public_key_acl.admin.push(pubkeyB64);
+    else if (bucket === "Writer") public_key_acl.writer.push(pubkeyB64);
+    else public_key_acl.reader.push(pubkeyB64);
+  }
+
+  return {
+    acl_spec: {
+      HiveGroup: {
+        hive_genesis_hash: decodeHashFromBase64(parentHive.new_genesis_hash_base64),
+        author_membership_hash: authorMembershipHashBytes,
+        group_acl,
+        author_group_membership_hash: authorGroupMembershipHash,
+        recipient_witnesses: witnesses,
+      },
+    },
+    public_key_acl,
+    display_hive_id: null,
+  };
+}
+
 async function doImport(
   appId: string,
   bundlePath: string,
   hiveBundlePath: string,
   remapPath: string,
+  overridesPath?: string,
 ): Promise<void> {
   console.log(`[import] reading bundle from ${bundlePath}...`);
   const raw = JSON.parse(await readFile(bundlePath, "utf8")) as {
@@ -1060,6 +1622,15 @@ async function doImport(
   }
   const hivesByOldId = new Map(hiveBundle.hives.map((h) => [h.old_hive_id, h]));
   console.log(`[import] ${hiveBundle.hives.length} hive mapping(s) loaded.`);
+
+  const overrides = await loadClassificationOverrides(overridesPath);
+  if (overrides) {
+    const count = Object.keys(overrides.entries ?? {}).length;
+    console.log(
+      `[import] loaded ${count} classification-override(s) from ${overridesPath} ` +
+        `(matching entries import as AclSpec::HiveGroup).`,
+    );
+  }
 
   console.log(`[import] connecting to target "${appId}" on port ${ADMIN_PORT}...`);
   const { appWebsocket, cellId, agentPubKey } = await connectAppWs(appId);
@@ -1144,24 +1715,38 @@ async function doImport(
     }
     const authorMembershipHash =
       membershipByGenesisB64.get(hive.new_genesis_hash_base64) ?? null;
-    // Pass-3: classify the entry into one of the four AclSpec variants
-    // based on content_type, then build the new wire-shape input. The
-    // classifier handles the author-pubkey restamp for DirectMessage
-    // (splices the new agent into the recipient set) and inlines the
-    // hive_genesis_hash + author_membership_hash into HiveGroup/Public
-    // variants. Legacy `header.acl` is intentionally NOT carried over —
-    // pass-3 HiveGroup uses an ActionHash-keyed group_acl, which the
-    // migration cannot populate without the group track (Phase D.1).
+    // Classify the entry into one of the four AclSpec variants. Order:
+    //  1. A classification-override (D.1) forces AclSpec::HiveGroup,
+    //     resolving the override's old group squuids to new
+    //     GroupGenesis hashes + stamping recipient_witnesses from the
+    //     live group rosters.
+    //  2. Otherwise the content_type → AclSpec classifier
+    //     (CONTENT_TYPE_ACL_SPEC) + Public default applies; it handles
+    //     the DirectMessage author-pubkey restamp and inlines the
+    //     hive_genesis_hash + author_membership_hash into
+    //     HiveGroup/Public variants. Legacy `header.acl` is NOT carried
+    //     over — pass-3+ HiveGroup uses an ActionHash-keyed group_acl.
     const hiveGenesisHashBytes = decodeHashFromBase64(hive.new_genesis_hash_base64);
+    const override = overrides?.entries[entry.old_action_hash];
     let classified;
     try {
-      classified = classifyAclSpec(
-        header.content_type,
-        hiveGenesisHashBytes,
-        authorMembershipHash,
-        targetAgentBase64,
-        header.public_key_acl,
-      );
+      classified = override
+        ? await buildHiveGroupAclSpec(
+            override,
+            hive,
+            hiveBundle,
+            authorMembershipHash,
+            agentPubKey,
+            appWebsocket,
+            cellId,
+          )
+        : classifyAclSpec(
+            header.content_type,
+            hiveGenesisHashBytes,
+            authorMembershipHash,
+            targetAgentBase64,
+            header.public_key_acl,
+          );
     } catch (err) {
       remap.failures.push({
         id: header.id,
@@ -1402,18 +1987,22 @@ function usage(): string {
     "  migrate-dna.ts export <app-id> <out.bundle.json>\n" +
     "  migrate-dna.ts migrate-hive <new-app-id> <old-hive-id> <old-anchor-ah-b64-or-empty> <hive-bundle.json>\n" +
     "  migrate-dna.ts grant-memberships <new-app-id> <hive-bundle.json> <old-hive-id> <role> <member-pubkey-b64> [...]\n" +
-    "  migrate-dna.ts import <new-app-id> <in.bundle.json> <hive-bundle.json> <out.remap.json>\n" +
+    "  migrate-dna.ts migrate-group <new-app-id> <hive-bundle.json> <old-hive-id> <old-group-id> [--hive-wide-role <Role>] [--creator-membership <hash-b64>] [--old-marker <hash-b64>]\n" +
+    "  migrate-dna.ts grant-group-memberships <new-app-id> <hive-bundle.json> <old-group-id> <role> <member-pubkey-b64> [...]\n" +
+    "  migrate-dna.ts import <new-app-id> <in.bundle.json> <hive-bundle.json> <out.remap.json> [classification-overrides.json]\n" +
     "  migrate-dna.ts mark-migrated <old-app-id> <in.remap.json> [--v1-only]\n" +
     "  migrate-dna.ts mark-hive-migrated <old-app-id> <hive-bundle.json>\n" +
+    "  migrate-dna.ts mark-group-migrated <old-app-id> <hive-bundle.json>\n" +
     "\n" +
     "Roles: Owner | Admin | Writer | Reader\n" +
     "\n" +
     "Env:\n" +
     "  ADMIN_PORT             conductor admin websocket port (default 4444)\n" +
-    "  NEW_DNA_HASH_BASE64    new DNA's multibase holohash (for mark-migrated\n" +
-    "                         and mark-hive-migrated; get via `hc dna hash`)\n" +
+    "  NEW_DNA_HASH_BASE64    new DNA's multibase holohash (for mark-migrated,\n" +
+    "                         mark-hive-migrated, and mark-group-migrated;\n" +
+    "                         get via `hc dna hash`)\n" +
     "  NEW_APP_ID             new app's installed_app_id (mark-hive-migrated\n" +
-    "                         marker payload only; optional)\n" +
+    "                         and mark-group-migrated marker payload; optional)\n" +
     "\n" +
     "Marker versions:\n" +
     "  mark-migrated defaults to V2 (mark_migrated_v2 extern). Pass --v1-only\n" +
@@ -1461,13 +2050,74 @@ async function main(): Promise<void> {
       );
       break;
     }
+    case "migrate-group": {
+      // Flag-aware parse: strip --hive-wide-role / --creator-membership
+      // / --old-marker (each consumes the following token) before
+      // matching the positionals.
+      let hiveWideRole: HiveRole | null = null;
+      let creatorMembership: string | null = null;
+      let oldMarker: string | null = null;
+      const positional: string[] = [];
+      for (let i = 0; i < args.length; i++) {
+        const a = args[i];
+        if (a === "--hive-wide-role") {
+          hiveWideRole = (args[++i] ?? "") as HiveRole;
+        } else if (a === "--creator-membership") {
+          creatorMembership = args[++i] ?? null;
+        } else if (a === "--old-marker") {
+          oldMarker = args[++i] ?? null;
+        } else {
+          positional.push(a);
+        }
+      }
+      const [newAppId, hiveBundlePath, oldHiveId, oldGroupId] = positional;
+      if (!newAppId || !hiveBundlePath || !oldHiveId || !oldGroupId) {
+        console.error(usage());
+        process.exit(2);
+      }
+      if (hiveWideRole !== null && !HIVE_ROLES.includes(hiveWideRole)) {
+        console.error(
+          `Unknown --hive-wide-role "${hiveWideRole}". Expected: ${HIVE_ROLES.join(", ")}`,
+        );
+        process.exit(2);
+      }
+      await doMigrateGroup(
+        newAppId,
+        hiveBundlePath,
+        oldHiveId,
+        oldGroupId,
+        hiveWideRole,
+        creatorMembership,
+        oldMarker,
+      );
+      break;
+    }
+    case "grant-group-memberships": {
+      const [newAppId, hiveBundlePath, oldGroupId, roleArg, ...memberArgs] = args;
+      if (!newAppId || !hiveBundlePath || !oldGroupId || !roleArg || memberArgs.length === 0) {
+        console.error(usage());
+        process.exit(2);
+      }
+      if (!HIVE_ROLES.includes(roleArg as HiveRole)) {
+        console.error(`Unknown role "${roleArg}". Expected: ${HIVE_ROLES.join(", ")}`);
+        process.exit(2);
+      }
+      await doGrantGroupMemberships(
+        newAppId,
+        hiveBundlePath,
+        oldGroupId,
+        roleArg as HiveRole,
+        memberArgs,
+      );
+      break;
+    }
     case "import": {
-      const [appId, bundlePath, hiveBundlePath, remapPath] = args;
+      const [appId, bundlePath, hiveBundlePath, remapPath, overridesPath] = args;
       if (!appId || !bundlePath || !hiveBundlePath || !remapPath) {
         console.error(usage());
         process.exit(2);
       }
-      await doImport(appId, bundlePath, hiveBundlePath, remapPath);
+      await doImport(appId, bundlePath, hiveBundlePath, remapPath, overridesPath);
       break;
     }
     case "mark-migrated": {
@@ -1490,6 +2140,15 @@ async function main(): Promise<void> {
         process.exit(2);
       }
       await doMarkHiveMigrated(appId, hiveBundlePath);
+      break;
+    }
+    case "mark-group-migrated": {
+      const [appId, hiveBundlePath] = args;
+      if (!appId || !hiveBundlePath) {
+        console.error(usage());
+        process.exit(2);
+      }
+      await doMarkGroupMigrated(appId, hiveBundlePath);
       break;
     }
     default:
