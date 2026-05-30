@@ -20,10 +20,9 @@ I-A receiver-initiated tombstone + I-C offline DM inbox) **intentionally
 bump the DNA hash**. The pass-1 invariant is DEAD on this branch — it's
 the inverse: pass-2 commits MUST land a new, consistent DNA hash that
 becomes the new invariant once the cutover lands.
-
   DNA hash (NEW):          uhC0kzl0W9BBITBGu-NeUaXPxqxSPj0yTGfDD3UH3EjhfLDQZfZxe
   content_integrity.wasm:  82639e455c004d04a1f6fbf25f01abf26241e2fbe1733cbe39db7882a4fb2402
-  content.wasm:            76ca7f5bb8ab4752ace71549800704f548d2a1d291cbecec3e324e083c236b99
+  content.wasm:            998511e6fbc0ecde0bb6172993cd4d0e90fb44fb3810dfce1ebf078376fb08e6 (post pass-2-SEC-1 fix)
 
 VERIFICATION
 ------------

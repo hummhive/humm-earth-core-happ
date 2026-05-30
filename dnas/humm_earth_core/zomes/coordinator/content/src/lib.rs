@@ -91,18 +91,27 @@ pub fn set_cap_tokens() -> ExternResult<()> {
     fns.insert((zome.clone(), "get_latest_membership".into()));
     fns.insert((zome.clone(), "list_my_hives".into()));
 
-    // Pass-2 (I-C) — inbox read externs. Same rationale: queries over
-    // DHT-public link space. `probe_inbox` reads links keyed off the
-    // caller's own pubkey, so an unauthorised peer cap-calling
-    // `probe_inbox` from elsewhere would just see their own inbox via
-    // `agent_info().agent_initial_pubkey` (which surfaces THE
-    // CONDUCTOR'S agent, not the peer's) — making the cap grant
-    // structurally inert from a peer's vantage point. Granted for
-    // uniformity with the rest of the read surface.
+    // Pass-2 (I-C) — inbox read externs. `probe_inbox` walks the
+    // PUBLIC DHT link space keyed off the receiving agent's own pubkey
+    // (`agent_info().agent_initial_pubkey`) — when a peer cap-calls it
+    // remotely the receiving agent resolves to the LOCAL conductor's
+    // pubkey, so the cap grant is structurally inert from a remote
+    // peer's vantage point. Safe to grant for uniformity.
+    //
+    // `get_last_probe` is **NOT GRANTED** here even though it's a read.
+    // Unlike `probe_inbox`, `get_last_probe` calls `query(...)` over
+    // the LOCAL source chain to read the private `DmProbeLog` entry
+    // (probed_at_microseconds + last_processed_inbox_link_hash). A
+    // cap-call from a remote peer would leak this private read-receipt
+    // cursor — security-reviewer finding pass-2-SEC-1. Same local-only
+    // treatment as `get_messages_since` for the same reason
+    // (source-chain `query(...)` of caller-private data).
     fns.insert((zome.clone(), "probe_inbox".into()));
-    fns.insert((zome.clone(), "get_last_probe".into()));
 
-    // NOT GRANTED:
+    // NOT GRANTED (pass-2 additions; the pass-1 entries continue to
+    // apply per the `set_cap_tokens` doc-comment above):
+    // - `get_last_probe` — see preceding paragraph; reads private
+    //   source-chain `DmProbeLog` entries.
     // - `create_hive_genesis` / `create_hive_membership` — mutate the
     //   caller's source chain; only the local UI should invoke them.
     //   Granting would let any peer pollute another agent's chain with
