@@ -13,9 +13,11 @@ humm-tauri side after pass-3 + pass-4**.
 > See § 2 (variant shape), § 3 (per-modal wiring), § 5
 > (`stampWitnessesFromGroupAcl` helper recipe), and
 > [`PASS_4_DEPLOY_HANDOFF.md`](./PASS_4_DEPLOY_HANDOFF.md) for the
-> end-to-end migration story. Pre-pass-4 HiveGroup callsites — which
-> never went live on pass-3 in humm-tauri (pass-1 → pass-4 leapfrog)
-> — need ONE update each: add the witnesses arg.
+> end-to-end migration story. humm-tauri never integrated pass-3's
+> intermediate `acl_spec`-without-witnesses shape, so its HiveGroup
+> callsites are authored directly at the pass-4 shape (witnesses
+> included) instead of being patched from a pass-3 baseline. See
+> § 11 for the per-marked-site before/after recipes.
 
 > **Status note.** This doc is the wire-shape contract. For the
 > living "what changed since pass-2.5" view, see
@@ -24,13 +26,19 @@ humm-tauri side after pass-3 + pass-4**.
 > what new files are needed, smoke tests), see
 > [`HUMM_TAURI_FEATURE_ENABLEMENT.md`](./HUMM_TAURI_FEATURE_ENABLEMENT.md).
 >
-> humm-tauri is doing a **pass-1 → pass-4 leapfrog**: the pass-2
-> wire shape (`hive_genesis_hash` / `author_membership_hash` /
-> `acl` at the top of the header) was never integrated downstream,
-> so pass-4 lands directly. The pass-2.5 handoff docs are still
-> useful for the hive-identity track (`HiveGenesis`,
+> humm-tauri is doing a **pass-2.5 → pass-4 leapfrog (skipping
+> pass-3)**: its live content path already writes the pass-2 wire
+> shape (top-level `hive_genesis_hash` / `author_membership_hash`
+> plus the legacy squuid-keyed `acl`), and it is finishing the
+> pass-2.5 hive-identity migration runner. It adopts pass-4
+> directly rather than pausing on pass-3's intermediate
+> `acl_spec`-without-witnesses shape. The pass-2.5 handoff docs
+> remain accurate for the hive-identity track (`HiveGenesis`,
 > `HiveMembership`, `migrate-hive`, `grant-memberships`); ALL of
-> those are preserved unchanged by pass-3 and pass-4.
+> those are preserved unchanged by pass-3 and pass-4. The five
+> top-level header fields collapse into `acl_spec` exactly once,
+> at the marked sites catalogued in § 11.
+
 ## 1. The new header shape
 
 ```ts
@@ -632,8 +640,8 @@ notification feed), match on tag bytes `[0, 1, 2, 3]`.
 
 ## 10. Quick start checklist
 
-When you start the pass-4 migration (humm-tauri's pass-1 → pass-4
-leapfrog):
+When you start the pass-4 migration (humm-tauri's pass-2.5 → pass-4
+leapfrog, skipping pass-3):
 
 1. Update `humm-tauri/src/types/contentSchema.ts` to the new wire
    shape (§ 4) — includes `RecipientWitness`, `AclBucket`, and the
@@ -641,7 +649,8 @@ leapfrog):
 2. Update `humm-tauri/src/api/core/hummContent/hummContentWrites.ts`
    `addEntry` to take `AclSpec` instead of `acl: Acl`.
 3. Replace each call site's `acl: { ... }` with the right
-   `acl_spec: { Variant: { ... } }` per § 2.
+   `acl_spec: { Variant: { ... } }` per § 2 — see § 11 for the
+   before/after at each marked site (the `pass-3-target` markers).
 4. **NEW (pass-4)**: drop the `stampWitnessesFromGroupAcl` helper
    (§ 5 short version; full recipe in
    [`PASS_4_DEPLOY_HANDOFF.md`](./PASS_4_DEPLOY_HANDOFF.md)) into
@@ -662,3 +671,173 @@ leapfrog):
 For the feature-by-feature implementation guide (which files change,
 new sidecars/components needed, smoke tests per feature), see
 [`HUMM_TAURI_FEATURE_ENABLEMENT.md`](./HUMM_TAURI_FEATURE_ENABLEMENT.md).
+
+## 11. Marked-site migration recipes (the `pass-3-target` collapse)
+
+humm-tauri's live content path carries five `pass-3-target` comment
+markers across three files. Each marks where the pass-2 top-level
+header fields collapse into the pass-4 `acl_spec` discriminated
+union. These are the ONLY sites that touch the wire shape — every
+other read/write flows through them.
+
+| Marker (file:line) | Function | Collapses |
+|---|---|---|
+| `hummContentTransforms.ts:21` | `entryToCamelCase` | DECODE: `hive_genesis_hash` + `author_membership_hash` read back out of `acl_spec` |
+| `hummContentTransforms.ts:58`, `:62` | `entryToSnakeCase` | ENCODE: same two fields written inside `acl_spec` |
+| `hummContentWrites.ts:165` | `addEntry` | WRITE payload: top-level identity + legacy `acl` → `acl_spec` per content type |
+| `SidecarCapabilitiesService.ts:674` | `createEncryptedContent` | Sidecar WRITE payload: same collapse; HiveGroup-scoped |
+
+Field-by-field, the pass-2 → pass-4 mapping is:
+
+| Pass-2 top-level field | Pass-4 location |
+|---|---|
+| `hive_id` (squuid alias) | `display_hive_id` (renamed; display-only, NOT trusted by the validator) |
+| `hive_genesis_hash` | `acl_spec.HiveGroup.hive_genesis_hash` / `acl_spec.Public.hive_genesis_hash` (absent on DirectMessage + OpenWrite) |
+| `author_membership_hash` | `acl_spec.HiveGroup.author_membership_hash` / `acl_spec.Public.author_membership_hash` |
+| `acl` (squuid-keyed group ACL) | `acl_spec.HiveGroup.group_acl` (ActionHash-keyed; resolve squuids → `GroupGenesis` hashes). No equivalent on non-HiveGroup variants. |
+| `public_key_acl` | unchanged (still top-level) |
+| — | `acl_spec.HiveGroup.recipient_witnesses` (NEW in pass-4; see § 5) |
+
+> Line numbers are from the `1.7.0-happ-migration` markers and may
+> drift; the function names are the durable anchors.
+
+### Recipe A — header DECODE (`hummContentTransforms.ts:21`, `entryToCamelCase`)
+
+`hive_genesis_hash` / `author_membership_hash` are no longer
+top-level; read them back out of the variant and carry the whole
+`acl_spec` onto the camelCase header (add `aclSpec` to the
+`contentSchema.ts` header type per § 4).
+
+```ts
+// pass-4: these fields live inside acl_spec (HiveGroup + Public
+// variants only; DirectMessage + OpenWrite carry neither).
+function hiveGenesisFromAclSpec(s: AclSpec): ActionHash | undefined {
+  if ('HiveGroup' in s) return s.HiveGroup.hive_genesis_hash;
+  if ('Public' in s) return s.Public.hive_genesis_hash;
+  return undefined;
+}
+function authorMembershipFromAclSpec(s: AclSpec): ActionHash | undefined {
+  if ('HiveGroup' in s) return s.HiveGroup.author_membership_hash ?? undefined;
+  if ('Public' in s) return s.Public.author_membership_hash ?? undefined;
+  return undefined;
+}
+
+// inside entryToCamelCase:
+header: {
+  id: header.id,
+  hiveId: header.display_hive_id,                        // was header.hive_id
+  aclSpec: header.acl_spec,                              // NEW — carry the union
+  hiveGenesisHash: hiveGenesisFromAclSpec(header.acl_spec),
+  authorMembershipHash: authorMembershipFromAclSpec(header.acl_spec),
+  contentType: header.content_type,
+  hash,
+  originalHash: original_hash,
+  revisionAuthorSigningPublicKey: header.revision_author_signing_public_key,
+  publicKeyAcl: header.public_key_acl,
+  // legacy `acl` is gone — group authority is acl_spec.HiveGroup.group_acl
+},
+```
+
+### Recipe B — header ENCODE (`hummContentTransforms.ts:58`/`:62`, `entryToSnakeCase`)
+
+Emit `acl_spec` (built per content type — Recipe C) instead of the
+two top-level fields:
+
+```ts
+// pass-4 entryToSnakeCase header:
+header: {
+  id: header.id,
+  display_hive_id: header.hiveId,                        // was hive_id
+  content_type: header.contentType,
+  acl_spec: header.aclSpec,                              // built per content type (Recipe C)
+  public_key_acl: header.publicKeyAcl,
+  revision_author_signing_public_key: header.revisionAuthorSigningPublicKey,
+},
+// hive_genesis_hash / author_membership_hash / legacy `acl` no longer
+// appear at the top level.
+```
+
+### Recipe C — write payload (`hummContentWrites.ts:165`, `addEntry`)
+
+The classification chokepoint. Select the `AclSpec` variant from
+`content_type` (§ 2), and for HiveGroup stamp `recipient_witnesses`
+(§ 5) before the call:
+
+```ts
+// pass-4 addEntry — derive acl_spec from the content-type classification (§ 2).
+const aclSpec = await buildAclSpecForContentType({
+  contentType: input.contentType,
+  hiveGenesisHash,                 // from resolveHiveGenesis(hiveId)
+  authorMembershipHash,
+  groupAcl,                        // ActionHash-keyed (replaces the legacy squuid `acl`)
+  publicKeyAcl: pkAcl,
+  recipients,                      // DirectMessage only
+  callZome,                        // for stampWitnessesFromGroupAcl on HiveGroup (§ 5)
+});
+
+await conductorApi.callZome({
+  appId: HUMM_EARTH_CORE_HAPP_ID,
+  cellId,
+  zomeName: 'content',
+  fnName: 'create_encrypted_content',
+  payload: {
+    id: input.id || utilApi.createSquuid(),
+    display_hive_id: hiveId,                    // was hive_id
+    content_type: input.contentType,
+    revision_author_signing_public_key: myHolochainPubkey,
+    bytes: input.bytes,
+    acl_spec: aclSpec,                          // was hive_genesis_hash + author_membership_hash + acl
+    public_key_acl: pkAcl,
+    dynamic_links: input.dynamicLinks,
+  },
+});
+```
+
+`buildAclSpecForContentType` is a thin dispatcher over § 2 (one
+`switch` on `content_type`): `HiveGroup` / `Public` carry
+`hive_genesis_hash` + `author_membership_hash`; `HiveGroup` also
+carries `group_acl` (resolve the legacy squuid `acl` → `GroupGenesis`
+hashes) + `recipient_witnesses` from `stampWitnessesFromGroupAcl`
+(§ 5); `DirectMessage` carries `recipients`; `OpenWrite` carries
+`target_hive_genesis_hash`.
+
+### Recipe D — sidecar write payload (`SidecarCapabilitiesService.ts:674`, `createEncryptedContent`)
+
+Same collapse as Recipe C. Sidecar config / install / provider
+content is HiveGroup-scoped (§ 2 rows `hummhive-core-sidecar-*`), so
+it REQUIRES `recipient_witnesses` even when `public_key_acl` holds
+only the sidecar host's own pubkey — the host's own `GroupMembership`
+is that single witness:
+
+```ts
+// pass-4 SidecarCapabilitiesService.createEncryptedContent
+const groupAcl = sidecarGroupAcl;            // ActionHash-keyed group_acl for the hive's sidecar-admin group
+const recipient_witnesses = await stampWitnessesFromGroupAcl({
+  callZome, groupAcl, publicKeyAcl: input.publicKeyAcl,
+});                                          // a singleton PKA still needs its one witness
+
+payload: {
+  id: this._deps.util.createSquuid(),
+  display_hive_id: input.hiveId || '',        // was hive_id
+  content_type: input.contentType,
+  revision_author_signing_public_key: agentPubkey,
+  bytes: input.payloadBytes,
+  acl_spec: {
+    HiveGroup: {
+      hive_genesis_hash: hiveGenesisHash,
+      author_membership_hash: authorMembershipHash,
+      group_acl: groupAcl,
+      author_group_membership_hash: hostGroupMembershipHash ?? null,
+      recipient_witnesses,
+    },
+  },
+  public_key_acl: input.publicKeyAcl,
+  dynamic_links: input.dynamicLinks,
+},
+```
+
+If a given sidecar payload is genuinely host-published and
+world-readable, model it as `AclSpec::Public { hive_genesis_hash,
+author_membership_hash }` instead — no witnesses needed. Pick per
+the § 2 classification; the marker's default expectation is
+HiveGroup for config / install.

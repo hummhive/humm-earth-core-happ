@@ -125,6 +125,37 @@ type RecipientWitness = {
 `HIVEGROUP_MAX_WITNESSES = 256`. Per-witness validator cost: one
 `must_get_valid_record` (the cited `GroupMembership`).
 
+## Leapfrog scenario (pass-2.5 → pass-4)
+
+humm-tauri does NOT arrive at pass-4 from a pass-3 baseline. Its
+live content path already writes the **pass-2 wire shape** (top-level
+`hive_genesis_hash` + `author_membership_hash` + a legacy
+squuid-keyed `acl`), and the team is finishing the **pass-2.5**
+hive-identity migration runner. It **leapfrogs pass-2.5 → pass-4,
+skipping pass-3** entirely — there is no intermediate
+`acl_spec`-without-witnesses step.
+
+Practical consequences:
+
+- **Build `acl_spec` WITH `recipient_witnesses` directly.** HiveGroup
+  callsites are authored fresh at the pass-4 shape, not patched from
+  a pass-3 baseline. There is no "add witnesses later" staging.
+- **Two distinct concerns — do not conflate them:**
+  - *Live-app wire path* (reading/writing new content) leapfrogs to
+    pass-4. The five top-level header fields collapse into `acl_spec`
+    at exactly the marked sites — see
+    [`HUMM_TAURI_ACLSPEC_INTEGRATION.md`](./HUMM_TAURI_ACLSPEC_INTEGRATION.md)
+    § 11 (Recipes A–D for the five `pass-3-target` markers).
+  - *Pass-2.5 migration runner* (export → migrate-hive →
+    grant-memberships → import → mark-*) stays pinned to the
+    **pass-2 DNA** for data export/import. Adopting pass-4 in the
+    live path does NOT change the runner's contract or its pinned
+    DNA; the two ship independently.
+- **DM / Public / OpenWrite need no leapfrog-specific care.** They
+  are byte-identical to pass-3, and the migration classifier
+  auto-restamps legacy entries into them on import. Only
+  `AclSpec::HiveGroup` writes gain the witness step (next section).
+
 ## REQUIRED humm-tauri callsite update — stampWitnessesFromGroupAcl helper
 
 Centralise the witness-stamping logic in one helper humm-tauri

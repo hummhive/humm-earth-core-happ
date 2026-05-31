@@ -7,8 +7,11 @@
 > `hive_genesis_hash`, `author_membership_hash`, `acl`) into a
 > discriminated union with four variants (`HiveGroup`,
 > `DirectMessage`, `Public`, `OpenWrite`). The DNA hash bumps again
-> with pass-3; humm-tauri is doing a pass-1 → pass-3 leapfrog (the
-> pass-2 wire shape was never integrated downstream). **The canonical
+> with pass-3 (and again with pass-4, which adds the required
+> `recipient_witnesses` field on `AclSpec::HiveGroup`); humm-tauri is
+> doing a pass-2.5 → pass-4 leapfrog (skipping pass-3): its live
+> content path is on the pass-2 wire shape, so it adopts pass-4
+> directly. **The canonical
 > wire-shape reference for pass-3 is
 > [`HUMM_TAURI_ACLSPEC_INTEGRATION.md`](./HUMM_TAURI_ACLSPEC_INTEGRATION.md)**;
 > deploy mechanics in

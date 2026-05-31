@@ -1,19 +1,22 @@
 > **Forward-pointer to pass-3 (`feat-integrity-pass-3-groups`, in
 > flight, not yet pushed):** pass-3 bumps the DNA hash again and
 > reshapes `EncryptedContentHeader` via the new
-> `acl_spec: AclSpec` discriminated union. humm-tauri is doing a
-> pass-1 → pass-3 leapfrog (pass-2 wire shape was never integrated
-> downstream). If you arrived here from a pass-2.5 integration
-> ticket, the canonical pass-3 docs are:
+> `acl_spec: AclSpec` discriminated union; pass-4 then adds the
+> required `recipient_witnesses` field on `AclSpec::HiveGroup`.
+> humm-tauri is doing a pass-2.5 → pass-4 leapfrog (skipping pass-3):
+> its live content path is on the pass-2 wire shape, so it adopts
+> pass-4 directly. If you arrived here from a pass-2.5 integration
+> ticket, the canonical pass-3/4 docs are:
 >
 > - [`HUMM_TAURI_ACLSPEC_INTEGRATION.md`](./HUMM_TAURI_ACLSPEC_INTEGRATION.md) — wire shape + per-modal wiring
 > - [`PASS_3_DEPLOY_HANDOFF.md`](./PASS_3_DEPLOY_HANDOFF.md) — deploy runbook
+> - [`PASS_4_DEPLOY_HANDOFF.md`](./PASS_4_DEPLOY_HANDOFF.md) — pass-4 deploy + `recipient_witnesses`
 > - [`HUMM_TAURI_FEATURE_ENABLEMENT.md`](./HUMM_TAURI_FEATURE_ENABLEMENT.md) — feature-by-feature implementation
-> - [`HANDOFF_UPDATED_INFO.md`](./HANDOFF_UPDATED_INFO.md) — living delta from pass-2.5 to pass-3
+> - [`HANDOFF_UPDATED_INFO.md`](./HANDOFF_UPDATED_INFO.md) — living delta from pass-2.5 to pass-4
 >
 > The pass-2 content below remains the historical reference for the
 > intermediate integrity bump (hive-identity track, V2 markers,
-> pass-2 wire shape). All of it is preserved by pass-3.
+> pass-2 wire shape). All of it is preserved by pass-3 and pass-4.
 >
 # Pass-2 deploy handoff — humm-tauri integration
 

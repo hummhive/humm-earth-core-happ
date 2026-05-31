@@ -10,6 +10,13 @@ recommended path is **leapfrog directly to pass-4** — both
 changes are mechanical and well-documented, and pass-4 is the
 current security-complete target.
 
+**Leapfrog guidance complete.** The per-marked-site recipes
+([`HUMM_TAURI_ACLSPEC_INTEGRATION.md`](./HUMM_TAURI_ACLSPEC_INTEGRATION.md)
+§ 11) and the consolidated leapfrog path
+([`HUMM_TAURI_PASS_ROADMAP.md`](./HUMM_TAURI_PASS_ROADMAP.md)
+§ "Leapfrog path (pass-2.5 → pass-4, skipping pass-3)") are landed —
+humm-tauri devs can begin pass-4 integration directly.
+
 Reference docs to start at:
 [`HUMM_TAURI_PASS_ROADMAP.md`](./HUMM_TAURI_PASS_ROADMAP.md)
 (per-pass concrete-task mapping — start here if you want a
@@ -463,8 +470,9 @@ AND any UI gating logic.
   [`HUMM_TAURI_COORDINATOR_INTEGRATION.md`](./HUMM_TAURI_COORDINATOR_INTEGRATION.md)
   and [`PASS_2_DEPLOY_HANDOFF.md`](./PASS_2_DEPLOY_HANDOFF.md)):
   **COMMITTED** *(this commit)*. The four pass-3 docs are now the
-  canonical reference set for humm-tauri's pass-1 → pass-3 leapfrog
-  integration. This file remains the rolling delta view (e.g.
+  canonical reference set for humm-tauri's pass-2.5 → pass-4
+  (skipping pass-3) leapfrog integration. This file remains the
+  rolling delta view (e.g.
   Phase F outcomes will land here when the wasm builds + hashes are
   recorded).
 - Phase F — Verification + new `.baseline-hashes.txt` Pass-3 section +

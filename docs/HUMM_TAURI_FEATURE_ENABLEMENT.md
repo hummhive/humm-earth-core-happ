@@ -553,6 +553,42 @@ unchanged.
 
 ---
 
+## E.4.m — Sidecar host capability publication
+
+**Capability.** A sidecar host publishes its config / install /
+provider entries (`hummhive-core-sidecar-config-v1`,
+`-install-v1`, `-provider-v1`) under hive-admin authority.
+
+**DNA primitives.** `AclSpec::HiveGroup` (§ 2 sidecar rows). Under
+pass-4 these writes carry `recipient_witnesses` — even when
+`public_key_acl` holds only the host's own pubkey, the host's own
+`GroupMembership` is the single witness.
+
+**humm-tauri existing files touched.**
+- `src/api/sidecarHost/SidecarCapabilitiesService.ts:674`
+  (`createEncryptedContent`) — the `pass-3-target` marker; collapse
+  the top-level identity + legacy `acl` into `acl_spec` per
+  [`HUMM_TAURI_ACLSPEC_INTEGRATION.md`](./HUMM_TAURI_ACLSPEC_INTEGRATION.md)
+  § 11 Recipe D.
+
+**humm-tauri new files / components needed.** None — existing
+service; the change is the pass-4 wire-shape collapse + witness
+stamping (`stampWitnessesFromGroupAcl`, ACLSPEC § 5).
+
+**Migration story.** Pre-D.1 the classifier defaults legacy sidecar
+entries to `AclSpec::Public`; post-migration re-stamp to
+`AclSpec::HiveGroup` with witnesses (same pattern as E.4.g). A
+host-published, world-readable sidecar payload MAY instead stay
+`AclSpec::Public` (no witnesses needed) — pick per § 2.
+
+**Acceptance / smoke tests.**
+- A sidecar config write with the host as the sole reader commits
+  with exactly one `recipient_witness` for the host pubkey.
+- A forged extra reader in `public_key_acl` without a backing
+  witness is REJECTED by the validator (attack #5 closure).
+
+---
+
 ## Quick reference — which features need new humm-tauri files
 
 | Feature | NEW files |
@@ -569,6 +605,7 @@ unchanged.
 | E.4.j — Personal vault | None today |
 | E.4.k — Paid content | N/A (deferred) |
 | E.4.l — Pre-signed invite links | NEW UI: `src/containers/CreateInvite/`, `src/containers/AcceptInvite/`; NEW sidecar: `src/sidecars/invite-redemption/`; Tauri URL-scheme handler in `src-tauri/`; new content schema for invite + redemption payloads |
+| E.4.m — Sidecar host capability | None (existing `SidecarCapabilitiesService.ts:674`; pass-4 wire-shape collapse — ACLSPEC § 11 Recipe D) |
 
 ## Quick reference — which features carry data migration
 
@@ -586,6 +623,7 @@ unchanged.
 | E.4.j — Personal vault | Same as E.4.g (singleton personal group via classifier default + re-stamp) |
 | E.4.k — Paid content | N/A (deferred) |
 | E.4.l — Pre-signed invite links | Forward-looking; no data migration. Ship against pass-3 DNA (no need to wait for pass-4 — uses `Public` + `OpenWrite` variants that pass-4 leaves unchanged). |
+| E.4.m — Sidecar host capability | HiveGroup-scoped; pre-D.1 defaults to `Public`, post-migration re-stamp to `HiveGroup` with `recipient_witnesses` (even a singleton PKA needs its one witness). Host-published world-readable payloads MAY stay `Public`. |
 
 This doc is the contract; humm-tauri implementation lives downstream
 and will reference these section IDs in commit messages and code

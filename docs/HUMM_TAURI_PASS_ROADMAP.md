@@ -221,6 +221,40 @@ need to wait for pass-4):**
 
 ---
 
+## Leapfrog path (pass-2.5 → pass-4, skipping pass-3)
+
+humm-tauri's live content path is on the pass-2 wire shape and the
+team is finishing the pass-2.5 hive-identity runner; the recommended
+path is to adopt pass-4 directly and skip pass-3's intermediate
+`acl_spec`-without-witnesses shape. **Both** the pass-3 and pass-4
+humm-tauri task tables above still apply (pass-4 inherits the pass-3
+wire-shape change) — the leapfrog just means doing them in a single
+integration pass instead of two.
+
+The five ingredients, at a glance:
+
+| # | Ingredient | Where |
+|---|---|---|
+| (a) | **Fields removed** from the top-level header: `hive_genesis_hash`, `author_membership_hash`, legacy squuid `acl`; plus `hive_id` → `display_hive_id` rename (display-only, not validator-trusted) | ACLSPEC § 1, § 11 |
+| (b) | **Fields added**: `acl_spec` discriminated union; `recipient_witnesses` on the `HiveGroup` variant (pass-4 G-6.2) | ACLSPEC § 1, § 4 |
+| (c) | **Per-content-type AclSpec variant** selection | ACLSPEC § 2 (classification table) |
+| (d) | **`recipient_witnesses` stamping** via `stampWitnessesFromGroupAcl` | `PASS_4_DEPLOY_HANDOFF.md` § "REQUIRED humm-tauri callsite update"; ACLSPEC § 5 |
+| (e) | **Roster reads** switch to `list_group_members(group_genesis_hash)` | ACLSPEC § 5 (`deriveHiveGroupPublicKeyAcl`) |
+
+The five `pass-3-target` markers in the humm-tauri codebase map
+one-to-one to drop-in recipes in ACLSPEC § 11:
+
+- `hummContentTransforms.ts:21` (`entryToCamelCase`, decode) → Recipe A
+- `hummContentTransforms.ts:58`/`:62` (`entryToSnakeCase`, encode) → Recipe B
+- `hummContentWrites.ts:165` (`addEntry`, write) → Recipe C
+- `SidecarCapabilitiesService.ts:674` (`createEncryptedContent`, sidecar write) → Recipe D
+
+🟢 (a)–(d) are blocking for any `AclSpec::HiveGroup` write; (e) is
+🟢 for correct PKA derivation. 🔵 the G-4.4 hive-layer "your role
+expires at X" hint is opportunistic UX.
+
+---
+
 ## D.1 — group migration track (`feat-migration-d1-group-track`)
 
 **DNA status:** ⏳ planned (separate branch; no DNA bump — tooling
