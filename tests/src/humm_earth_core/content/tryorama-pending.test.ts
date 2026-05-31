@@ -24,6 +24,13 @@
  * ships, port the `e2e/scenarios/*` cases here (they are written against
  * the same `create_*` / `create_encrypted_content` externs) and delete
  * this stub.
+ *
+ * The legacy pre-pass-3 tryorama tests that used to sit alongside this
+ * file (content CRUD, author binding, DM pair-fetch, ACL/hive/content-id/
+ * dynamic link reads, by-hive queries, signal delivery) were removed in
+ * the e2e cleanup — they were broken by both the pass-3 wire-shape
+ * reshape and the tryorama/0.6.0 gap above. See `e2e/README.md`
+ * § "Replaced legacy tests" for the per-file coverage mapping.
  */
 import { describe, it } from "vitest";
 

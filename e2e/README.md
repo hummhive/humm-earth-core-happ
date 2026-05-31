@@ -74,3 +74,52 @@ reach (each needs a live `must_get_valid_record`):
   commit-time validation, which is what every scenario asserts).
 - Scenarios use distinct hives/groups so they stay independent within
   the single shared conductor.
+
+## Replaced legacy tests
+
+The pre-pass-3 tryorama suite under `tests/src/humm_earth_core/content/`
+was removed. Every file used `@holochain/tryorama`'s `runScenario`,
+which cannot launch a holochain 0.6.0 conductor (the version gap above),
+and its content/link shapes predated the pass-3 `acl_spec` reshape. The
+security-critical, fetch-dependent validator branches they would have
+covered now live in this harness; the remainder were read-path or
+signal-delivery tests, out of scope for a commit-time validator suite.
+
+| Removed file | Class | Where it's covered now |
+|---|---|---|
+| `encrypted-content.test.ts` | content CRUD | `scenarios/authority.ts` + `scenarios/variants.ts` (create / read / update across variants) |
+| `validate-author.test.ts` | author binding | `scenarios/variants.ts` — M-1 self-update accept + cross-author reject |
+| `fetch-pair-hive-check.test.ts` | DM pair-fetch | `scenarios/variants.ts` — DirectMessage accept + reject cases |
+| `linking/acl_links.test.ts` | ACL link read (happy path) | ACL authority links (`HummContent{Owner,Admin,Writer,Reader}`) are created + validated at commit on every HiveGroup write — `scenarios/witnesses.ts`. The link *read* is a read path. |
+| `linking/hive_link.test.ts` | hive link read | read path; the `Hive` link is created on hive-bound content in `authority.ts` / `variants.ts` |
+| `linking/content_id_link.test.ts` | content-id link read | read path; `HummContentId` link created on every content create |
+| `linking/dynamic_links.test.ts` | dynamic link read | read path; the `Dynamic` link is opt-in (`dynamic_links` field) |
+| `count-by-hive.test.ts` | query | read path, not a validator; exercised by humm-tauri integration in production |
+| `list-by-hive-pagination.test.ts` | query / pagination | read path; same as above |
+| `remote-signal.test.ts` | signal delivery | out of scope (see "Not covered") |
+| `recv-signal-dispatch.test.ts` | signal delivery | out of scope |
+| `recv-signal-provenance.test.ts` | signal delivery | out of scope |
+| `webrtc-signals.test.ts` | signal delivery | out of scope |
+| `dm-delete-signal.test.ts` | signal delivery | out of scope |
+| `common.ts` | shared helper | removed (orphaned once the above were gone) |
+
+The `EncryptedContentUpdates` link validator (L-1: link author == base
+author == target author, fetch-dependent) is exercised at commit by the
+`scenarios/variants.ts` update cases — `update_encrypted_content` creates
+that link as part of the update, so the self-update accepts it and the
+cross-author update rejects the whole commit.
+
+`tests/src/humm_earth_core/content/tryorama-pending.test.ts` is kept as
+the port-back marker for when a tryorama release supports holochain
+0.6.0's network grammar.
+
+## Not covered (future work)
+
+- **Signal delivery** — remote signals, recv-signal dispatch /
+  provenance, WebRTC signals, DM-delete signals. These need a
+  multi-conductor harness with real signal emission + receipt across
+  separate conductors; the single-conductor, commit-time validator focus
+  here does not exercise them.
+- **Read-path queries** — count / list-by-hive, pagination, and the
+  link-based read queries. Not security-critical; exercised by
+  humm-tauri integration in production.
