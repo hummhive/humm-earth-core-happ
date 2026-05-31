@@ -232,14 +232,17 @@ See:
 - `docs/DNA_MIGRATION_GUIDE.md`            — migration mechanics (Pass-3 wire-shape migration section)
 - `docs/HANDOFF_UPDATED_INFO.md`           — living delta from pass-2.5 to pass-3
 
-Pass-4 (branch feat-integrity-pass-4-recipient-witnesses, FINAL)
----------------------------------------------------------------------
-Built from: 9e1f842 (pass-4 Phase 4-E tip; the commit that produced
-the recorded wasm shas — Phase 4-F adds this baseline section and
-the final report. The shas were captured on the Phase 4-E tip
-because Phase 4-F is a docs-only addition; the wasm output is
-deterministic against the production-code commit (9dc0690 +
-be6a93b coordinator-no-op script comment).)
+Pass-4 (branch feat-integrity-pass-4-recipient-witnesses, FINAL — RE-RECORDED)
+------------------------------------------------------------------------------
+Built from: the tip commit of feat-integrity-pass-4-recipient-witnesses
+after the reproducible-build pipeline landed
+(chore(build): reproducible wasm pipeline + re-record pass-4
+hashes). The wasm bytes — and therefore the DNA hash and hApp
+bundle sha256 — below are produced by the reproducible build
+pipeline (`scripts/build-zomes.sh` + `scripts/strip-wasms.sh`)
+and are byte-identical across build hosts. See "Reproducibility
+contract (effective pass-4 re-record)" at the bottom of this file
+for the build + verify commands and the supersedes note.
 
 Integrity zome changes (G-6.2 recipient-set integrity:
 RecipientWitness + AclBucket + recipient_witnesses field on
@@ -250,17 +253,19 @@ DNA hash again. The pass-3 invariant is dead on this branch — it
 is the inverse: pass-4 commits land a new DNA hash that becomes
 the new invariant once the cutover lands.
 
-  DNA hash (FINAL):        uhC0kNS2JM6lqmdxr3Q8VK2uhDJFF-wRBz-W73JjJKZnTTMyT8_JS
-  content_integrity.wasm:  1f4534b24332d9fdf089b66e80c04b4eb370994841b554bfcb455524b6f0c3c4
-  content.wasm:            7a9e7a9800053a916b50141fd6cc72265d0090e3965a44eb90ae4ec298ca8370
-  hApp bundle sha256:      50d409602fa8d9eeacf553a497aff39191bc9cc4f1c9ffd8080d3c8e0e844abd
+  DNA hash (FINAL):        uhC0k26bYG0qmTCFk4_D996GRCTecEtMdL5pXyvCUu0ACJN12omCV
+  content_integrity.wasm:  06b01fb3527e266a5cb1b5ffbf01b83541d7a572c4b4a252521154c3e0c2cd83
+  content.wasm:            793343c0d6b5b3605fdec59ce77d3056d263941f5e09ebc22e4e22fd576732eb
+  hApp bundle sha256:      d74e5f2f272ab6da7e0e429da2f5419cd7d74f364055c238378decf02a681861
 
 Lineage within pass-4 branch
 ----------------------------
 - 9dc0690 feat(integrity): pass-4 G-6.2 recipient witnesses + G-4.4 hive grant-window
 - be6a93b feat(migration): pass-4 classifier comments reflect recipient_witnesses wire shape (coordinator no-op)
 - 9e1f842 docs(handoff): pass-4 deploy handoff + ACLSpec wire shape + roadmap + E.4.l invite links
-- HEAD    chore(baseline): record pass-4 DNA hash + wasm shas (Phase 4-F)
+- 7b918f7 chore(baseline): record pass-4 DNA hash + wasm shas (Phase 4-F; SUPERSEDED by reproducibility re-record)
+- 4f0a0b9 docs(handoff): pass-2.5->pass-4 leapfrog guidance + per-marked-site recipes
+- HEAD    chore(build): reproducible wasm pipeline + re-record pass-4 hashes
 
 Tests
 -----
@@ -330,3 +335,89 @@ See:
 - `docs/HUMM_TAURI_PASS_ROADMAP.md`        — per-pass concrete-task mapping for humm-tauri
 - `docs/HUMM_TAURI_FEATURE_ENABLEMENT.md`  — feature-by-feature implementation guide (E.4.l invite links new)
 - `docs/HANDOFF_UPDATED_INFO.md`           — living delta from pass-3 to pass-4
+
+Reproducibility contract (effective pass-4 re-record)
+=====================================================
+
+From the pass-4 re-record forward, the recorded
+`content_integrity.wasm` + `content.wasm` + `humm_earth_core.dna` +
+`humm-earth-core-happ.happ` sha256s are produced by a reproducible
+build pipeline. Building the SAME commit from ANY filesystem path
+on ANY host with the pinned toolchain MUST produce byte-identical
+wasms (and therefore byte-identical DNA + .happ hashes).
+
+Why two drift sources existed and what the pipeline removes:
+
+- The wasm `name` custom section embedded LLVM codegen-unit
+  suffixes (`.llvm.NNNNNNNNNNNN`) that hash the ABSOLUTE PATH of
+  the crate being compiled. Two contributors building the same
+  commit from different paths got two different `name` sections,
+  two different wasm shas, two different DNA hashes. Binaryen's
+  `wasm-opt --strip-debug` removes this section (binaryen treats
+  it as part of debug info).
+- The wasm `producers` custom section embedded the rustc version
+  string (compiler hash + date). Stable within a toolchain version
+  but drifts across upgrades. `wasm-opt --strip-producers` removes
+  it.
+
+Both sections are no-op for execution: the wasm spec marks custom
+sections as having no semantic effect, and wasmer (Holochain's
+runtime) ignores them.
+
+`--remap-path-prefix` flags in the build script are defense-in-
+depth — this project's `panic = abort` (the wasm32-unknown-unknown
+default) + `opt-level = "z"` combination DCEs `file!()`/registry
+path strings before they hit the wasm, so the remap is largely a
+no-op today; the flags stay correct if anyone later flips those
+settings. `codegen-units = 1` is also defense-in-depth (and is
+required for the strip + remap path to converge deterministically
+when the codegen-unit-count would otherwise have introduced
+further per-host variance).
+
+Build (canonical)
+-----------------
+Run from any clone, inside `nix develop` so `wasm-opt` is on PATH:
+
+    cd <repo>
+    nix develop --command npm run build:happ
+    # produces target/wasm32-unknown-unknown/release/{content_integrity,content}.wasm
+    # produces dnas/humm_earth_core/workdir/humm_earth_core.dna
+    # produces workdir/humm-earth-core-happ.happ
+
+Verify
+------
+Build twice from two different paths and assert byte-identical
+wasms:
+
+    # Build A (canonical mirror)
+    cd ~/humm-earth-core-happ
+    nix develop --command npm run build:zomes
+    SHA_A=$(sha256sum target/wasm32-unknown-unknown/release/content_integrity.wasm | awk '{print $1}')
+
+    # Build B (different cwd; same flake)
+    rm -rf /tmp/repro-test && mkdir -p /tmp/repro-test
+    tar --exclude=./target --exclude=./node_modules --exclude=./.git -C ~/humm-earth-core-happ -cf - . | tar -xf - -C /tmp/repro-test
+    cd /tmp/repro-test
+    nix develop ~/humm-earth-core-happ --command npm run build:zomes
+    SHA_B=$(sha256sum target/wasm32-unknown-unknown/release/content_integrity.wasm | awk '{print $1}')
+
+    [ "$SHA_A" = "$SHA_B" ] || { echo "drift!"; exit 1; }
+
+Supersedes note for historical rows
+-----------------------------------
+Pass-1, pass-2, pass-2.5 (and its cleanup), pass-3, and the
+pre-re-record pass-4 hash block (recorded against tip 7b918f7,
+now lineage-flagged "SUPERSEDED") were captured BEFORE the
+reproducibility pipeline existed. Those rows are accurate for the
+specific wasm bytes that shipped from the recording machine, but
+they are NOT byte-reproducible across hosts. Going forward, the
+recorded hash IS the reproducible-from-source hash; downstream
+pins (e.g. humm-tauri install-time DNA-hash verification) should
+only assume reproducibility for pass-4 (re-record) and later.
+
+The pre-reproducibility pass-4 hashes (now SUPERSEDED) were:
+
+    DNA hash:                uhC0kNS2JM6lqmdxr3Q8VK2uhDJFF-wRBz-W73JjJKZnTTMyT8_JS
+    content_integrity.wasm:  1f4534b24332d9fdf089b66e80c04b4eb370994841b554bfcb455524b6f0c3c4
+    content.wasm:            7a9e7a9800053a916b50141fd6cc72265d0090e3965a44eb90ae4ec298ca8370
+    hApp bundle sha256:      50d409602fa8d9eeacf553a497aff39191bc9cc4f1c9ffd8080d3c8e0e844abd

@@ -23,10 +23,11 @@ see [`HUMM_TAURI_PASS_ROADMAP.md`](./HUMM_TAURI_PASS_ROADMAP.md).
 
 - **DNA hash CHANGED** from
   `uhC0kwO11VbVMLrFlQBqeslvnZroeHUp5VetnH1tgX68lH5FebRgC` (pass-3) to
-  **the new pass-4 hash recorded in `.baseline-hashes.txt` once
-  Phase 4-F lands**. Coordinator hot-swap does NOT work for this
-  pass; users see a new cell on install and require the migration
-  flow to keep their data.
+  `uhC0k26bYG0qmTCFk4_D996GRCTecEtMdL5pXyvCUu0ACJN12omCV` (pass-4 —
+  the **reproducible** hash; see `.baseline-hashes.txt`
+  "Reproducibility contract" for the build + verify commands).
+  Coordinator hot-swap does NOT work for this pass; users see a new
+  cell on install and require the migration flow to keep their data.
 - **G-6.2 — Recipient-set integrity SHIPPED.** Every
   `AclSpec::HiveGroup` write MUST carry a
   `recipient_witnesses: Vec<RecipientWitness>` covering every pubkey
@@ -61,19 +62,25 @@ needs the D.1 group track + per-bundle
 `classification-overrides.json` (separate branch) to migrate; until
 D.1 lands, every legacy entry defaults to `AclSpec::Public`.
 
-1. **Pre-publish** (this hApp repo, before bundling into humm-tauri):
+1. **Pre-publish** (this hApp repo, before bundling into humm-tauri).
+   Use the reproducible-build pipeline so the resulting wasm bytes —
+   and therefore the DNA hash — are byte-identical to the recorded
+   invariant on every host:
    ```bash
    cd ~/humm-earth-core-happ
-   RUSTFLAGS='--cfg getrandom_backend="custom"' \
-     CARGO_TARGET_DIR=target \
-     cargo build --release --target wasm32-unknown-unknown \
-     -p content_integrity -p content
-   hc dna pack dnas/humm_earth_core/workdir
+   nix develop --command npm run build:happ
+   # produces target/wasm32-unknown-unknown/release/{content_integrity,content}.wasm,
+   # dnas/humm_earth_core/workdir/humm_earth_core.dna, and
+   # workdir/humm-earth-core-happ.happ
    hc dna hash dnas/humm_earth_core/workdir/humm_earth_core.dna
-   # MUST print the pass-4 hash recorded in .baseline-hashes.txt
-   hc app pack workdir --recursive
-   sha256sum workdir/humm-earth-core-happ.happ
+   # MUST print: uhC0k26bYG0qmTCFk4_D996GRCTecEtMdL5pXyvCUu0ACJN12omCV
+   sha256sum workdir/humm-earth-core-happ.happ | awk '{print $1}'
+   # MUST print: d74e5f2f272ab6da7e0e429da2f5419cd7d74f364055c238378decf02a681861
    ```
+   `nix develop` is required so Binaryen's `wasm-opt` is on PATH
+   (the pipeline strips wasm `name` + `producers` custom sections to
+   make the bytes path/toolchain-independent; see
+   `.baseline-hashes.txt` "Reproducibility contract").
 2. **humm-tauri side** (after copying the new .happ into
    `src-tauri/bin/`): bump the `APP_ID` constant. Per the pass-1
    deploy handoff, the constant lives in
@@ -418,19 +425,24 @@ checklist in `PASS_3_DEPLOY_HANDOFF.md`):
 
 ## Hash invariants for verification
 
-Recorded by Phase 4-F (commit `9e1f842` source-of-record; wasms +
-packed bundle generated against that tip):
+Recorded against the reproducible-build tip of
+`feat-integrity-pass-4-recipient-witnesses`
+(chore(build): reproducible wasm pipeline + re-record pass-4
+hashes). Building any commit on this branch ≥ that tip via the
+pipeline MUST yield exactly these bytes on any host:
 
-- DNA hash:                `uhC0kNS2JM6lqmdxr3Q8VK2uhDJFF-wRBz-W73JjJKZnTTMyT8_JS`
-- `content_integrity.wasm`: `1f4534b24332d9fdf089b66e80c04b4eb370994841b554bfcb455524b6f0c3c4`
-- `content.wasm`:           `7a9e7a9800053a916b50141fd6cc72265d0090e3965a44eb90ae4ec298ca8370`
-- hApp bundle sha256:       `50d409602fa8d9eeacf553a497aff39191bc9cc4f1c9ffd8080d3c8e0e844abd`
+- DNA hash:                `uhC0k26bYG0qmTCFk4_D996GRCTecEtMdL5pXyvCUu0ACJN12omCV`
+- `content_integrity.wasm`: `06b01fb3527e266a5cb1b5ffbf01b83541d7a572c4b4a252521154c3e0c2cd83`
+- `content.wasm`:           `793343c0d6b5b3605fdec59ce77d3056d263941f5e09ebc22e4e22fd576732eb`
+- hApp bundle sha256:       `d74e5f2f272ab6da7e0e429da2f5419cd7d74f364055c238378decf02a681861`
 
 These hashes are the **new pass-4 invariant** — every subsequent
 pass-4 commit MUST hold the DNA hash + integrity wasm sha256
 byte-identical until pass-5+ does its own intentional integrity-
-zome bump. The full lineage + invariant statement lives in
-`.baseline-hashes.txt` "Pass-4" section.
+zome bump. The full lineage + invariant statement + supersedes
+note for the pre-reproducibility hashes lives in
+`.baseline-hashes.txt` (Pass-4 section + "Reproducibility contract"
+section).
 
 ## Commit + branch state
 
@@ -443,12 +455,22 @@ Commits (in order):
   fixture updates + 11 new host-side tests.
 - Phase 4-D — `migrate-dna.ts` classifier comment + error-message
   update reflecting the pass-4 wire shape.
-- Phase 4-E (this commit) — handoff docs (this file + updates to
+- Phase 4-E (`9e1f842`) — handoff docs (this file + updates to
   `HUMM_TAURI_ACLSPEC_INTEGRATION.md` + `HANDOFF_UPDATED_INFO.md` +
   banner on `PASS_3_DEPLOY_HANDOFF.md` + new E.4.l section in
   `HUMM_TAURI_FEATURE_ENABLEMENT.md`).
-- Phase 4-F — verification + new `.baseline-hashes.txt` section +
-  final report.
+- Phase 4-F (`7b918f7`) — initial baseline record (SUPERSEDED by
+  Phase 4-G's reproducibility re-record; hashes from this commit
+  were path-dependent — see `.baseline-hashes.txt`
+  "Reproducibility contract" supersedes note).
+- Phase 4-G.leapfrog (`4f0a0b9`) — pass-2.5 → pass-4 leapfrog
+  guidance + per-marked-site recipes.
+- Phase 4-G (this commit) — reproducible wasm pipeline
+  (`scripts/build-zomes.sh` + `scripts/strip-wasms.sh`;
+  `--remap-path-prefix` + `codegen-units = 1` defense-in-depth;
+  Binaryen `wasm-opt --strip-debug --strip-producers` post-build)
+  + re-record of pass-4 DNA + wasm + .happ hashes; the recorded
+  hash IS now the reproducible-from-source hash on any host.
 
 **Not pushed.** The user controls when this branch reaches `origin`
 and `main`.
