@@ -265,7 +265,7 @@ Lineage within pass-4 branch
 - 9e1f842 docs(handoff): pass-4 deploy handoff + ACLSpec wire shape + roadmap + E.4.l invite links
 - 7b918f7 chore(baseline): record pass-4 DNA hash + wasm shas (Phase 4-F; SUPERSEDED by reproducibility re-record)
 - 4f0a0b9 docs(handoff): pass-2.5->pass-4 leapfrog guidance + per-marked-site recipes
-- HEAD    chore(build): reproducible wasm pipeline + re-record pass-4 hashes
+- f50ea7a chore(build): reproducible wasm pipeline + re-record pass-4 hashes
 
 Tests
 -----

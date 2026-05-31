@@ -465,7 +465,7 @@ Commits (in order):
   "Reproducibility contract" supersedes note).
 - Phase 4-G.leapfrog (`4f0a0b9`) — pass-2.5 → pass-4 leapfrog
   guidance + per-marked-site recipes.
-- Phase 4-G (this commit) — reproducible wasm pipeline
+- Phase 4-G (`f50ea7a`) — reproducible wasm pipeline
   (`scripts/build-zomes.sh` + `scripts/strip-wasms.sh`;
   `--remap-path-prefix` + `codegen-units = 1` defense-in-depth;
   Binaryen `wasm-opt --strip-debug --strip-producers` post-build)
