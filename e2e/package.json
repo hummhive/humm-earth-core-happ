@@ -1,0 +1,9 @@
+{
+  "name": "humm-earth-core-e2e",
+  "private": true,
+  "type": "module",
+  "description": "Manual single-conductor e2e harness for the pass-4 DNA (tryorama-free; see README.md).",
+  "scripts": {
+    "e2e": "tsx run.ts"
+  }
+}
