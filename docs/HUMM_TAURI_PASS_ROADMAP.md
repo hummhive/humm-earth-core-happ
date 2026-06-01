@@ -169,6 +169,9 @@ pass-4 inherits the pass-3 wire-shape change):**
   validator sanity checks across the whole trust chain)
 - `docs/HUMM_TAURI_SELF_NOTES_OBSERVABILITY.md` (order-of-operations +
   observability/security touchpoints to log)
+- `docs/HUMM_TAURI_DM_MESSAGING_INTEGRATION.md` (direct messaging:
+  humm:// link + `enc`, in-hive + cross-hive, first-contact handshake,
+  BDD + observability + security)
 
 ---
 

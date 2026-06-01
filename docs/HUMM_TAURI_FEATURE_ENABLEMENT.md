@@ -39,6 +39,10 @@ ephemeral signal — all preserved.
 }`. Pre-existing `DmRemoteSignal::DmDeleteRequest` (pass-1 C6) for
 soft-delete; existing inbox `DmCreate`/`DmDelete` bytes unchanged.
 
+**Full handoff** (humm:// link + `enc`, in-hive + cross-hive,
+first-contact Accept/Block handshake, BDD, observability, security
+DM-L1–L8): `docs/HUMM_TAURI_DM_MESSAGING_INTEGRATION.md`.
+
 **humm-tauri existing files touched.**
 - `src/sidecars/direct-messages/wire/content.ts:sendDirectMessage` —
   swap `{ acl, publicKeyAcl }` for `{ acl_spec: { DirectMessage: {
