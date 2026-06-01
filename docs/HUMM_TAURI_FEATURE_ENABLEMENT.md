@@ -194,7 +194,9 @@ per-hive / public). Blob bytes live in the Rust content-addressed
 store; only metadata is on the DHT.
 
 **DNA primitives.** Polymorphic per item:
-- Personal → `AclSpec::HiveGroup` with a singleton personal group
+- Personal / Note-to-Self → `AclSpec::HiveGroup` under a user-authored
+  *device-set* group (Path-A Owner), empty `public_key_acl`; see E.4.j +
+  `HUMM_TAURI_SELF_NOTES_INTEGRATION.md`
 - Per-peer → `AclSpec::DirectMessage { recipients: [me, peer] }`
 - Per-group → `AclSpec::HiveGroup { group_acl: [target_group_genesis_hash] }`
 - Per-hive → `AclSpec::HiveGroup` with the hive's hive-wide reader group
@@ -393,35 +395,63 @@ None }`. Existing infrastructure.
 
 ---
 
-## E.4.j — Personal vault (today via singleton group; future dedicated variant)
+## E.4.j — Personal vault / Note-to-Self (single + multi-device, pass-4 today)
 
-**Capability.** Per-user local + encrypted-on-DHT vault for personal
-content. Only the author can read; no other party even sees it
-exists.
+**Capability.** Per-user encrypted-on-DHT personal content ("Note to
+Self") that works on one device and syncs across the user's devices once
+linked — like Signal's Note-to-Self. Confidentiality is by encryption;
+the ciphertext itself lives on the public DHT (see security footguns).
 
-**DNA primitives.** Today: `AclSpec::HiveGroup` with a singleton
-personal group (only member: the user). Future (deferred D12):
-dedicated `AclSpec::PersonalVault` variant (private entry,
-source-chain-only — no DHT publish).
+> **Supersedes the earlier "singleton personal group (only member: the
+> user)" framing.** A user cannot be a member of their own group —
+> `validate_create_group_membership` Rule 1 rejects self-grants
+> (`group.rs:318-323`). The correct shape: the user **authors** a
+> personal *device-set* group and is its **Path-A implicit Owner** (no
+> membership entry for self), and a self-note carries an **all-empty
+> `public_key_acl`** (a non-empty PKA needs a witness, and a self-witness
+> is impossible). Full spec + security landmines:
+> `HUMM_TAURI_SELF_NOTES_INTEGRATION.md`.
 
-**humm-tauri existing files touched.**
-- The existing personal-group pattern continues to work; no code
-  change beyond pass-3 wire-shape migration.
+**DNA primitives (pass-4, NO DNA change).**
+- Single-device: `AclSpec::HiveGroup` under the user-authored device-set
+  group (`group_acl.owner = device_set_genesis_hash`,
+  `author_group_membership_hash: null` ⇒ Path A), **empty**
+  `public_key_acl`, **empty** `recipient_witnesses`. Author reads via a
+  self-wrapped SharedSecret (`ECDH(my_priv, my_pub)`).
+- Multi-device: same entry, plus other device pubkeys reached by
+  SharedSecret fan-out. List them in `public_key_acl.reader` + matching
+  `recipient_witnesses` ONLY when cross-device **push** is wanted — that
+  also grants those devices delete authority (integration doc §12 L9).
+  Devices are authorized by a non-self `GroupMembership` granted at link
+  time.
+- Future (deferred D12): a dedicated `AclSpec::PersonalVault` variant
+  (source-chain-only, no DHT publish) for true non-publication.
 
-**humm-tauri new files / components needed.** None today. A future
-`PersonalVault` variant (D12 in the plan) would add a dedicated
-private entry type.
+**humm-tauri existing files touched.** `SharedSecretApi` gains a
+self-wrap branch (`ECDH(self,self)` over a per-note `K`); everything else
+composes existing externs (`create_group_genesis`,
+`create_group_membership`, `create_encrypted_content`, `list_my_groups`,
+`list_group_members`).
 
-**Migration story.** Singleton personal groups migrate the same as
-other HiveGroup content (the classifier defaults to Public, then
-humm-tauri post-migration re-stamps to HiveGroup with the migrated
-personal group_genesis).
+**humm-tauri new files / components needed.** Device-set store +
+"device-set-v1" selection (by **genesis-author == me**), QR
+device-linking ceremony (+ SAS over the full QR payload), backfill
+walker, "Note to Self" UI. See the integration + observability docs.
 
-**Acceptance / smoke tests.**
-- User creates a personal entry; only they can read it.
-- A second agent in the same hive cannot see the entry's content
-  (decryption gated by shared secret; routing intentionally absent
-  via empty `public_key_acl.reader`).
+**Migration story.** None — opt-in new feature; no committed `[me,me]`
+self-DMs exist to migrate (the DM validator rejected them).
+
+**Acceptance / smoke tests** (full BDD set: integration doc §11
+SN-1..SN-12; primitives: `HUMM_TAURI_CORE_HAPP_BDD_SANITY_CHECKS.md`).
+- Single-device: user writes a note; only they can read it; re-install
+  with the same key still reads it; a second hive agent cannot decrypt
+  (empty `public_key_acl.reader`; gated by SharedSecret).
+- Multi-device: link a second device (non-self grant); both devices read
+  the note; pre-link notes become readable on the new device after
+  backfill.
+- Negative: self-witness attempt rejected (`self-grant is prohibited`);
+  self listed in PKA without a witness rejected (`not backed by any
+  dominating recipient_witness`).
 
 ---
 
@@ -602,7 +632,7 @@ host-published, world-readable sidecar payload MAY instead stay
 | E.4.g — Forgery-proof groups | No new UI; existing MembersAndGroups pane is the UI |
 | E.4.h — Streaming | NEW sidecar: `src/sidecars/streaming/` |
 | E.4.i — Sidecar marketplace | NEW: `src/api/content/agentDirectory/`, `.../sidecarManifest/`, NEW UI optional |
-| E.4.j — Personal vault | None today |
+| E.4.j — Personal vault / Note-to-Self | `SharedSecretApi` self-wrap branch; device-set store; QR linking ceremony + SAS; backfill walker; "Note to Self" UI (spec: `HUMM_TAURI_SELF_NOTES_INTEGRATION.md`) |
 | E.4.k — Paid content | N/A (deferred) |
 | E.4.l — Pre-signed invite links | NEW UI: `src/containers/CreateInvite/`, `src/containers/AcceptInvite/`; NEW sidecar: `src/sidecars/invite-redemption/`; Tauri URL-scheme handler in `src-tauri/`; new content schema for invite + redemption payloads |
 | E.4.m — Sidecar host capability | None (existing `SidecarCapabilitiesService.ts:674`; pass-4 wire-shape collapse — ACLSPEC § 11 Recipe D) |
@@ -620,7 +650,7 @@ host-published, world-readable sidecar payload MAY instead stay
 | E.4.g — Forgery-proof groups | Default `Public`; humm-tauri post-migration runs `create_group_genesis` + `create_group_membership` per legacy group, then re-stamps |
 | E.4.h — Streaming | Forward-looking; no migration |
 | E.4.i — Sidecar marketplace | Forward-looking; no migration |
-| E.4.j — Personal vault | Same as E.4.g (singleton personal group via classifier default + re-stamp) |
+| E.4.j — Personal vault / Note-to-Self | None — opt-in new feature; no committed self-DM data to migrate |
 | E.4.k — Paid content | N/A (deferred) |
 | E.4.l — Pre-signed invite links | Forward-looking; no data migration. Ship against pass-3 DNA (no need to wait for pass-4 — uses `Public` + `OpenWrite` variants that pass-4 leaves unchanged). |
 | E.4.m — Sidecar host capability | HiveGroup-scoped; pre-D.1 defaults to `Public`, post-migration re-stamp to `HiveGroup` with `recipient_witnesses` (even a singleton PKA needs its one witness). Host-published world-readable payloads MAY stay `Public`. |

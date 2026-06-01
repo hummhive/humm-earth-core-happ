@@ -141,7 +141,10 @@ pass-4 inherits the pass-3 wire-shape change):**
 - Cross-network hive-discovery (E.4.c).
 - Per-content ACL picker on Compose (E.4.f).
 - Local media library with selective sharing (E.4.e).
-- Personal vault via singleton personal group (E.4.j).
+- Note-to-Self / personal vault (E.4.j) — single **and** multi-device,
+  pass-4 today, **no DNA change**: a user-authored *device-set* group +
+  empty-PKA self shape + SharedSecret self-wrap. Spec:
+  `docs/HUMM_TAURI_SELF_NOTES_INTEGRATION.md`.
 - **Pre-signed invite links (Discord-style) — E.4.l**. Uses only
   `Public` + `OpenWrite` + `create_hive_membership`; ship anytime
   after pass-3 lands. NOT blocked on pass-4.
@@ -160,6 +163,12 @@ pass-4 inherits the pass-3 wire-shape change):**
 - `docs/HUMM_TAURI_ACLSPEC_INTEGRATION.md` (canonical wire shape)
 - `docs/HUMM_TAURI_FEATURE_ENABLEMENT.md` (per-feature wiring,
   including E.4.l invite links)
+- `docs/HUMM_TAURI_SELF_NOTES_INTEGRATION.md` (note-to-self
+  architecture, wire shapes, BDD scenarios, security footguns L1–L9)
+- `docs/HUMM_TAURI_CORE_HAPP_BDD_SANITY_CHECKS.md` (Given/When/Then
+  validator sanity checks across the whole trust chain)
+- `docs/HUMM_TAURI_SELF_NOTES_OBSERVABILITY.md` (order-of-operations +
+  observability/security touchpoints to log)
 
 ---
 
