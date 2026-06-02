@@ -373,11 +373,19 @@ Per self-note **read** (on any of the user's devices):
 > (correct: there is no other device to notify). Multi-device self-notes
 > fan a signal out to the *other* devices (self is excluded by the
 > existing minus-self rule). Cross-device discovery on a freshly linked
-> device is **query-based** via `list_by_author({ author: me,
-> content_type: "humm-self-note-v1" })` (`queries.rs:268`), not
-> push-based. (If you want incremental sync on the notes thread, prefer
-> a `dynamic_link` label + `list_by_dynamic_link`, since `list_by_author`
-> is currently unbounded — see roadmap note on `since_ts`/`limit`.)
+> device is **roster-wide query-based**: enumerate the authoritative
+> device-set roster (`list_group_members(device_set_genesis_hash)`,
+> `group/queries.rs:132`), then **union `list_by_author(eachGatedMember,
+> "humm-self-note-v1")`** and dedupe by action hash — a linked device
+> must read notes authored by your *other* devices, not just its own
+> (`list_by_author({ author: me })` alone surfaces zero of them). Prefer
+> this roster-union over `list_by_dynamic_link("self-notes")`: the union
+> is **device-set-scoped + authorship-verified** (every surfaced note is
+> authored by a gated roster member), whereas a dynamic link is not
+> device-set-bounded. Discovery ≠ decryptability: a surfaced note with no
+> SharedSecret wrap for you yet is "pending sync", not corrupt.
+> (`list_by_author` is unbounded — cap client-side; roadmap
+> `since_ts`/`limit`.)
 
 ---
 
@@ -388,16 +396,28 @@ pubkey wasn't a SharedSecret recipient yet). At link time, the existing
 device backfills:
 
 ```
-backfillForNewDevice(new_device_x25519_pub, sinceLimit?):
-  notes = list_by_author({ author: me, content_type: "humm-self-note-v1" })
-          // or list_by_dynamic_link({ …, dynamic_link: "self-notes" })
+backfillForNewDevice(new_device, sinceLimit?):
+  roster     = list_group_members(device_set_genesis_hash)
+                 |> keep members passing BOTH gates (roster membership +
+                    resolvable self-authored humm-dm-keybinding-v1)
+  recipients = [me] + roster.x25519 + new_device.x25519   // FULL set, EVERY note
+  notes      = union over (me + roster) of
+                 list_by_author({ author: member, content_type: "humm-self-note-v1" })
+               |> dedupe by action hash
   for each note (bounded by sinceLimit, client's choice):
-     K = unwrap(note.sharedSecret, my_x25519_priv)
-     publish SharedSecret wrapping K → new_device_x25519_pub
+     // RE-WRAP the note's EXISTING K. Do NOT mint a fresh K (that orphans
+     // the ciphertext = data loss). setRecipients REPLACES the set, so pass
+     // `recipients` in FULL or you silently drop an existing device.
+     setRecipients({ groupId: note.group_id, recipientPublicKeys: recipients })
 ```
 
 Linear in (#notes); no new entry type, no validator involvement — these
-are ordinary SharedSecret writes. The new device then discovers and
+are **K-preserving SharedSecret re-wraps**: the note's `K` AND its
+`EncryptedContent` action hash stay unchanged (never mint a fresh `K` for
+backfill — that orphans the ciphertext; this is why SN-10 holds, and why
+`SharedSecretApi.add`, which always mints a fresh K, is the WRONG call
+here). Verify K-preservation with a write→re-wrap→both-decrypt-same-
+ciphertext test before relying on it. The new device then discovers and
 decrypts via the §7 read flow. This is the analogue of Signal's
 "Link-and-Sync" transcript transfer
 (`.extraResearch/SIGNAL_MULTI_DEVICE_RESEARCH.md` §5), done with the
