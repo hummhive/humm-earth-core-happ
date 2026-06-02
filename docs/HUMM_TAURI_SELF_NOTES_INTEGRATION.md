@@ -409,15 +409,21 @@ its pubkey in `public_key_acl.reader` + a witness on every new note
 `list_group_members(device_set_genesis_hash)` (`group/queries.rs:132` —
 the authoritative roster).
 
-> **🔒 Critical — which X25519 key?** `new_device_x25519_pub` here is the
-> new device's **permanent** X25519 key — derive it from
-> `new_device_pubkey` via the standard Ed25519→X25519 conversion (the
-> derivation lair uses; confirm against humm-tauri's keystore). **Never**
-> use the QR's one-time `ephemeral_x25519_pub` for backfill: device B
-> discards the ephemeral private key after the link bundle, so
-> SharedSecrets wrapped to it are permanently undecryptable — and the
-> failure is **silent** (entry commits; the later read just finds "no
-> decryptable SharedSecret"). See §12 L8.
+> **🔒 Critical — which X25519 key?** `new_device_x25519_pub` is the new
+> device's **permanent keystore encryption key** — an **independent**
+> SLIP-0010-derived key that is **NOT** derivable from its `AgentPubKey`.
+> humm-tauri's keystore derives signing (`m/44'/1517'/0'/0'/0'`) and
+> encryption (`m/44'/1517'/0'/1'/0'`) on separate paths and never
+> converts one to the other (signing/encryption key reuse is unsafe).
+> A therefore obtains B's X25519 **from B itself**: B's **link bundle**
+> carries it for the immediate backfill, and B's published
+> `humm-dm-keybinding-v1` (authored by B — `action.author == B`) supplies
+> it for ongoing fan-out + rotation. **Never** use the QR's one-time
+> `ephemeral_x25519_pub` for backfill: device B discards the ephemeral
+> private key after the link bundle, so SharedSecrets wrapped to it are
+> permanently undecryptable — and the failure is **silent** (entry
+> commits; the later read just finds "no decryptable SharedSecret"). See
+> §12 L8.
 
 ---
 

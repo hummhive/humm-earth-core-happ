@@ -387,7 +387,9 @@ Tick each against your current logging/handlers:
       prefer empty-PKA + SharedSecret-only fan-out, or app-level
       soft-delete.
 - [ ] **🔒 F-D backfill key:** confirm backfill wraps `K` to each new
-      device's **permanent** X25519 key (derived from its agent pubkey),
+      device's **permanent keystore encryption key** — an independent
+      SLIP-0010 key obtained from the link bundle / the device's
+      `humm-dm-keybinding-v1`, **NOT** derived from its AgentPubKey —
       never the one-time ephemeral handshake key (silent unreadable-note
       failure otherwise).
 - [ ] **🔒 F-B revocation cascade:** after revoking a device, enumerate
