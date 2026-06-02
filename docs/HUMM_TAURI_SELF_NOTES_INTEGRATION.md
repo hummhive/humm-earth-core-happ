@@ -415,10 +415,16 @@ the authoritative roster).
 > humm-tauri's keystore derives signing (`m/44'/1517'/0'/0'/0'`) and
 > encryption (`m/44'/1517'/0'/1'/0'`) on separate paths and never
 > converts one to the other (signing/encryption key reuse is unsafe).
-> A therefore obtains B's X25519 **from B itself**: B's **link bundle**
-> carries it for the immediate backfill, and B's published
-> `humm-dm-keybinding-v1` (authored by B — `action.author == B`) supplies
-> it for ongoing fan-out + rotation. **Never** use the QR's one-time
+> A therefore obtains B's X25519 **only from B's self-authored**
+> `humm-dm-keybinding-v1` (`action.author == B`, B in the device-set
+> roster) — used for BOTH link-time backfill (A `waitFor`s it to gossip,
+> then wraps each past note's K) and ongoing fan-out + rotation. The
+> A→B link bundle CANNOT carry B's key (A doesn't have it; the bundle is
+> encrypted to B's ephemeral and holds device-set info only). Putting B's
+> permanent X25519 in the QR instead would force the SAS (§12 L4) to cover
+> it (4 fields) or a MITM swaps it and A backfills every past note's K to
+> the attacker — not worth it; the keybinding is self-authenticated (B's
+> signature) and needs no SAS field. **Never** use the QR's one-time
 > `ephemeral_x25519_pub` for backfill: device B discards the ephemeral
 > private key after the link bundle, so SharedSecrets wrapped to it are
 > permanently undecryptable — and the failure is **silent** (entry
