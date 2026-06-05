@@ -26,7 +26,7 @@ this preamble too.
 
 ---
 
-## Pass-1 → Pass-2.5 (where humm-tauri currently is)
+## Pass-1 → Pass-2.5 (historical — migration path context)
 
 **DNA status:** ✅ shipped. Pass-2 FINAL DNA hash
 `uhC0kawoZqBxv3Jjvh-TlSQ5aO4U-hwiUNtZxFzXkTOBc5ijKVatw`; pass-2.5
@@ -46,7 +46,7 @@ held the hash + extended migration tooling.
   hive-identity track + `DNA_MIGRATION_GUIDE.md` rewrite. DNA hash
   HELD byte-identical to pass-2 FINAL.
 
-**humm-tauri tasks (current focus):**
+**humm-tauri tasks (completed — included for migration reference):**
 - 🟢 Land coordinator hot-swap of the pass-2.5 .happ into
   `src-tauri/bin/`. APP_ID bump in
   `humm-tauri/src-tauri/src/holochain/install_humm_core_happ.rs`.
@@ -175,11 +175,14 @@ pass-4 inherits the pass-3 wire-shape change):**
 
 ---
 
-## Pass-4 (`feat-integrity-pass-4-recipient-witnesses`, tip see branch)
+## Pass-4 (`feat-integrity-pass-4-recipient-witnesses`, tip `8503b48`)
 
-**DNA status:** 🚧 in flight (branch not pushed). New DNA hash
-recorded in `.baseline-hashes.txt` Pass-4 section once Phase 4-F
-lands.
+**DNA status:** ✅ shipped. DNA hash
+`uhC0k26bYG0qmTCFk4_D996GRCTecEtMdL5pXyvCUu0ACJN12omCV`;
+hApp SHA256 `d74e5f2f272ab6da7e0e429da2f5419cd7d74f364055c238378decf02a681861`.
+humm-tauri already bundles this hApp (`src-tauri/bin/humm-earth-core-happ.happ`);
+DNA hash pinned in `coordinator.rs:185`, `tests/bdd/conductor.ts:23`,
+`.testdata/happs/MANIFEST.tsv`.
 
 **What changed in this repo:**
 - G-6.2 — `AclSpec::HiveGroup` gains REQUIRED
@@ -235,10 +238,9 @@ need to wait for pass-4):**
 
 ## Leapfrog path (pass-2.5 → pass-4, skipping pass-3)
 
-humm-tauri's live content path is on the pass-2 wire shape and the
-team is finishing the pass-2.5 hive-identity runner; the recommended
-path is to adopt pass-4 directly and skip pass-3's intermediate
-`acl_spec`-without-witnesses shape. **Both** the pass-3 and pass-4
+humm-tauri shipped the leapfrog: the production app bundles the pass-4
+hApp directly, skipping pass-3's intermediate `acl_spec`-without-witnesses
+shape. **Both** the pass-3 and pass-4
 humm-tauri task tables above still apply (pass-4 inherits the pass-3
 wire-shape change) — the leapfrog just means doing them in a single
 integration pass instead of two.
@@ -310,21 +312,19 @@ DNA after migration.
 
 ---
 
-## Tryorama coverage (`test-tryorama-integrity-coverage`)
+## Integration test coverage (`test-tryorama-integrity-coverage`)
 
-**DNA status:** ⏳ planned (separate branch; no DNA bump — test
-infra only). Tryorama integration tests covering the fetch-
-dependent validator branches host-side `cargo test` cannot reach
-(HiveGroup hive/group authority, OpenWrite target existence,
-EncryptedContentUpdates author binding, M-1 original-author check,
-pass-4 recipient_witnesses, pass-4 hive grant-window).
+**DNA status:** ✅ shipped (separate branch; no DNA bump — test infra
+only). **Tryorama 0.19.2 is broken** on holochain/hc 0.6.0 (the
+`quic` → `webrtc` sandbox-CLI rename produces a K2Error panic).
+Integration tests use a **tryorama-free conductor harness** instead:
+`e2e/` (this repo, 30 scenarios) and `tests/bdd/` (humm-tauri, 20+
+scenarios including DM, note-to-self, and AclSpec coverage). Both use
+one real holochain 0.6.0 conductor, N agents, network_seed-isolated
+DHT over AppWebsocket.
 
 **humm-tauri tasks:** None. This branch ships test infrastructure
-inside `tests/src/humm_earth_core/content/` and does not affect
-the wire shape, externs, or DNA hash.
-
-**Reference docs:** When the branch ships, the test file headers
-will document the attack-matrix coverage they pin.
+and does not affect the wire shape, externs, or DNA hash.
 
 ---
 
