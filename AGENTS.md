@@ -15,6 +15,8 @@ and curated for Holochain DNA + Rust development.
 | Agent | Model | Purpose |
 |---|---|---|
 | `doc-updater` | haiku | Codemap + documentation specialist. Runs `/update-codemaps`, generates `docs/CODEMAPS/*`, updates READMEs. |
+| `rust-reviewer` | sonnet | Rust code reviewer: ownership, lifetimes, error handling, unsafe, concurrency, idiomatic patterns. MUST use for Rust changes. |
+| `rust-build-resolver` | sonnet | Fixes cargo build errors, borrow checker issues, Cargo.toml problems. Surgical minimal changes only. |
 
 ## Skills
 
