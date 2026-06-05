@@ -165,3 +165,10 @@ rationale and verification commands.
   `chore(build):`, `docs(handoff):`, etc.
 - **Match existing formatting.** Tabs, LF, single trailing newline —
   follow the file you are editing.
+
+---
+
+## Agent toolkit
+
+Local `.claude/` carries curated skills, agents, and commands for this
+repo. See **`AGENTS.md`** for the quick-reference table.
