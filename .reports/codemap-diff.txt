@@ -1,0 +1,56 @@
+codemap-diff report — 2026-06-05
+==================================
+
+Status: INITIAL GENERATION (no prior codemaps existed)
+
+Files created:
+  + docs/CODEMAPS/architecture.md   (~3.5 KB)  system diagram, domain terms, change gravity, security model
+  + docs/CODEMAPS/backend.md        (~6.8 KB)  all 32 coordinator externs with call chains, cap grant policy
+  + docs/CODEMAPS/data.md           (~4.7 KB)  6 entry types, 15 link types, AclSpec variants, authority chain
+  + docs/CODEMAPS/dependencies.md   (~2.8 KB)  SDK versions, downstream consumer, nix toolchain, build artifacts
+
+Files skipped:
+  - frontend.md  (no UI in this repo; humm-tauri is the downstream client at ../humm-tauri/)
+
+Domain context:
+  Glossary source: ../humm-tauri/GLOSSARY.md (HummHive ubiquitous language)
+  Key terms mapped: Hive, Member, Group, Content, Sidecar, Node, Agent, Cell, DNA
+
+Architecture summary:
+  Project type: Single Holochain hApp (1 DNA, 2 zomes)
+  Downstream consumer: humm-tauri (desktop + headless, GUI + CLI)
+  Integrity zome: content_integrity (v0.0.2) — ⚠ changes fork chain
+  Coordinator zome: content (v0.0.1) — hot-swappable, backwards-compat preferred
+  Holochain SDK: hdi=0.7.0, hdk=0.6.0 (pinned exact)
+  Nix toolchain: holonix main-0.6
+
+Source metrics:
+  Integrity source files: 6 (.rs)
+  Coordinator source files: 15 (.rs)
+  Test files: 11 (.test.ts) + 1 common.ts
+  Scripts: 3 (build-zomes.sh, strip-wasms.sh, migrate-dna.ts)
+
+Entry types: 6 (EncryptedContent, HiveGenesis, HiveMembership, DmProbeLog, GroupGenesis, GroupMembership)
+Link types: 15 (OriginalHashPointer through HiveToGroups)
+Coordinator externs: 32 callable functions
+AclSpec variants: 4 (HiveGroup, DirectMessage, Public, OpenWrite)
+
+Security passes shipped: 4
+  Pass 1: author-vs-header binding
+  Pass 2: cryptographic hive identity (HiveGenesis/HiveMembership)
+  Pass 3: group authority (GroupGenesis/GroupMembership) + AclSpec
+  Pass 4: recipient-witness integrity (RecipientWitness on HiveGroup)
+
+New dependencies detected: N/A (initial scan)
+Staleness warnings: N/A (initial scan)
+
+Next recommended scan: after next major feature addition or security pass.
+
+Update 2026-06-05 (post-initial):
+  ~ docs/CODEMAPS/architecture.md  — added humm-tauri integration + hApp version lineage
+  ~ docs/CODEMAPS/dependencies.md  — added integration path + official hApp versions section
+  + CLAUDE.md                      — created with WSL workflow, change gravity, build instructions
+  + scripts/bash_helpers.sh        — ported from humm-tauri (essential helpers only)
+  + scripts/wsl-pull.sh            — ported from humm-tauri
+  + scripts/wsl-push.sh            — ported from humm-tauri
+  + scripts/wsl-check.sh           — ported from humm-tauri (no happ parity check)
