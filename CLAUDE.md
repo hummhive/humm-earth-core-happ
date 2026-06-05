@@ -165,6 +165,10 @@ rationale and verification commands.
   `chore(build):`, `docs(handoff):`, etc.
 - **Match existing formatting.** Tabs, LF, single trailing newline —
   follow the file you are editing.
+- **`POSTCOMPACTION.md`** is the single recovery doc. Update it every
+  few commits or when major state changes — assume compaction can happen
+  any time. Keep it to current state + the last 1–3 work arcs; older
+  durable facts roll into `docs/CODEMAPS/` or handoff docs.
 
 ---
 
