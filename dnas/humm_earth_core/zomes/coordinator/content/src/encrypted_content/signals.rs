@@ -605,6 +605,7 @@ mod tests {
         // map16 0xde, map32 0xdf) — NOT a BIN. This is precisely why the
         // ExternIO param decode below fails. Matches the captured
         // conductor log (`[130, ...]` = 0x82 fixmap).
+        assert!(!single.0.is_empty(), "ExternIO::encode produced empty bytes");
         let marker = single.0[0];
         assert!(
             (0x80..=0x8f).contains(&marker) || marker == 0xde || marker == 0xdf,
@@ -622,17 +623,35 @@ mod tests {
     /// `remote_signal_payload`, so prove the DM path end to end too.
     #[test]
     fn dm_remote_signal_round_trips_through_send_path() {
-        let typed = DmRemoteSignal::DmDeleteRequest(DmDeleteRequestSignal {
-            thread_id: "t".into(),
-            target_action_hash: sample_target_hash(),
-            from_agent: None,
-        });
-        let payload = remote_signal_payload(&typed).expect("payload");
-        let on_wire = ExternIO::encode(&payload).expect("hdk send encode");
-        let param: ExternIO = on_wire
-            .decode()
-            .expect("recv_remote_signal ExternIO param must decode");
-        let back: DmRemoteSignal = param.decode().expect("dispatcher decode");
-        assert!(matches!(back, DmRemoteSignal::DmDeleteRequest(_)));
+        // Cover both top-level DmRemoteSignal variants (DmDeleteRequest and
+        // a DmCall variant) so the guard is exhaustive for the DM family.
+        let signals = [
+            DmRemoteSignal::DmDeleteRequest(DmDeleteRequestSignal {
+                thread_id: "t".into(),
+                target_action_hash: sample_target_hash(),
+                from_agent: None,
+            }),
+            DmRemoteSignal::DmCall(DmCallSignal::SdpData {
+                call_id: "c".into(),
+                data: "v=0\r\n…".into(),
+                from_agent: None,
+            }),
+        ];
+        for typed in signals {
+            let payload = remote_signal_payload(&typed).expect("payload");
+            let on_wire = ExternIO::encode(&payload).expect("hdk send encode");
+            let param: ExternIO = on_wire
+                .decode()
+                .expect("recv_remote_signal ExternIO param must decode");
+            let back: DmRemoteSignal = param.decode().expect("dispatcher decode");
+            // The same top-level variant survives the double-encode round-trip.
+            assert!(matches!(
+                (&typed, &back),
+                (
+                    DmRemoteSignal::DmDeleteRequest(_),
+                    DmRemoteSignal::DmDeleteRequest(_)
+                ) | (DmRemoteSignal::DmCall(_), DmRemoteSignal::DmCall(_))
+            ));
+        }
     }
 }
