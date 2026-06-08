@@ -155,6 +155,45 @@ impl DmRemoteSignal {
     }
 }
 
+/// Encode `signal` and push it to `recipients` — the single source of
+/// truth for every remote signal this zome sends.
+///
+/// **Why this pre-encodes.** The receiver's
+/// `recv_remote_signal(signal: ExternIO)` (`crate::recv_remote_signal`)
+/// decodes its parameter through the `#[hdk_extern]` `map_extern_preamble!`
+/// double-decode: `host_args` strips one msgpack-BIN layer, then the
+/// `ExternIO`-typed parameter decode (`extern_io.decode::<ExternIO>()`)
+/// strips a second (hdi-0.7.0 `map_extern.rs`). HDK's `send_remote_signal`
+/// applies exactly ONE `ExternIO::encode` (hdk-0.6.0 `p2p.rs:154`), and a
+/// typed struct encodes to a msgpack MAP — which satisfies the first BIN
+/// decode but FAILS the second, because `ExternIO` is
+/// `#[serde(with = "serde_bytes")]` (a BIN, not a MAP). Pre-encoding here
+/// supplies the second BIN layer the receiver's parameter type requires,
+/// so the payload arrives as an `ExternIO` the dispatcher can
+/// `.decode::<T>()`. Mirrors the ecosystem convention (moss
+/// `group/src/lib.rs`, presence `room/src/remote_signals.rs`).
+///
+/// Every send path funnels through here — call this, never
+/// `send_remote_signal` directly, so the encode contract cannot drift
+/// per call site.
+fn send_encoded_remote_signal<I>(signal: I, recipients: Vec<AgentPubKey>) -> ExternResult<()>
+where
+    I: Serialize + std::fmt::Debug,
+{
+    send_remote_signal(remote_signal_payload(&signal)?, recipients)
+}
+
+/// Build the `ExternIO` payload that [`send_encoded_remote_signal`] hands
+/// to HDK's `send_remote_signal`. Extracted so the host test module can
+/// exercise the exact wire encoding without a conductor; see
+/// [`send_encoded_remote_signal`] for the full rationale.
+fn remote_signal_payload<I>(signal: &I) -> ExternResult<ExternIO>
+where
+    I: Serialize + std::fmt::Debug,
+{
+    ExternIO::encode(signal).map_err(|e| wasm_error!(e))
+}
+
 /// Best-effort remote delivery of a content signal to every agent
 /// listed in the entry's `public_key_acl.reader` (other than the
 /// author). Local `emit_signal` always fires first — it's the
@@ -222,8 +261,8 @@ pub fn remote_signal_acl_readers(public_key_acl: &Acl, signal: EncryptedContentS
     if recipients.is_empty() {
         return;
     }
-    if let Err(err) = send_remote_signal(signal, recipients) {
-        debug!("remote_signal_acl_readers: send_remote_signal failed (non-fatal): {err:?}");
+    if let Err(err) = send_encoded_remote_signal(signal, recipients) {
+        debug!("remote_signal_acl_readers: remote signal send failed (non-fatal): {err:?}");
     }
 }
 
@@ -252,7 +291,7 @@ pub fn send_dm_delete_request(input: SendDmDeleteRequestInput) -> ExternResult<(
         target_action_hash: input.target_action_hash,
         from_agent: None,
     });
-    send_remote_signal(signal, vec![input.recipient])
+    send_encoded_remote_signal(signal, vec![input.recipient])
 }
 
 /// C7 input: announce a call to a single recipient. Pairs with
@@ -288,7 +327,7 @@ pub fn send_dm_call_init_request(input: SendDmCallInitRequestInput) -> ExternRes
         call_id: input.call_id,
         from_agent: None,
     });
-    send_remote_signal(signal, vec![input.recipient])
+    send_encoded_remote_signal(signal, vec![input.recipient])
 }
 
 /// C7 — accept a call.
@@ -298,7 +337,7 @@ pub fn send_dm_call_init_accept(input: SendDmCallInitAcceptInput) -> ExternResul
         call_id: input.call_id,
         from_agent: None,
     });
-    send_remote_signal(signal, vec![input.recipient])
+    send_encoded_remote_signal(signal, vec![input.recipient])
 }
 
 /// C7 — forward SDP / ICE data.
@@ -309,7 +348,7 @@ pub fn send_dm_call_sdp_data(input: SendDmCallSdpDataInput) -> ExternResult<()> 
         data: input.data,
         from_agent: None,
     });
-    send_remote_signal(signal, vec![input.recipient])
+    send_encoded_remote_signal(signal, vec![input.recipient])
 }
 
 // =============================================================================
@@ -508,5 +547,92 @@ mod tests {
         } else {
             unreachable!()
         }
+    }
+
+    /// RED→GREEN driver for the recv_remote_signal drop bug.
+    ///
+    /// GIVEN the legacy content signal the fan-out pushes,
+    /// WHEN it travels the coordinator's remote-signal path and HDK's
+    ///      `send_remote_signal` applies its single `ExternIO::encode`
+    ///      (hdk-0.6.0 `p2p.rs:154`) onto whatever payload it is handed,
+    /// THEN the recipient's `recv_remote_signal(signal: ExternIO)`
+    ///      parameter decode (the `#[hdk_extern]` `map_extern_preamble!`
+    ///      step `extern_io.decode::<ExternIO>()`) must succeed and the
+    ///      dispatcher must recover the typed signal.
+    ///
+    /// The `on_wire` line below models exactly what the SEND PATH hands to
+    /// `send_remote_signal`. The pre-fix call sites passed the bare typed
+    /// struct, so the wire bytes are a single-encoded msgpack MAP — which
+    /// cannot decode into the serde_bytes-BIN `ExternIO` parameter, and
+    /// the signal is dropped at the param boundary before any handler runs.
+    #[test]
+    fn content_signal_round_trips_through_send_path() {
+        let typed = EncryptedContentSignal {
+            action_type: EncryptedContentSignalType::Create,
+            data: sample_response(),
+            from_agent: None,
+        };
+        // Fixed send path: the coordinator pre-encodes via
+        // `remote_signal_payload`, then HDK's `send_remote_signal` applies
+        // its own `ExternIO::encode` (hdk p2p.rs:154) on top.
+        let payload = remote_signal_payload(&typed).expect("payload");
+        let on_wire = ExternIO::encode(&payload).expect("hdk send encode");
+        // Recipient `recv_remote_signal(signal: ExternIO)` param decode:
+        let param: ExternIO = on_wire
+            .decode()
+            .expect("recv_remote_signal ExternIO param must decode (dropped-signal bug)");
+        // Dispatcher try-decode:
+        let back: EncryptedContentSignal =
+            param.decode().expect("dispatcher must recover the typed signal");
+        assert!(matches!(back.action_type, EncryptedContentSignalType::Create));
+    }
+
+    /// Characterization guard locking the bug shut: a typed signal handed
+    /// to `send_remote_signal` directly (ONE `ExternIO::encode`) lands on
+    /// the wire as a msgpack MAP, which MUST NOT decode into the
+    /// serde_bytes-BIN `ExternIO` parameter of `recv_remote_signal`. If
+    /// this ever starts succeeding (an HDK change, or someone dropping the
+    /// pre-encode), the fan-out would silently regress to dropped signals.
+    #[test]
+    fn single_encode_payload_is_rejected_by_receiver_externio_param() {
+        let typed = EncryptedContentSignal {
+            action_type: EncryptedContentSignalType::Create,
+            data: sample_response(),
+            from_agent: None,
+        };
+        let single = ExternIO::encode(&typed).expect("encode");
+        // First msgpack byte must be a MAP marker (fixmap 0x80..=0x8f,
+        // map16 0xde, map32 0xdf) — NOT a BIN. This is precisely why the
+        // ExternIO param decode below fails. Matches the captured
+        // conductor log (`[130, ...]` = 0x82 fixmap).
+        let marker = single.0[0];
+        assert!(
+            (0x80..=0x8f).contains(&marker) || marker == 0xde || marker == 0xdf,
+            "expected a msgpack map marker, got {marker:#x}"
+        );
+        let as_param: Result<ExternIO, _> = single.decode();
+        assert!(
+            as_param.is_err(),
+            "single-encoded MAP must NOT decode into the ExternIO param"
+        );
+    }
+
+    /// The C6/C7 envelope must survive the same receiver double-decode the
+    /// content signal does — every signal family funnels through
+    /// `remote_signal_payload`, so prove the DM path end to end too.
+    #[test]
+    fn dm_remote_signal_round_trips_through_send_path() {
+        let typed = DmRemoteSignal::DmDeleteRequest(DmDeleteRequestSignal {
+            thread_id: "t".into(),
+            target_action_hash: sample_target_hash(),
+            from_agent: None,
+        });
+        let payload = remote_signal_payload(&typed).expect("payload");
+        let on_wire = ExternIO::encode(&payload).expect("hdk send encode");
+        let param: ExternIO = on_wire
+            .decode()
+            .expect("recv_remote_signal ExternIO param must decode");
+        let back: DmRemoteSignal = param.decode().expect("dispatcher decode");
+        assert!(matches!(back, DmRemoteSignal::DmDeleteRequest(_)));
     }
 }

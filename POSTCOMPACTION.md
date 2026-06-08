@@ -7,28 +7,34 @@
 
 ## Current state
 
-**Branch:** `feat-self-notes-architecture` at `cf7fff9`
-**DNA:** pass-4, unchanged. Hash `uhC0k26bYG0qmTCFk4_D996GRCTecEtMdL5pXyvCUu0ACJN12omCV`, hApp `d74e5f2f…`.
-**No zome changes on this branch** — docs + dev infrastructure only.
+**Branch:** `feat-self-notes-architecture` (tip after the recv_remote_signal coordinator fix)
+**DNA:** pass-4, unchanged. Hash `uhC0k26bYG0qmTCFk4_D996GRCTecEtMdL5pXyvCUu0ACJN12omCV`.
+**First code change on this branch:** the recv_remote_signal ExternIO fix is
+coordinator-only — DNA hash HELD, integrity wasm byte-identical (hot-swap, no
+chain fork). Everything else on the branch is docs + dev infrastructure.
 
-### What's on this branch (10 commits atop pass-4 tip `8503b48`)
+### What's on this branch (atop pass-4 tip `8503b48`)
 
 1. Self-notes architecture docs (integration handoff, BDD sanity checks, observability)
 2. DM messaging handoff (`HUMM_TAURI_DM_MESSAGING_INTEGRATION.md`)
 3. Self-notes backfill corrections (X25519 source, K-preserving re-wrap)
-4. Codemaps + CLAUDE.md + WSL sync scripts (`24a8efd`)
-5. AGENTS.md + local `.claude/` skills/agents/commands (`bd2937b`)
-6. rust-reviewer + rust-build-resolver agents (`f98be52`)
-7. SharedSecrets public-ACL wire shape doc + BDD scenarios (`cf7fff9`, latest)
+4. Codemaps + CLAUDE.md + WSL sync scripts
+5. AGENTS.md + local `.claude/` skills/agents/commands
+6. rust-reviewer + rust-build-resolver agents
+7. SharedSecrets public-ACL wire shape doc + BDD scenarios
+8. Pass-4 roadmap staleness fixes + acl_spec mutation verdict doc + content-type/witness doc
+9. **recv_remote_signal ExternIO pre-encode fix (coordinator-only; DNA HELD)** —
+   `content.wasm` cb51c376, happ 4aacd52f, label `pass-4-recv-signal-fix`
 
 ### Recent session (2026-06-05)
 
-- Created `docs/CODEMAPS/` — token-lean architecture docs (architecture, backend, data, dependencies)
-- Created `CLAUDE.md` — session-start brief with change gravity, WSL workflow, build/test
-- Ported WSL sync scripts from humm-tauri (`scripts/wsl-{pull,push,check}.sh` + `bash_helpers.sh`)
-- Created `AGENTS.md` + `.claude/` — local agent toolkit (6 skills, 3 agents, 1 command)
-- Answered humm-tauri dev question re SharedSecrets public-ACL wire shape → `docs/HUMM_TAURI_SHARED_SECRETS_PUBLIC_ACL_WIRE_SHAPE.md` (6 BDD scenarios, observability checklist)
-- Dogfooded WSL sync scripts for every commit (full round-trip works cleanly)
+- recv_remote_signal cross-host drop FIXED: all 5 send sites pre-encode via the
+  DRY `send_encoded_remote_signal` / `remote_signal_payload` helpers in
+  `encrypted_content::signals`. Red→green host wire-contract tests; reproducible
+  build with DNA hash held; new happ in `~/hummhive-official-happ-versions` +
+  `humm-tauri/.testdata`. See `docs/HUMM_TAURI_RECV_REMOTE_SIGNAL_FIX.md`.
+- Earlier: codemaps, CLAUDE.md, WSL sync scripts, AGENTS.md + `.claude/`, and
+  SharedSecrets / content-type+witness / acl_spec-mutation / pass-roadmap doc handoffs.
 
 ---
 

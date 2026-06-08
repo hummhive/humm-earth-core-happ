@@ -336,6 +336,30 @@ See:
 - `docs/HUMM_TAURI_FEATURE_ENABLEMENT.md`  — feature-by-feature implementation guide (E.4.l invite links new)
 - `docs/HANDOFF_UPDATED_INFO.md`           — living delta from pass-3 to pass-4
 
+Pass-4 coordinator follow-up — recv_remote_signal ExternIO pre-encode
+---------------------------------------------------------------------
+Built from: tip of feat-self-notes-architecture after the
+recv_remote_signal cross-host signal fix. Coordinator-only change:
+every send_remote_signal call site now pre-encodes its typed signal
+with ExternIO::encode (via the new send_encoded_remote_signal /
+remote_signal_payload helpers in encrypted_content::signals) so the
+recipient's recv_remote_signal(signal: ExternIO) parameter decodes
+instead of erroring with WasmError::Deserialize. Integrity zome
+untouched; DNA hash + integrity wasm sha256 HELD byte-identical to
+pass-4 FINAL. This is a coordinator hot-swap — no chain fork.
+
+  DNA hash (HELD):         uhC0k26bYG0qmTCFk4_D996GRCTecEtMdL5pXyvCUu0ACJN12omCV
+  content_integrity.wasm:  06b01fb3527e266a5cb1b5ffbf01b83541d7a572c4b4a252521154c3e0c2cd83 (UNCHANGED)
+  content.wasm:            cb51c376a3e443ea4f580d0af6de603f04a08d80415d542b00ab9e5145acb3cf (NEW — coordinator fix)
+  hApp bundle sha256:      4aacd52fb15d9f1f27e9a09f78ee285adfa28b0088e56e666359065bf7641865 (NEW)
+
+Root cause + fix detail: docs/HUMM_TAURI_RECV_REMOTE_SIGNAL_FIX.md.
+Official prebuilt: ~/hummhive-official-happ-versions label
+"pass-4-recv-signal-fix" (mirrored to humm-tauri/.testdata/happs).
+Host tests: 25 coordinator (3 new) + 69 integrity, all green.
+Conductor proof via humm-tauri tryorama-free BDD RS-1; in-repo
+tryorama cannot boot on hc 0.6.0 (quic->webrtc CLI rename).
+
 Reproducibility contract (effective pass-4 re-record)
 =====================================================
 
