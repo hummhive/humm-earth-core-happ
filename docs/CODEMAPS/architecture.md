@@ -1,4 +1,4 @@
-<!-- codemap:architecture | generated:2026-06-05 | scope:full -->
+<!-- codemap:architecture | generated:2026-06-05 | updated:2026-06-08 | scope:full -->
 
 # Architecture
 
@@ -80,7 +80,7 @@ Writer UI → create_encrypted_content(input)
   ├─ create Hive/Dynamic/ACL/ContentId links (DHT paths)
   ├─ send_to_inbox → Inbox link on recipient pubkey (DHT)
   ├─ emit_signal (local UI)
-  └─ remote_signal_acl_readers → send_remote_signal per reader (p2p)
+  └─ remote_signal_acl_readers → send_encoded_remote_signal per reader (p2p, ExternIO pre-encode)
 
 Reader UI (online)  ← recv_remote_signal → re-query DHT
 Reader UI (offline) ← probe_inbox → resolve target → get entry
@@ -107,3 +107,4 @@ All users are on pass-4 (current). Official binaries: `~/hummhive-official-happ-
 | pass-2.5 | uhC0kRHiJeJC | no (coordinator) | Coordinator cleanup |
 | pass-3 | uhC0k6pMjhrN | YES | Group authority + AclSpec |
 | pass-4 | uhC0k26bYG0q | YES | Recipient-witness integrity (G-6.2) |
+| pass-4-recv-signal-fix | uhC0k26bYG0q | no (coordinator) | recv_remote_signal ExternIO pre-encode (DNA held) |

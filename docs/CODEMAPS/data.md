@@ -1,4 +1,4 @@
-<!-- codemap:data | generated:2026-06-05 | scope:full -->
+<!-- codemap:data | generated:2026-06-05 | updated:2026-06-08 | scope:full -->
 
 # Data Model
 

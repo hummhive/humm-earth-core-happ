@@ -1,4 +1,4 @@
-<!-- codemap:backend | generated:2026-06-05 | scope:full -->
+<!-- codemap:backend | generated:2026-06-05 | updated:2026-06-08 | scope:full -->
 
 # Backend (Zome Externs)
 
@@ -94,6 +94,14 @@ send_dm_call_init_accept(SendDmCallInitAcceptInput) → ()    (C7, WebRTC)
 send_dm_call_sdp_data(SendDmCallSdpDataInput) → ()         (C7, WebRTC)
 ```
 
+All five remote-signal sends — the four `send_dm_*` above plus the
+`remote_signal_acl_readers` content fan-out — funnel through
+`send_encoded_remote_signal` → `remote_signal_payload`, which pre-encodes the
+typed signal with `ExternIO::encode` so the recipient's
+`recv_remote_signal(signal: ExternIO)` param decodes (the `#[hdk_extern]`
+double-decode needs a BIN, not a typed MAP). Never call `send_remote_signal`
+with a typed payload directly.
+
 ## Coordinator Externs — Migration
 
 ```
@@ -128,7 +136,7 @@ coordinator/content/src/
     mod.rs                        (wire types: EncryptedContentResponse, CreateInput, UpdateInput)
     crud.rs                       (create/get/update/delete externs)
     queries.rs                    (list_by_*, count, fetch_pair)
-    signals.rs                    (EncryptedContentSignal, DmRemoteSignal, send_dm_* externs)
+    signals.rs                    (EncryptedContentSignal, DmRemoteSignal, send_dm_* externs, send_encoded_remote_signal funnel)
     get_helpers.rs                (get_eh, get_record, get_latest_typed_from_eh)
     migration.rs                  (MigrationMarkerV1/V2, mark_migrated*, get_migration_marker*)
   linking/

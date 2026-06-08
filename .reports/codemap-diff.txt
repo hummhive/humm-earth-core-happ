@@ -54,3 +54,39 @@ Update 2026-06-05 (post-initial):
   + scripts/wsl-pull.sh            — ported from humm-tauri
   + scripts/wsl-push.sh            — ported from humm-tauri
   + scripts/wsl-check.sh           — ported from humm-tauri (no happ parity check)
+
+Update 2026-06-08 (post recv_remote_signal fix):
+  Trigger: commit e0e7ed7 (coordinator recv_remote_signal ExternIO pre-encode fix).
+  Diff vs prior scan: SMALL (<30%, updated in place — no approval needed).
+
+  ~ docs/CODEMAPS/architecture.md  — data-flow shows send_encoded_remote_signal funnel;
+                                     +pass-4-recv-signal-fix lineage row; freshness bumped
+  ~ docs/CODEMAPS/backend.md       — Signals section notes the send_encoded_remote_signal /
+                                     remote_signal_payload funnel + ExternIO pre-encode contract;
+                                     Key Files signals.rs entry updated; freshness bumped
+  = docs/CODEMAPS/data.md          — content unchanged (no entry/link change); freshness bumped
+  = docs/CODEMAPS/dependencies.md  — content unchanged; freshness bumped
+
+  Code changes since last scan (24a8efd → 0373cfb):
+    - e0e7ed7 fix(coordinator): pre-encode remote signals (5 send sites funnel through
+      send_encoded_remote_signal; +host tests). NO extern/entry/link/dependency surface
+      change. DNA hash HELD uhC0k26b (coordinator hot-swap).
+    - 0373cfb test(coordinator): exhaustive DM send-path coverage + empty-bytes guard.
+    - (other commits since 24a8efd were docs/agents/scripts only — no zome code.)
+
+  Structural deltas:
+    - New routes/externs:   none (extern surface unchanged at 32)
+    - New entry/link types: none (6 entry, 15 link)
+    - New dependencies:     none
+    - New internal helper:  send_encoded_remote_signal + remote_signal_payload (signals.rs)
+    - New hApp build:       pass-4-recv-signal-fix (DNA uhC0k26b HELD; content.wasm cb51c376;
+                            happ 4aacd52f) in official versions + humm-tauri/.testdata
+
+  New docs this session (not codemaps; codemaps do not enumerate docs):
+    + docs/HUMM_TAURI_RECV_REMOTE_SIGNAL_FIX.md
+    + docs/HUMM_TAURI_SHARED_SECRETS_PUBLIC_ACL_WIRE_SHAPE.md
+    + docs/HUMM_TAURI_CONTENT_TYPE_FILTERING_AND_WITNESS_RULES.md
+    + docs/HUMM_TAURI_ACLSPEC_MUTATION_ON_UPDATE.md
+
+  Staleness warnings: none (all 4 codemaps re-verified 2026-06-08; generated 3 days prior).
+  Next recommended scan: after the next integrity (DNA-bumping) pass or new extern surface.
