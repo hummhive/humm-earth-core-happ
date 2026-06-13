@@ -386,8 +386,12 @@ content.wasm + content_integrity.wasm + .happ.
 Official prebuilt: ~/hummhive-official-happ-versions label
 "pass-4-query-tolerance" (mirrored to humm-tauri/.testdata/happs).
 Host tests: 25 coordinator + 69 integrity, all green.
-Behavior conductor-proof pending Sweettest (in-repo tryorama still
-cannot boot on hc 0.6.0 — quic->webrtc CLI rename).
+Behavior conductor-proof: VERIFIED via in-tree Sweettest
+(crates/sweettest, holochain 0.6.0, 2/2 green) — get_many_encrypted_content
+tolerates an unresolvable target instead of the all-or-nothing batch throw,
+and a joiner's list_my_hives returns the joined hive across two conductors
+without the cross-type Inbox decode failure. In-repo tryorama still cannot
+boot on hc 0.6.0 (quic->webrtc CLI rename) — Sweettest is the in-tree path.
 
 Reproducibility contract (effective pass-4 re-record)
 =====================================================
