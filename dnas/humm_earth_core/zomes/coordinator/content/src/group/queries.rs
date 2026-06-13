@@ -71,10 +71,11 @@ pub fn get_latest_group_membership(
         let Some(record) = get(target_ah.clone(), GetOptions::network())? else {
             continue;
         };
-        let Some(membership) = record
-            .entry()
-            .to_app_option::<GroupMembership>()
-            .map_err(|e| wasm_error!(e))?
+        // Tolerate an undecodable target instead of failing the whole
+        // query (defensive; AgentToGroupMemberships targets are
+        // homogeneous by design, but a foreign/corrupt one must skip).
+        let Some(membership) =
+            record.entry().to_app_option::<GroupMembership>().ok().flatten()
         else {
             continue;
         };
@@ -274,10 +275,12 @@ fn resolve_genesis_invite(
     target_ah: &ActionHash,
     my_pubkey: &AgentPubKey,
 ) -> ExternResult<Option<ListedGroup>> {
-    let Some(genesis) = record
-        .entry()
-        .to_app_option::<GroupGenesis>()
-        .map_err(|e| wasm_error!(e))?
+    // Cross-type tolerant: list_my_groups feeds BOTH GroupGenesis and
+    // GroupMembership inbox targets through here, so a membership target
+    // failing the genesis decode must fall through (Ok(None)) — never
+    // `?`-propagate, which broke the whole list once any group was joined.
+    let Some(genesis) =
+        record.entry().to_app_option::<GroupGenesis>().ok().flatten()
     else {
         return Ok(None);
     };
@@ -304,10 +307,8 @@ fn resolve_membership_invite(
     my_pubkey: &AgentPubKey,
     now: &Timestamp,
 ) -> ExternResult<Option<ListedGroup>> {
-    let Some(membership) = record
-        .entry()
-        .to_app_option::<GroupMembership>()
-        .map_err(|e| wasm_error!(e))?
+    let Some(membership) =
+        record.entry().to_app_option::<GroupMembership>().ok().flatten()
     else {
         return Ok(None);
     };
@@ -324,10 +325,8 @@ fn resolve_membership_invite(
     else {
         return Ok(None);
     };
-    let Some(genesis) = genesis_record
-        .entry()
-        .to_app_option::<GroupGenesis>()
-        .map_err(|e| wasm_error!(e))?
+    let Some(genesis) =
+        genesis_record.entry().to_app_option::<GroupGenesis>().ok().flatten()
     else {
         return Ok(None);
     };

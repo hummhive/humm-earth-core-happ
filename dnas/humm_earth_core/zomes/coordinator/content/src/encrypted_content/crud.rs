@@ -130,11 +130,25 @@ pub fn get_encrypted_content(content_hash: ActionHash) -> ExternResult<Encrypted
     })
 }
 
+/// Resolve many `EncryptedContent` action hashes at once.
+///
+/// LIST SEMANTICS — tolerant by design: a target whose record is not
+/// resolvable (a link that gossiped ahead of its entry, or a tombstoned
+/// target) is DROPPED, not fatal. This extern backs `list_by_hive_link`,
+/// `list_by_dynamic_link`, `list_by_acl_link`, and `list_by_author`; an
+/// all-or-nothing `collect()` here let a single dangling link poison
+/// every hive-scoped list read (live-confirmed: the fresh-public-media
+/// foreign-resolve hard-fail when a link gossips ahead of its record,
+/// and the group-discovery tombstone throw). Callers dedupe by action
+/// hash and re-sweep, so the resolvable subset is the correct answer.
 #[hdk_extern]
 pub fn get_many_encrypted_content(
     ahs: Vec<ActionHash>,
 ) -> ExternResult<Vec<EncryptedContentResponse>> {
-    ahs.into_iter().map(get_encrypted_content).collect()
+    Ok(ahs
+        .into_iter()
+        .filter_map(|ah| get_encrypted_content(ah).ok())
+        .collect())
 }
 
 #[hdk_extern]
