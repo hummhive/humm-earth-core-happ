@@ -7,10 +7,15 @@
 
 ## Current state
 
-**Release:** `main` carries **v1.0.0** = coordinator gen **pass-4-query-tolerance**,
-hApp `2205337c`, DNA `uhC0k26bYG0qmTCFk4_D996GRCTecEtMdL5pXyvCUu0ACJN12omCV` (held).
-`feat-self-notes-architecture` was merged `--no-ff` into `main` and tagged `v1.0.0`.
-**Not pushed to origin** (assistant never pushes — user does `git push main --tags`).
+**Release:** `main` carries **v1.0.0** (tag at `db2a264`) = coordinator gen
+**pass-4-query-tolerance**, hApp `2205337c`, DNA
+`uhC0k26bYG0qmTCFk4_D996GRCTecEtMdL5pXyvCUu0ACJN12omCV` (held).
+`feat-self-notes-architecture` merged `--no-ff` into `main` + tagged `v1.0.0`.
+**HEAD `414142c`** = post-tag docs (canonical humm-tauri entry point
+`docs/HUMM_TAURI_v1.0.0_HANDOFF_DOC.md` + roadmap RC-status reconciliation vs
+humm-tauri `dm-invite-media-pickup`@`f61dbeaa`).
+**Pushed to GitHub:** `db2a264` + tag `v1.0.0`. **main is 1 commit ahead** (the
+`414142c` docs commit) — user `git push origin main` pending. Assistant never pushes.
 
 **DNA:** pass-4, frozen. Integrity wasm `06b01fb3…` byte-identical across all
 pass-4 coordinator gens; every coordinator change this session was a hot-swap
