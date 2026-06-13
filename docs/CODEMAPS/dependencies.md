@@ -1,4 +1,4 @@
-<!-- codemap:dependencies | generated:2026-06-05 | updated:2026-06-08 | scope:full -->
+<!-- codemap:dependencies | generated:2026-06-05 | updated:2026-06-13 | scope:full -->
 
 # Dependencies
 
@@ -52,6 +52,16 @@ Integration path: `workdir/humm-earth-core-happ.happ` → `../humm-tauri/src-tau
 Runtime: `npx tsx`. Uses `@holochain/client` (AdminWebsocket + AppWebsocket),
 `node:fs/promises`, `node:path`. No additional npm deps beyond the test workspace.
 
+## Conductor Test Harness (crates/sweettest)
+
+In-process holochain-0.6.0 Sweettest behavior tests for the `content` coordinator.
+A **separate Cargo workspace** (its own `Cargo.lock`): the `holochain` conductor
+crate needs `holochain_serialized_bytes =0.0.57` while the zomes pin `=0.0.56`.
+Loads the pre-built DNA bundle, so it tests whatever `npm run build:zomes` last
+produced. Run inside `nix develop` with `LIBCLANG_PATH` set (datachannel-sys
+bindgen); first compile ~15-40 min (conductor + wasmer + libdatachannel). This is
+the conductor-test path — tryorama cannot boot on hc 0.6.0 (quic→webrtc CLI rename).
+
 ## External Services
 
 None. Fully peer-to-peer via Holochain DHT. No external databases, APIs,
@@ -71,7 +81,7 @@ run-local-services --signal-port`.
 Prebuilt binaries for every DNA generation live at `~/hummhive-official-happ-versions/`
 with `MANIFEST.tsv` mapping label → commit → DNA hash → SHA256 → filename.
 Mirrored in `../humm-tauri/.testdata/happs/` for migration testing.
-Current production: **pass-4-repro** (commit 8503b48, DNA uhC0k26b, hApp d74e5f2f).
+Current production: **pass-4-query-tolerance** (DNA uhC0k26b, hApp 2205337c, released as v1.0.0).
 
 ## Build Artifacts
 

@@ -1,4 +1,4 @@
-<!-- codemap:backend | generated:2026-06-05 | updated:2026-06-08 | scope:full -->
+<!-- codemap:backend | generated:2026-06-05 | updated:2026-06-13 | scope:full -->
 
 # Backend (Zome Externs)
 
@@ -39,6 +39,12 @@ fetch_pair_ss_with_hive_check(FetchPairWithHiveCheckInput) → Vec<EncryptedCont
   └─ queries.rs → intersect author-path ∩ dynamic-path (C4)
 get_encrypted_content_by_time_and_author(_) → [] (stub)
 ```
+
+All list/get-many reads above resolve targets through `get_many_encrypted_content`,
+which is **decode-tolerant** (`filter_map(.ok())`, pass-4-query-tolerance): an
+unresolvable / gossip-lagged / tombstoned target is skipped, never poisoning the
+batch. Likewise `list_my_hives` / `get_latest_membership` (+ the group equivalents)
+`.ok().flatten()` a wrong-type Inbox target instead of `?`-propagating a decode error.
 
 ## Coordinator Externs — Hive
 

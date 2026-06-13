@@ -90,3 +90,38 @@ Update 2026-06-08 (post recv_remote_signal fix):
 
   Staleness warnings: none (all 4 codemaps re-verified 2026-06-08; generated 3 days prior).
   Next recommended scan: after the next integrity (DNA-bumping) pass or new extern surface.
+
+Update 2026-06-13 (post pass-4-query-tolerance + v1.0.0 release prep):
+  Triggers: Mike's coordinator commits 2e8ae4a (decode-tolerant queries) + 5b2aa3f
+  (Sweettest proof); local .claude toolkit additions; v1.0.0 merge-to-main + tag.
+  Diff vs prior scan: SMALL (<30%, updated in place).
+
+  ~ architecture.md  — lineage row pass-4-query-tolerance (v1.0.0); current-line note;
+                       crates/sweettest conductor-test path; freshness 2026-06-13
+  ~ backend.md       — decode-tolerance note (get_many filter_map; list_my_hives /
+                       get_latest_membership .ok().flatten()); freshness
+  ~ dependencies.md  — crates/sweettest harness section; current production = query-tolerance; freshness
+  = data.md          — content unchanged (no entry/link change); freshness
+
+  Code changes since last scan (34d9bee onward):
+    - 2e8ae4a fix(coordinator): tolerate cross-type Inbox targets + dangling list targets.
+      get_many_encrypted_content filter_map(.ok()); list_my_hives/_groups +
+      get_latest_membership/_group_membership .ok().flatten(). NO extern/entry/link
+      surface change. DNA HELD uhC0k26b. New gen: content.wasm 78f0602e, happ 2205337c.
+    - 5b2aa3f test(sweettest): in-process conductor proof (2/2 green).
+    - a60b573 chore(.claude): standard-workflow + update-docs-workflow skills + reviewer agents.
+
+  Structural deltas:
+    - New routes/externs:   none (extern surface unchanged)
+    - New entry/link types: none (6 entry, 15 link)
+    - New dependencies:     crates/sweettest (separate workspace; in-process conductor tests)
+    - New hApp build:       pass-4-query-tolerance (DNA uhC0k26b HELD; content.wasm 78f0602e;
+                            happ 2205337c) in official versions + humm-tauri/.testdata
+    - Toolkit:              .claude/skills/{standard-workflow,update-docs-workflow} +
+                            agents {security-reviewer, silent-failure-hunter, code-reviewer}
+
+  Release prep: feat-self-notes-architecture → main (--no-ff) + tag v1.0.0
+  (DNA uhC0k26b / happ 2205337c); this docs commit is the closing content of v1.0.0.
+
+  Staleness warnings: none (all 4 codemaps re-verified 2026-06-13).
+  Next recommended scan: after the next integrity (DNA-bumping) pass or new extern surface.

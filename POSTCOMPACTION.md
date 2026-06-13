@@ -7,78 +7,97 @@
 
 ## Current state
 
-**Branch:** `feat-self-notes-architecture` (tip after the recv_remote_signal coordinator fix)
-**DNA:** pass-4, unchanged. Hash `uhC0k26bYG0qmTCFk4_D996GRCTecEtMdL5pXyvCUu0ACJN12omCV`.
-**First code change on this branch:** the recv_remote_signal ExternIO fix is
-coordinator-only — DNA hash HELD, integrity wasm byte-identical (hot-swap, no
-chain fork). Everything else on the branch is docs + dev infrastructure.
+**Release:** `main` carries **v1.0.0** = coordinator gen **pass-4-query-tolerance**,
+hApp `2205337c`, DNA `uhC0k26bYG0qmTCFk4_D996GRCTecEtMdL5pXyvCUu0ACJN12omCV` (held).
+`feat-self-notes-architecture` was merged `--no-ff` into `main` and tagged `v1.0.0`.
+**Not pushed to origin** (assistant never pushes — user does `git push main --tags`).
 
-### What's on this branch (atop pass-4 tip `8503b48`)
+**DNA:** pass-4, frozen. Integrity wasm `06b01fb3…` byte-identical across all
+pass-4 coordinator gens; every coordinator change this session was a hot-swap
+(DNA hash held → no chain fork).
 
-1. Self-notes architecture docs (integration handoff, BDD sanity checks, observability)
-2. DM messaging handoff (`HUMM_TAURI_DM_MESSAGING_INTEGRATION.md`)
-3. Self-notes backfill corrections (X25519 source, K-preserving re-wrap)
-4. Codemaps + CLAUDE.md + WSL sync scripts
-5. AGENTS.md + local `.claude/` skills/agents/commands
-6. rust-reviewer + rust-build-resolver agents
-7. SharedSecrets public-ACL wire shape doc + BDD scenarios
-8. Pass-4 roadmap staleness fixes + acl_spec mutation verdict doc + content-type/witness doc
-9. **recv_remote_signal ExternIO pre-encode fix (coordinator-only; DNA HELD)** —
-   `content.wasm` cb51c376, happ 4aacd52f, label `pass-4-recv-signal-fix`
+**Coordinator gen lineage this session (all DNA uhC0k26b):**
+- pass-4 FINAL `d74e5f2f` → recv-signal-fix `4aacd52f` (content.wasm cb51c376) →
+  **query-tolerance `2205337c` (content.wasm 78f0602e) = v1.0.0 (current)**.
 
-### Recent session (2026-06-05)
+### What landed (merged to main as v1.0.0)
 
-- recv_remote_signal cross-host drop FIXED: all 5 send sites pre-encode via the
-  DRY `send_encoded_remote_signal` / `remote_signal_payload` helpers in
-  `encrypted_content::signals`. Red→green host wire-contract tests; reproducible
-  build with DNA hash held; new happ in `~/hummhive-official-happ-versions` +
-  `humm-tauri/.testdata`. See `docs/HUMM_TAURI_RECV_REMOTE_SIGNAL_FIX.md`.
-- Earlier: codemaps, CLAUDE.md, WSL sync scripts, AGENTS.md + `.claude/`, and
-  SharedSecrets / content-type+witness / acl_spec-mutation / pass-roadmap doc handoffs.
+1. **recv_remote_signal ExternIO pre-encode fix** (coordinator) — all 5 send sites
+   funnel through `send_encoded_remote_signal`/`remote_signal_payload`. Red→green
+   host tests. (`docs/HUMM_TAURI_RECV_REMOTE_SIGNAL_FIX.md`.)
+2. **pass-4-query-tolerance** (coordinator, Mike) — `get_many_encrypted_content`
+   `filter_map(.ok())`; `list_my_hives`/`_groups` + `get_latest_membership`/
+   `_group_membership` `.ok().flatten()` (cross-type Inbox + dangling targets no
+   longer poison reads). Proven by `crates/sweettest` (2/2 green).
+3. **Agent toolkit**: codemaps, CLAUDE.md, AGENTS.md, WSL sync scripts,
+   `.claude/` (commands/agents/skills incl. standard-workflow + update-docs-workflow
+   + reviewer agents).
+4. **Integration handoff docs** (`docs/HUMM_TAURI_*`): self-notes, DM messaging,
+   SharedSecrets public-ACL, content-type+witness, acl_spec mutation, pass roadmap.
+
+### Recent session
+
+- Answered + archived 4 mbox messages (DHT size cap 4,000,000 B; DirectMessage has
+  no content_type constraint; non-member first entry = OpenWrite not Public;
+  cross-hive >4MB = chunked DM entries; the list_my_hives wart is fixed in 2205337c).
+- Cloned + pruned standard-workflow / update-docs-workflow skills + reviewer agents.
+- Released v1.0.0: merged to main, tagged, full gate ladder green.
 
 ---
 
 ## Environment
 
-- **Linux `~/humm-earth-core-happ`** — authoritative. All dev/build/test here.
-- **Windows `/mnt/c/proj/github/hummhive/humm-earth-core-happ`** — ff-merge target only (harness cwd).
+- **Linux `~/humm-earth-core-happ`** — authoritative. ALL dev/build/test here.
+- **Windows `/mnt/c/proj/github/hummhive/humm-earth-core-happ`** — ff-merge target (harness cwd).
 - **WSL sync:** `scripts/wsl-pull.sh` / `wsl-push.sh` / `wsl-check.sh`. See `CLAUDE.md`.
-- **Toolchain:** holochain 0.6.0, hc 0.6.0, Node 24, nix (holonix main-0.6).
-- **TRYORAMA IS BROKEN** (0.19.2 vs holochain 0.6.0 transport mismatch). Use `e2e/` harness instead.
-- **Build:** `nix develop --command npm run build:happ` (requires nix for `wasm-opt`).
+- **Toolchain:** holochain/hc 0.6.0, hdi 0.7.0, hdk 0.6.0 (pinned exact), Node 24,
+  nix (holonix main-0.6). `.baseline-hashes.txt` = reproducibility contract.
+- **Build (reproducible):** `nix develop --command bash -c 'bash scripts/build-zomes.sh && hc dna pack dnas/humm_earth_core/workdir && hc app pack workdir --recursive'`,
+  then `hc dna hash …` MUST print `uhC0k26b…`.
+- **Tests:** host `cargo test -p content --lib` (25) + `-p content_integrity --lib` (69).
+  Conductor behavior: `crates/sweettest` (in-process). **Tryorama CANNOT boot on
+  hc 0.6.0** (quic→webrtc CLI rename) — do not use it.
 
-## Other branches (all committed, NOT pushed, NOT merged)
+## Conductor testing (crates/sweettest)
+
+- Separate Cargo workspace (holochain conductor needs sbt `=0.0.57` vs zomes `=0.0.56`).
+- Run: `cd crates/sweettest && nix develop ../.. --command bash -c 'export LIBCLANG_PATH=<nix clang lib dir>; cargo test -- --test-threads=1'`.
+  **Must set `LIBCLANG_PATH`** to a nix clang lib dir (e.g. `/nix/store/…clang-18.1.8-lib/lib`)
+  or datachannel-sys bindgen falls back to the broken system clang-14 (missing libLLVM-14).
+- First compile ~1.5-40 min (conductor + wasmer + libdatachannel). 2/2 green on v1.0.0.
+
+## Other branches (committed, NOT merged to main)
 
 | Branch | Tip | What |
 |---|---|---|
-| `feat-integrity-pass-4-recipient-witnesses` | `8503b48` | Pass-4 integrity (G-6.2 witnesses, G-4.4 grant-window) — **DNA-changing** |
-| `feat-migration-d1-group-track` | `aca142b` | D.1 migration tooling (group track, classification overrides) |
-| `test-tryorama-integrity-coverage` | `bf9fad8` | e2e harness (30 scenarios, tryorama-free) |
+| `feat-integrity-pass-4-recipient-witnesses` | `8503b48` | Pass-4 integrity (G-6.2 witnesses) — **DNA-changing** |
+| `feat-migration-d1-group-track` | `aca142b` | D.1 migration tooling |
+| `test-tryorama-integrity-coverage` | `bf9fad8` | Old tryorama-free e2e harness (superseded by crates/sweettest) |
 
 ## Constraints
 
-- NEVER push/merge without explicit user instruction.
-- NEVER edit `humm-tauri/**` — read-only reference.
+- NEVER push/merge to origin without explicit user instruction.
+- NEVER edit `humm-tauri/**` except `.testdata` (when explicitly authorized).
 - NEVER run cargo/npm from the Windows mount.
-- Append-only for EntryTypes/LinkTypes enums (index stability).
+- Append-only for EntryTypes/LinkTypes enums (index stability); integrity changes fork the chain.
 - Commit identity: `Mike <mike@hummhive.com>` (repo-local).
 
 ## Gotchas
 
+- **A Cargo version bump changes content.wasm** (embedded `CARGO_PKG_VERSION`
+  survives wasm-opt strip) → new happ sha. Keep crate versions stable to preserve a
+  released happ; the release identity is the git tag + DNA hash + happ sha, not the crate version.
+- Bumping the **integrity** crate version risks the integrity wasm sha → DNA hash → chain fork. Leave it frozen.
+- Sweettest needs `LIBCLANG_PATH` (see above); tryorama can't boot on hc 0.6.0.
 - AdminWebsocket 400 → pass `wsClientOptions: { origin: "<anything>" }`.
 - Two agents, one conductor: same `network_seed` → shared DHT → offline cross-agent validation.
-- After `installApp`+`enableApp`, must `authorizeSigningCredentials(cellId)`.
-- Reproducibility requires `nix develop` (`wasm-opt` from flake) + `codegen-units = 1`.
-- `holochain --piped -c <config>` needs dirs pre-created; prints `###ADMIN_PORT:N###`.
+- Reproducibility requires `nix develop` (`wasm-opt`) + `codegen-units = 1`.
+- Pre-existing cosmetic clippy nits: 8 `clone_on_copy` in `content` lib.rs (deferred — fixing churns the released happ).
 
 ## Key references
 
-- Codemaps: `docs/CODEMAPS/`
-- Agent toolkit: `AGENTS.md` + `.claude/`
-- Session brief: `CLAUDE.md`
-- Pass-4 deploy: `docs/PASS_4_DEPLOY_HANDOFF.md`
-- SharedSecrets wire shape: `docs/HUMM_TAURI_SHARED_SECRETS_PUBLIC_ACL_WIRE_SHAPE.md`
+- Codemaps: `docs/CODEMAPS/` · Agent toolkit: `AGENTS.md` + `.claude/` · Session brief: `CLAUDE.md`
+- Conductor tests: `crates/sweettest/README.md` · Reproducibility: `.baseline-hashes.txt`
 - Build: `scripts/build-zomes.sh` + `scripts/strip-wasms.sh`
-- Official happ binaries: `~/hummhive-official-happ-versions/` + `MANIFEST.tsv`
-- e2e harness: `e2e/README.md`
-- Reproducibility: `.baseline-hashes.txt`
+- Official happ binaries: `~/hummhive-official-happ-versions/` + `MANIFEST.tsv` (mirrored in `humm-tauri/.testdata/happs/`)
+- Handoffs: `docs/PASS_4_DEPLOY_HANDOFF.md`, `docs/HUMM_TAURI_RECV_REMOTE_SIGNAL_FIX.md`, `docs/HUMM_TAURI_*` (SharedSecrets / content-type+witness / acl_spec-mutation / roadmap)

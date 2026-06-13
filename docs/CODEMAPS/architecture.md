@@ -1,4 +1,4 @@
-<!-- codemap:architecture | generated:2026-06-05 | updated:2026-06-08 | scope:full -->
+<!-- codemap:architecture | generated:2026-06-05 | updated:2026-06-13 | scope:full -->
 
 # Architecture
 
@@ -97,7 +97,9 @@ for cross-repo integration testing against this hApp.
 
 ## hApp Version Lineage
 
-All users are on pass-4 (current). Official binaries: `~/hummhive-official-happ-versions/`.
+Current line: **pass-4-query-tolerance** (released as v1.0.0), DNA held `uhC0k26b`.
+Official binaries: `~/hummhive-official-happ-versions/`. Conductor behavior is
+proven in-process via `crates/sweettest` (tryorama can't boot on hc 0.6.0).
 
 | Pass | DNA Hash (prefix) | Integrity Change? | Key Change |
 |---|---|---|---|
@@ -108,3 +110,4 @@ All users are on pass-4 (current). Official binaries: `~/hummhive-official-happ-
 | pass-3 | uhC0k6pMjhrN | YES | Group authority + AclSpec |
 | pass-4 | uhC0k26bYG0q | YES | Recipient-witness integrity (G-6.2) |
 | pass-4-recv-signal-fix | uhC0k26bYG0q | no (coordinator) | recv_remote_signal ExternIO pre-encode (DNA held) |
+| pass-4-query-tolerance (v1.0.0) | uhC0k26bYG0q | no (coordinator) | decode-tolerant queries: `get_many` filter_map + `list_my_hives`/`_groups` `.ok().flatten()` (DNA held) |
