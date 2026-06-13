@@ -107,7 +107,9 @@ pass-4 coordinator gens; every coordinator change this session was a hot-swap
   session). Integrity is frozen: NEVER fmt or source-edit it; suppress its clippy lints
   via `content_integrity/Cargo.toml [lints.clippy]` (zero codegen effect, survives
   `-D warnings`). Coordinator is free to fmt/fix (content.wasm may change). Workspace
-  clippy is clean as of `25ad4df`.
+  clippy is clean as of `25ad4df`. Safe fmt = `cargo fmt -p content` (coordinator only);
+  NEVER `cargo fmt --all` (reflows integrity → fork). A `rustfmt.toml` `ignore` does NOT
+  guard this — it is nightly-only (warns + no-ops on stable rustfmt), so don't bother.
 
 ## Key references
 
