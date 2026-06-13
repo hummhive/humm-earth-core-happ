@@ -421,6 +421,37 @@ cleanup; then 25ad4df rebuilt to 06b01fb3 (integrity HELD) + c2a2a2fa (content
 NEW). NOT a new release — the v1.0.0 tag (db2a264) + distributed happ
 (2205337c) are unchanged; the cleanup happ (bef54a1c) is not distributed.
 
+Pass-4 coordinator follow-up — N1 OriginalHashPointer guard (griefing fix)
+--------------------------------------------------------------------------
+Built from: 697fde0 (main). Coordinator-only. update_encrypted_content
+resolved the original content's ActionHash via
+`original_hash_link[0].target.into_action_hash().unwrap()`, which TRAPS
+(wasm panic) when the link target is not an ActionHash. The integrity zome
+validates OriginalHashPointer link targets as unconditionally Valid (no
+target-type / author check), so a non-member peer could plant a poison link
+whose target is an EntryHash and trap the victim's update on every retry
+until it gossips away (P2 availability / griefing; the source chain rolls
+back, no corruption). Fix: extracted original_pointer_action_hash, which
+guards with `let Some(ah) = …into_action_hash() else { return Err(..) }`
+(mirrors probe_inbox) instead of unwrapping, plus 2 host regression tests.
+Integrity zome untouched; DNA hash + integrity wasm sha256 HELD byte-
+identical to pass-4 FINAL. Coordinator hot-swap — no chain fork.
+
+  DNA hash (HELD):         uhC0k26bYG0qmTCFk4_D996GRCTecEtMdL5pXyvCUu0ACJN12omCV
+  content_integrity.wasm:  06b01fb3527e266a5cb1b5ffbf01b83541d7a572c4b4a252521154c3e0c2cd83 (UNCHANGED)
+  content.wasm:            0538f18f3e933347f3b4b03a07068918bec7426f09da6aa17db1491a8ccfd078 (NEW — coordinator griefing fix)
+  hApp bundle sha256:      bdefd0b2b54b71ccff504f80206874a4cbf52bfb6ec709953f9ee05c40e606da (NEW)
+
+Verification: host tests 27 coordinator (2 new: original_pointer_rejects_
+non_action_hash_target + original_pointer_resolves_action_hash_target) + 69
+integrity green; cargo clippy --workspace --all-targets -- -D warnings clean.
+Reproducibility: only the content crate recompiled (content_integrity not
+rebuilt — source unchanged), so content_integrity.wasm came back byte-
+identical to 06b01fb3 (proves pipeline determinism on host); content.wasm is
+produced by the same reproducible pipeline (build-zomes.sh + strip-wasms.sh).
+NOT a new release — v1.0.0 tag (db2a264) + distributed happ (2205337c) are
+unchanged; this happ (bdefd0b2) is not distributed.
+
 Reproducibility contract (effective pass-4 re-record)
 =====================================================
 
