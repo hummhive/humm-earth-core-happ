@@ -3,6 +3,7 @@ opt-level = "z"
 
 [profile.release]
 opt-level = "z"
+codegen-units = 1
 
 [workspace]
 members = ["dnas/*/zomes/coordinator/*", "dnas/*/zomes/integrity/*"]

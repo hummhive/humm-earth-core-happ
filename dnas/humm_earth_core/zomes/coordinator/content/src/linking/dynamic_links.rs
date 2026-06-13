@@ -2,69 +2,53 @@ use content_integrity::{EncryptedContent, LinkTypes};
 use hdi::hash_path::path::Component;
 use hdk::prelude::*;
 
+/// Create `Dynamic` links: one per supplied label, each with base
+/// `Path([hive_genesis_hash_b64, content_type, dynamic_label])` → target.
+///
+/// **Pass-3.** The hive context now comes from
+/// `target.header.hive_context()` rather than the removed
+/// `header.hive_genesis_hash` field. Caller
+/// (`create_encrypted_content`) gates this function on
+/// `hive_context().is_some()`; this function asserts the invariant so
+/// a misuse fails fast.
+///
+/// The integrity validator recomputes the base from
+/// `hive_context()`, `header.content_type`, AND the `dynamic_label`
+/// carried in the `LinkTag` (UTF-8 bytes). The tag is therefore
+/// load-bearing — without it the validator cannot reconstruct the
+/// third path component and would have to reject every dynamic link
+/// by construction.
 pub fn create_dynamic_links(
     encrypted_content: EncryptedContent,
     action_hash: ActionHash,
     dynamic_links: Vec<String>,
 ) -> ExternResult<Vec<ActionHash>> {
-    // let my_agent_pub_key = agent_info()?.agent_latest_pubkey;
-
-    let mut ahs = vec![];
-    dynamic_links.iter().for_each(|link| {
-        // TODO: update this to use the acl to find all writers of this content and create corresponding links
-        // do we need this or will we always fetch content by dynamic links in the context of a hive and not an author?
-        // let author_path = Path::from(vec![
-        //     Component::from(my_agent_pub_key.to_string()),
-        //     Component::from(encrypted_content.header.content_type.clone()),
-        //     Component::from(link.clone()),
-        // ]);
+    let hive_hash = encrypted_content.header.hive_context().ok_or_else(|| {
+        wasm_error!(WasmErrorInner::Guest(
+            "create_dynamic_links called on a header with no hive_context \
+             (DirectMessage or OpenWrite without target); the integrity \
+             validator would reject the resulting links"
+                .into(),
+        ))
+    })?;
+    let hive_b64 = hive_hash.to_string();
+    let content_type = encrypted_content.header.content_type.clone();
+    let mut ahs = Vec::with_capacity(dynamic_links.len());
+    for label in dynamic_links {
         let hive_path = Path::from(vec![
-            Component::from(encrypted_content.header.hive_id.clone()),
-            Component::from(encrypted_content.header.content_type.clone()),
-            Component::from(link),
+            Component::from(hive_b64.clone()),
+            Component::from(content_type.clone()),
+            Component::from(label.clone()),
         ]);
-
-        // let author_path_entry_hash = author_path.path_entry_hash().expect(
-        //     format!(
-        //         "could not get path entry hash for author: '{}'",
-        //         my_agent_pub_key
-        //     )
-        //     .as_str(),
-        // );
-        let hive_path_entry_hash = hive_path.path_entry_hash().expect(
-            format!(
-                "could not get path entry hash for hive: '{}'",
-                encrypted_content.header.hive_id
-            )
-            .as_str(),
-        );
-
-        // let author_ah_res = create_link(
-        //     author_path_entry_hash,
-        //     action_hash.clone(),
-        //     LinkTypes::HummContentWriter,
-        //     (),
-        // );
-
-        let hive_ah_res = create_link(
-            hive_path_entry_hash,
+        let hive_ah = create_link(
+            hive_path.path_entry_hash()?,
             action_hash.clone(),
             LinkTypes::Dynamic,
-            (),
-        );
-
-        // let author_ah = author_ah_res
-        //     .expect(format!("could not create link for author: '{}'", my_agent_pub_key).as_str());
-        let hive_ah = hive_ah_res.expect(
-            format!(
-                "could not create link for hive: '{}'",
-                encrypted_content.header.hive_id
-            )
-            .as_str(),
-        );
-
+            // Tag carries the dynamic_label as UTF-8 bytes so the
+            // integrity validator can recompute the base path.
+            LinkTag::from(label),
+        )?;
         ahs.push(hive_ah);
-    });
-
+    }
     Ok(ahs)
 }

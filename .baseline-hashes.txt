@@ -1,0 +1,480 @@
+DNA-HASH-BASELINE — Pass-2 (feat-integrity-pass-2, intentional bump)
+=====================================================================
+This file records the DNA hash invariant per release pass.
+
+Pass-1 (branch feat-optional-recipient-id, PUSHED)
+---------------------------------------------------------------------
+Built from: a10a4ba (tip of feat-optional-recipient-id at the time the
+recorded wasm shas were built; the C-class integrity-touching range
+spans c326e62 → a10a4ba inclusive).
+Coordinator-only changes (C0/C1/C2/C3, C4-C7b + module split, migration
+scaffold, docs, deploy handoff). The pass-1 INVARIANT was: every commit
+in that branch held the DNA hash byte-identical so the coordinator
+hot-swap path was viable.
+
+  DNA hash:                uhC0kT0Tkc3b6ccfa75YwWdzpSWvdkXERpdqkxIndRhfK5TJAUusY
+  content_integrity.wasm:  8c620847f7ae8878769e000452f2f89a4954a747b1c51c129666cdf0978f2c5c
+  content.wasm:            f4277cfd50d3937eba652a788802199c064fe2e978d2d821825fcd9bfc7ecc7f
+
+Pass-2 (branch feat-integrity-pass-2, FINAL)
+---------------------------------------------------------------------
+Built from: 891acc9 (pass-2 FINAL; the commit that produced the
+recorded wasm shas).
+Integrity zome changes (I-H validated hive membership infrastructure +
+I-A receiver-initiated tombstone + I-C offline DM inbox) intentionally
+bump the DNA hash. The pass-1 invariant is dead on this branch — it is
+the inverse: pass-2 commits land a new DNA hash that becomes the new
+invariant once the cutover lands.
+
+  DNA hash (FINAL):        uhC0kawoZqBxv3Jjvh-TlSQ5aO4U-hwiUNtZxFzXkTOBc5ijKVatw
+  content_integrity.wasm:  cd137fcfde8632c7236497592014b3b1e80548691ee71e5ebbad12cb373275dc
+  content.wasm:            b2df2efc6790b20467043cdd5519945f62c2c14144e9f4d9ebd5fb7d5d43bffd
+
+Lineage within pass-2 branch
+----------------------------
+- 1fa4d37 initial integrity+coordinator commit  → DNA uhC0kzl0W9BBITBGu-NeUaXPxqxSPj0yTGfDD3UH3EjhfLDQZfZxe
+- a089b45 security fix (drop get_last_probe cap) → DNA unchanged (coordinator-only)
+- 891acc9 coding-standards cleanup               → DNA uhC0kawoZqBxv3Jjvh-TlSQ5aO4U-hwiUNtZxFzXkTOBc5ijKVatw (pass-2 FINAL)
+- HEAD    pass-2.5 migration tooling extension   → DNA UNCHANGED (coordinator-only) — see Pass-2.5 row below
+
+rustc emits source-path metadata into release wasm, so even comment-only
+edits in the integrity zome bump the wasm sha (and therefore the DNA
+hash). The "pass-2 FINAL" row above is what the release .happ bundled
+for the integrity-zome change; pass-2.5 ships only coordinator
+changes (MigrationMarkerV2 + script + docs) so the integrity wasm
+sha256 holds byte-identical.
+
+Pass-2.5 (coordinator-only follow-up, branch feat-integrity-pass-2)
+-------------------------------------------------------------------
+Built from: 2cde900 (the commit that produced the recorded coordinator
+wasm sha).
+MigrationMarkerV2 (additive forward-compatible superset of V1) +
+get_migration_marker_v2 reader + mark_migrated_v2 writer +
+scripts/migrate-dna.ts hive-identity track + DNA_MIGRATION_GUIDE
+rewrite. DNA hash and integrity wasm sha256 are HELD byte-identical
+to pass-2 FINAL.
+
+  DNA hash (HELD):         uhC0kawoZqBxv3Jjvh-TlSQ5aO4U-hwiUNtZxFzXkTOBc5ijKVatw
+  content_integrity.wasm:  cd137fcfde8632c7236497592014b3b1e80548691ee71e5ebbad12cb373275dc (UNCHANGED)
+  content.wasm:            5790b6a459b9b4f4aee9a03f73c7ddf2c808024612862df94644090725b130e8 (NEW — coordinator change)
+
+Pass-2.5 cleanup follow-up (branch chore-pass-2.5-cleanup off 2cde900)
+----------------------------------------------------------------------
+Built from: d1e53b1 (HEAD at the time wasm shas were recorded; the
+source-bumping commits are bbb7494 — signal-helper match+warn — and
+2e40919 — mod.rs historical-narration cleanup. Other branch commits
+touch docs / tests / .baseline-hashes.txt only and do not bump wasm.)
+Cleanup workstream + pass-2 integrity audit. No validator-logic
+changes. Coordinator wasm sha256 BUMPS (signal-helper match+warn +
+mod.rs comment edit); integrity wasm sha256 + DNA hash HELD byte-
+identical to pass-2 FINAL. Pass-2 integrity audit added 14 host-side
+coverage tests; integrity test count 26 → 40.
+
+  DNA hash (HELD):         uhC0kawoZqBxv3Jjvh-TlSQ5aO4U-hwiUNtZxFzXkTOBc5ijKVatw
+  content_integrity.wasm:  cd137fcfde8632c7236497592014b3b1e80548691ee71e5ebbad12cb373275dc (UNCHANGED)
+  content.wasm:            7210ae584071a0bc00ea7f4bd6a1187d9ee9794fc5ec726a677d0e14a198d8fe (NEW — coordinator cleanup)
+
+VERIFICATION
+------------
+- DNA hash CHANGED from pass-1: ✓ (new bytes, see above)
+- content_integrity.wasm CHANGED from pass-1: ✓ (new bytes)
+- content.wasm CHANGED from pass-1: ✓ (new bytes)
+- Pass-2 host-side cargo tests: 37/37 (26 integrity + 11 coordinator).
+- Pass-2.5 host-side cargo tests: 48/48 (26 integrity + 22 coordinator;
+  11 new tests cover V1/V2 marker disambiguation, MigrationMarker enum
+  round-trip + external-tag wire-shape pin, decode_marker priority,
+  V2 idempotency, and unknown future schema_version handling).
+- Pass-2.5 cleanup host-side cargo tests: 62/62 (40 integrity + 22
+  coordinator; +14 new integrity tests from the pass-2 audit cover
+  ACL substring no-match, HiveGenesis/HiveMembership immutability,
+  HiveMembership self-grant rule 1, and delete-link author-equality
+  across Hive / Dynamic / HummContentId / HummContentAcl /
+  EncryptedContentUpdates).
+- Pass-2.5 DNA hash HELD: ✓ (unchanged from pass-2 FINAL).
+- Pass-2.5 integrity wasm sha256 HELD: ✓ (unchanged from pass-2 FINAL).
+- Pass-2.5 cleanup DNA hash HELD: ✓ (unchanged from pass-2 FINAL).
+- Pass-2.5 cleanup integrity wasm sha256 HELD: ✓ (unchanged from pass-2 FINAL).
+
+The pass-2 invariant is: every subsequent pass-2 release commit MUST
+hold the FINAL DNA hash + integrity wasm sha256 byte-identical until
+pass-3+ does its own intentional integrity-zome bump. Coordinator wasm
+sha256 IS allowed to change (and does, see pass-2.5 row).
+
+Migration story
+---------------
+The pass-1 migration scaffold + the pass-2.5 hive-identity extension
+(`encrypted_content::migration::*` + `scripts/migrate-dna.ts`)
+together activate on the pass-2 DNA-hash change. Hosts running pass-1
+see their entries' `get_migration_marker` reader return V1 markers
+pointing at pass-2 entry hashes once authors have published
+forward-pointer markers; pass-2-aware hosts see V1+V2 markers via
+`get_migration_marker_v2`, with V2 markers additionally carrying the
+new HiveGenesis hash so members discover hive-identity moves.
+
+See:
+- `docs/DNA_MIGRATION_GUIDE.md`        — migration mechanics (pass-2.5 primary)
+- `docs/HUMM_TAURI_COORDINATOR_INTEGRATION.md`
+                                        — wire-shape change list for humm-tauri
+- `docs/PASS_2_DEPLOY_HANDOFF.md`      — post-pass-2 deployment runbook + pass-2.5 migration commands
+
+Pass-3 (branch feat-integrity-pass-3-groups, FINAL)
+---------------------------------------------------------------------
+Built from: 0b67509 (pass-3 Phase E tip; the commit that produced the
+recorded wasm shas — Phase F adds this baseline section and the final
+report. The shas were captured on the Phase E tip because Phase F is
+a docs-only addition; the wasm output is deterministic against the
+production-code commit.)
+
+Integrity zome changes (G-series — validated group-membership
+infrastructure + AclSpec discriminated-union wire reshape on
+EncryptedContentHeader + variant-dispatch content validators +
+inline M-1/L-1/L-2 hardenings) intentionally bump the DNA hash again.
+The pass-2 invariant is dead on this branch — it is the inverse:
+pass-3 commits land a new DNA hash that becomes the new invariant
+once the cutover lands.
+
+  DNA hash (FINAL):        uhC0kwO11VbVMLrFlQBqeslvnZroeHUp5VetnH1tgX68lH5FebRgC
+  content_integrity.wasm:  95810f0bb2bef09271e04babef811758dc650e2c15469d2e647e20088cbf70f2
+  content.wasm:            629df371b80fdc716211334c6dbc1ccd66e795e09e8c73f547947b4509537021
+  hApp bundle sha256:      9084ea948d5e4cab91bcfd00e362b9b7e9896c28aaf3cf0b761cc4525f4414fa
+
+Lineage within pass-3 branch
+----------------------------
+- 00329eb feat(integrity): pass-3 group authority + AclSpec foundation (Phase A)
+- 65fcd7a docs: HANDOFF_UPDATED_INFO.md — living delta for humm-tauri devs
+- 699c093 feat(coordinator): pass-3 group authority externs + GroupInvite (Phase B)
+- 7e17b4c feat(integrity): pass-3 AclSpec wire reshape + variant-dispatch validators (Phase C)
+- 1a745d7 feat(migration): pass-3 AclSpec classifier + wire-shape import (Phase D)
+- 0b67509 docs(handoff): pass-3 humm-tauri integration doc set (Phase E)
+
+Tests
+-----
+- 58 integrity host-side tests green (49 pass-2.5 baseline + 9 Phase C
+  variant-dispatch tests: DM cardinality/author/reader/buckets/
+  uniqueness, OpenWrite target=None / header pubkey mismatch). Note:
+  fetch-dependent branches (HiveGroup hive/group authority, OpenWrite
+  target existence, EncryptedContentUpdates author-binding, M-1
+  original-author check) are NOT reachable from `cargo test` — they
+  require a live conductor's must_get_valid_record. Tryorama
+  integration tests covering those branches are a separate follow-up
+  task in `tests/src/humm_earth_core/content/`.
+- 22 coordinator host-side tests green (unchanged from pass-2.5).
+- Wasm release build: zero warnings, both zomes.
+
+Pass-3 invariants
+-----------------
+- Pass-1 DNA hash HELD on its branch: ✓ (pass-3 is a new branch off
+  chore-pass-2.5-cleanup).
+- Pass-2 DNA hash HELD on its branch: ✓ (pass-3 is a new branch off
+  chore-pass-2.5-cleanup, which itself held the pass-2 FINAL hash).
+- Pass-3 DNA hash is the new invariant: every subsequent pass-3
+  commit MUST hold this DNA hash + integrity wasm sha256 byte-
+  identical until pass-4+ does its own intentional integrity-zome
+  bump. Coordinator wasm sha256 MAY change (per the same
+  precedent set by pass-2.5).
+
+What is NEW in pass-3 (security)
+--------------------------------
+- GroupGenesis + GroupMembership entry types (cryptographic group
+  identity rooted in the hive owner via check_group_authority's
+  Path A/B/C; G-4.4 grant-window containment with the security-
+  review-hardened path-attribution fix).
+- AgentToGroupMemberships + GroupToGroupMemberships + HiveToGroups
+  discovery link types (cryptographic roster replaces forgeable
+  GroupMemberList; the latter is demoted to display cache).
+- AclSpec discriminated union with four variants (HiveGroup,
+  DirectMessage, Public, OpenWrite) — variant-dispatch validators
+  carry the right authority contract per scope; cross-hive
+  patterns (DMs, public posts, member-request, hive-discovery)
+  remain functional.
+- DM cardinality bound (DM_MAX_RECIPIENTS = 32) +
+  HiveGroup amplification bound (GROUP_ACL_MAX_GROUPS = 64).
+- InboxEvent::GroupInvite = 3 discriminator (additive; existing
+  bytes unchanged).
+- M-1: validate_update_encrypted_content now requires
+  action.author == original_action.author (closes update-chain
+  hijack across all variants; was pre-existing pass-1 gap).
+- L-1: validate_create_link_encrypted_content_updates now binds
+  link author == base author == target author (closes app-level
+  update-graph poisoning).
+- L-2: DM rejects duplicate recipients (degenerate self-DM hygiene).
+- LOW-1 (cross-cutting fix to pass-2 list_my_hives): author guard
+  on the founded-hive inbox path; same fix applied to list_my_groups.
+
+What is DEFERRED (Phase C.1 + Phase D.1)
+----------------------------------------
+- G-6.2 recipient-set integrity for HiveGroup public_key_acl (Phase
+  C.1). Documented; HiveGroup public_key_acl is an unauthenticated
+  routing hint at commit time. Decryption gating via SharedSecrets
+  is unaffected; recipient-list FORGERY for remote-signal routing
+  is the residual attack.
+- migrate-group / grant-group-memberships commands + per-bundle
+  classification-overrides.json (Phase D.1). The classifier defaults
+  unknown content types to AclSpec::Public; humm-tauri post-
+  migration UI workflow re-stamps to HiveGroup with real
+  group_genesis_hashes once create_group_genesis +
+  create_group_membership have run.
+
+Migration story
+---------------
+Pass-3 uses the same export → migrate-hive → grant-memberships →
+import → mark-* pipeline as pass-2.5. The pass-3 wire-shape reshape
+is handled by the in-script `classifyAclSpec` per-content-type
+classifier in `scripts/migrate-dna.ts`; no operator-facing changes
+to the pipeline. Bundle schema_version: 1 (pass-1/2 legacy) and 2
+(pass-3-aware; not currently produced by export but accepted on
+import) both round-trip cleanly.
+
+See:
+- `docs/HUMM_TAURI_ACLSPEC_INTEGRATION.md` — pass-3 wire shape + per-modal mechanics (canonical)
+- `docs/PASS_3_DEPLOY_HANDOFF.md`          — pass-3 deploy runbook + smoke tests
+- `docs/HUMM_TAURI_FEATURE_ENABLEMENT.md`  — feature-by-feature implementation guide
+- `docs/DNA_MIGRATION_GUIDE.md`            — migration mechanics (Pass-3 wire-shape migration section)
+- `docs/HANDOFF_UPDATED_INFO.md`           — living delta from pass-2.5 to pass-3
+
+Pass-4 (branch feat-integrity-pass-4-recipient-witnesses, FINAL — RE-RECORDED)
+------------------------------------------------------------------------------
+Built from: the tip commit of feat-integrity-pass-4-recipient-witnesses
+after the reproducible-build pipeline landed
+(chore(build): reproducible wasm pipeline + re-record pass-4
+hashes). The wasm bytes — and therefore the DNA hash and hApp
+bundle sha256 — below are produced by the reproducible build
+pipeline (`scripts/build-zomes.sh` + `scripts/strip-wasms.sh`)
+and are byte-identical across build hosts. See "Reproducibility
+contract (effective pass-4 re-record)" at the bottom of this file
+for the build + verify commands and the supersedes note.
+
+Integrity zome changes (G-6.2 recipient-set integrity:
+RecipientWitness + AclBucket + recipient_witnesses field on
+AclSpec::HiveGroup + bidirectional PKA cross-check + per-witness
+verification; G-4.4 hive back-port: enforce_hive_grant_window +
+rule 4 in validate_create_hive_membership) intentionally bump the
+DNA hash again. The pass-3 invariant is dead on this branch — it
+is the inverse: pass-4 commits land a new DNA hash that becomes
+the new invariant once the cutover lands.
+
+  DNA hash (FINAL):        uhC0k26bYG0qmTCFk4_D996GRCTecEtMdL5pXyvCUu0ACJN12omCV
+  content_integrity.wasm:  06b01fb3527e266a5cb1b5ffbf01b83541d7a572c4b4a252521154c3e0c2cd83
+  content.wasm:            793343c0d6b5b3605fdec59ce77d3056d263941f5e09ebc22e4e22fd576732eb
+  hApp bundle sha256:      d74e5f2f272ab6da7e0e429da2f5419cd7d74f364055c238378decf02a681861
+
+Lineage within pass-4 branch
+----------------------------
+- 9dc0690 feat(integrity): pass-4 G-6.2 recipient witnesses + G-4.4 hive grant-window
+- be6a93b feat(migration): pass-4 classifier comments reflect recipient_witnesses wire shape (coordinator no-op)
+- 9e1f842 docs(handoff): pass-4 deploy handoff + ACLSpec wire shape + roadmap + E.4.l invite links
+- 7b918f7 chore(baseline): record pass-4 DNA hash + wasm shas (Phase 4-F; SUPERSEDED by reproducibility re-record)
+- 4f0a0b9 docs(handoff): pass-2.5->pass-4 leapfrog guidance + per-marked-site recipes
+- f50ea7a chore(build): reproducible wasm pipeline + re-record pass-4 hashes
+
+Tests
+-----
+- 69 integrity host-side tests green (58 pass-3 baseline + 9 G-6.2
+  witness branches + 2 G-4.4 hive back-port; one redundant 3rd
+  G-4.4 test dropped per reviewer feedback to keep the no-witness
+  fast path coverage tight). Pass-3 had 58 integrity tests; pass-4
+  net delta +11.
+- 22 coordinator host-side tests green (unchanged from pass-3; two
+  test fixtures gained the `recipient_witnesses: vec![]` field for
+  the new wire shape but no tests added or removed).
+- Wasm release build: zero warnings, both zomes.
+
+Pass-4 invariants
+-----------------
+- Pass-1 DNA hash HELD on its branch: ✓.
+- Pass-2 DNA hash HELD on its branch: ✓.
+- Pass-3 DNA hash HELD on its branch (b1e72aa): ✓.
+- Pass-4 DNA hash is the new invariant: every subsequent pass-4
+  commit MUST hold this DNA hash + integrity wasm sha256 byte-
+  identical until pass-5+ does its own intentional integrity-zome
+  bump. Coordinator wasm sha256 MAY change (per the same precedent
+  set by pass-2.5 + pass-3).
+
+What is NEW in pass-4 (security)
+--------------------------------
+- AclSpec::HiveGroup gains a required
+  `recipient_witnesses: Vec<RecipientWitness>` field. Each
+  witness names a real GroupMembership for a pubkey in
+  public_key_acl; validator enforces bidirectional cross-check
+  with bucket dominance (AclBucket = Owner > Admin > Writer >
+  Reader) + per-witness must_get_valid_record. Closes attack #5
+  (recipient-list forgery for routing fan-out).
+- HIVEGROUP_MAX_WITNESSES = 256 cardinality bound (analogous to
+  DM_MAX_RECIPIENTS = 32 + GROUP_ACL_MAX_GROUPS = 64).
+- enforce_hive_grant_window — G-4.4 back-port to HiveMembership.
+  An expiring Path-2 hive grantor can no longer extend the
+  delegation window or mint permanent grants. Mirrors the pass-3
+  group-layer rule, with the simpler one-witness-path attribution
+  model (Path-1 re-verification via fetch_genesis covers the
+  convention-break case where the grantor is also the genesis
+  author).
+
+What is DEFERRED still
+----------------------
+- Phase D.1 (group migration track + classification-overrides) —
+  separate branch feat-migration-d1-group-track. Until D.1 ships,
+  the migration classifier defaults legacy group-scoped content
+  to AclSpec::Public; humm-tauri post-migration UI re-stamps to
+  HiveGroup once real groups exist on the new DNA.
+- Tryorama integration tests covering fetch-dependent validator
+  branches — separate branch test-tryorama-integrity-coverage.
+
+Migration story
+---------------
+Same pipeline as pass-3: export → migrate-hive → grant-memberships
+→ import → mark-*. The pass-4 wire-shape addition is handled
+invisibly by the existing classifier for non-HiveGroup content
+(DM / Public / OpenWrite). HiveGroup content requires the D.1
+group track + per-bundle classification-overrides.json (separate
+branch) to migrate end-to-end; pre-D.1, HiveGroup entries default
+to Public via the classifier.
+
+See:
+- `docs/PASS_4_DEPLOY_HANDOFF.md`          — pass-4 deploy runbook + smoke tests
+- `docs/HUMM_TAURI_ACLSPEC_INTEGRATION.md` — pass-3 + pass-4 wire shape + per-modal mechanics
+- `docs/HUMM_TAURI_PASS_ROADMAP.md`        — per-pass concrete-task mapping for humm-tauri
+- `docs/HUMM_TAURI_FEATURE_ENABLEMENT.md`  — feature-by-feature implementation guide (E.4.l invite links new)
+- `docs/HANDOFF_UPDATED_INFO.md`           — living delta from pass-3 to pass-4
+
+Pass-4 coordinator follow-up — recv_remote_signal ExternIO pre-encode
+---------------------------------------------------------------------
+Built from: tip of feat-self-notes-architecture after the
+recv_remote_signal cross-host signal fix. Coordinator-only change:
+every send_remote_signal call site now pre-encodes its typed signal
+with ExternIO::encode (via the new send_encoded_remote_signal /
+remote_signal_payload helpers in encrypted_content::signals) so the
+recipient's recv_remote_signal(signal: ExternIO) parameter decodes
+instead of erroring with WasmError::Deserialize. Integrity zome
+untouched; DNA hash + integrity wasm sha256 HELD byte-identical to
+pass-4 FINAL. This is a coordinator hot-swap — no chain fork.
+
+  DNA hash (HELD):         uhC0k26bYG0qmTCFk4_D996GRCTecEtMdL5pXyvCUu0ACJN12omCV
+  content_integrity.wasm:  06b01fb3527e266a5cb1b5ffbf01b83541d7a572c4b4a252521154c3e0c2cd83 (UNCHANGED)
+  content.wasm:            cb51c376a3e443ea4f580d0af6de603f04a08d80415d542b00ab9e5145acb3cf (NEW — coordinator fix)
+  hApp bundle sha256:      4aacd52fb15d9f1f27e9a09f78ee285adfa28b0088e56e666359065bf7641865 (NEW)
+
+Root cause + fix detail: docs/HUMM_TAURI_RECV_REMOTE_SIGNAL_FIX.md.
+Official prebuilt: ~/hummhive-official-happ-versions label
+"pass-4-recv-signal-fix" (mirrored to humm-tauri/.testdata/happs).
+Host tests: 25 coordinator (3 new) + 69 integrity, all green.
+Conductor proof via humm-tauri tryorama-free BDD RS-1; in-repo
+tryorama cannot boot on hc 0.6.0 (quic->webrtc CLI rename).
+
+Pass-4 coordinator follow-up — query tolerance (cross-type + dangling)
+---------------------------------------------------------------------
+Built from: 2e8ae4a (branch fix-coordinator-query-tolerance, off the
+deployed coordinator). Coordinator-only. get_many_encrypted_content now
+returns the resolvable subset instead of an all-or-nothing collect(),
+fixing the dangling / gossip-lagged / tombstoned-target poison shared by
+list_by_hive_link / list_by_dynamic_link / list_by_acl_link /
+list_by_author. list_my_hives, get_latest_membership, list_my_groups
+(resolve_genesis_invite + resolve_membership_invite), and
+get_latest_group_membership decode mixed-type Inbox targets with
+.ok().flatten() instead of `?`-propagating the wrong-type deserialize
+(the first joined hive otherwise broke list_my_hives for the joiner
+forever). Integrity zome untouched; DNA hash + integrity wasm sha256
+HELD byte-identical to pass-4 FINAL. Coordinator hot-swap — no chain fork.
+
+  DNA hash (HELD):         uhC0k26bYG0qmTCFk4_D996GRCTecEtMdL5pXyvCUu0ACJN12omCV
+  content_integrity.wasm:  06b01fb3527e266a5cb1b5ffbf01b83541d7a572c4b4a252521154c3e0c2cd83 (UNCHANGED)
+  content.wasm:            78f0602ea78edc4e8996642ba0623953fedf66c9cd1e266a42b60980a6daa9b0 (NEW — coordinator fix)
+  hApp bundle sha256:      2205337c085f5d148fdddf63a688e3ad6d4a1b79dc3a70facad180c38b29928b (NEW)
+
+Reproducibility: VERIFIED — double-build from two paths
+(~/humm-earth-core-happ + /tmp/repro-qt) produced byte-identical
+content.wasm + content_integrity.wasm + .happ.
+Official prebuilt: ~/hummhive-official-happ-versions label
+"pass-4-query-tolerance" (mirrored to humm-tauri/.testdata/happs).
+Host tests: 25 coordinator + 69 integrity, all green.
+Behavior conductor-proof: VERIFIED via in-tree Sweettest
+(crates/sweettest, holochain 0.6.0, 2/2 green) — get_many_encrypted_content
+tolerates an unresolvable target instead of the all-or-nothing batch throw,
+and a joiner's list_my_hives returns the joined hive across two conductors
+without the cross-type Inbox decode failure. In-repo tryorama still cannot
+boot on hc 0.6.0 (quic->webrtc CLI rename) — Sweettest is the in-tree path.
+
+Reproducibility contract (effective pass-4 re-record)
+=====================================================
+
+From the pass-4 re-record forward, the recorded
+`content_integrity.wasm` + `content.wasm` + `humm_earth_core.dna` +
+`humm-earth-core-happ.happ` sha256s are produced by a reproducible
+build pipeline. Building the SAME commit from ANY filesystem path
+on ANY host with the pinned toolchain MUST produce byte-identical
+wasms (and therefore byte-identical DNA + .happ hashes).
+
+Why two drift sources existed and what the pipeline removes:
+
+- The wasm `name` custom section embedded LLVM codegen-unit
+  suffixes (`.llvm.NNNNNNNNNNNN`) that hash the ABSOLUTE PATH of
+  the crate being compiled. Two contributors building the same
+  commit from different paths got two different `name` sections,
+  two different wasm shas, two different DNA hashes. Binaryen's
+  `wasm-opt --strip-debug` removes this section (binaryen treats
+  it as part of debug info).
+- The wasm `producers` custom section embedded the rustc version
+  string (compiler hash + date). Stable within a toolchain version
+  but drifts across upgrades. `wasm-opt --strip-producers` removes
+  it.
+
+Both sections are no-op for execution: the wasm spec marks custom
+sections as having no semantic effect, and wasmer (Holochain's
+runtime) ignores them.
+
+`--remap-path-prefix` flags in the build script are defense-in-
+depth — this project's `panic = abort` (the wasm32-unknown-unknown
+default) + `opt-level = "z"` combination DCEs `file!()`/registry
+path strings before they hit the wasm, so the remap is largely a
+no-op today; the flags stay correct if anyone later flips those
+settings. `codegen-units = 1` is also defense-in-depth (and is
+required for the strip + remap path to converge deterministically
+when the codegen-unit-count would otherwise have introduced
+further per-host variance).
+
+Build (canonical)
+-----------------
+Run from any clone, inside `nix develop` so `wasm-opt` is on PATH:
+
+    cd <repo>
+    nix develop --command npm run build:happ
+    # produces target/wasm32-unknown-unknown/release/{content_integrity,content}.wasm
+    # produces dnas/humm_earth_core/workdir/humm_earth_core.dna
+    # produces workdir/humm-earth-core-happ.happ
+
+Verify
+------
+Build twice from two different paths and assert byte-identical
+wasms:
+
+    # Build A (canonical mirror)
+    cd ~/humm-earth-core-happ
+    nix develop --command npm run build:zomes
+    SHA_A=$(sha256sum target/wasm32-unknown-unknown/release/content_integrity.wasm | awk '{print $1}')
+
+    # Build B (different cwd; same flake)
+    rm -rf /tmp/repro-test && mkdir -p /tmp/repro-test
+    tar --exclude=./target --exclude=./node_modules --exclude=./.git -C ~/humm-earth-core-happ -cf - . | tar -xf - -C /tmp/repro-test
+    cd /tmp/repro-test
+    nix develop ~/humm-earth-core-happ --command npm run build:zomes
+    SHA_B=$(sha256sum target/wasm32-unknown-unknown/release/content_integrity.wasm | awk '{print $1}')
+
+    [ "$SHA_A" = "$SHA_B" ] || { echo "drift!"; exit 1; }
+
+Supersedes note for historical rows
+-----------------------------------
+Pass-1, pass-2, pass-2.5 (and its cleanup), pass-3, and the
+pre-re-record pass-4 hash block (recorded against tip 7b918f7,
+now lineage-flagged "SUPERSEDED") were captured BEFORE the
+reproducibility pipeline existed. Those rows are accurate for the
+specific wasm bytes that shipped from the recording machine, but
+they are NOT byte-reproducible across hosts. Going forward, the
+recorded hash IS the reproducible-from-source hash; downstream
+pins (e.g. humm-tauri install-time DNA-hash verification) should
+only assume reproducibility for pass-4 (re-record) and later.
+
+The pre-reproducibility pass-4 hashes (now SUPERSEDED) were:
+
+    DNA hash:                uhC0kNS2JM6lqmdxr3Q8VK2uhDJFF-wRBz-W73JjJKZnTTMyT8_JS
+    content_integrity.wasm:  1f4534b24332d9fdf089b66e80c04b4eb370994841b554bfcb455524b6f0c3c4
+    content.wasm:            7a9e7a9800053a916b50141fd6cc72265d0090e3965a44eb90ae4ec298ca8370
+    hApp bundle sha256:      50d409602fa8d9eeacf553a497aff39191bc9cc4f1c9ffd8080d3c8e0e844abd

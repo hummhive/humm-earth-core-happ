@@ -15,6 +15,7 @@ import { decode, encode } from "@msgpack/msgpack";
 
 import {
   EncryptedContentResponse,
+  cellPubkeyB64,
   createEncryptedContent,
   sampleCreateEncryptedContentInput,
   sampleEncryptedContent,
@@ -27,7 +28,7 @@ test("create and read EncryptedContent using dynamic link", async () => {
     const testAppPath = process.cwd() + "/../workdir/humm-earth-core-happ.happ";
 
     // Set up the app to be installed
-    const appSource = { appBundleSource: { path: testAppPath } };
+    const appSource = { appBundleSource: { type: "path" as const, value: testAppPath } };
 
     // Add 2 players with the test app to the Scenario. The returned players
     // can be destructured.
@@ -41,7 +42,7 @@ test("create and read EncryptedContent using dynamic link", async () => {
     await scenario.shareAllAgents();
 
     // Alice creates a EncryptedContent
-    const sampleContent = sampleEncryptedContent();
+    const sampleContent = sampleEncryptedContent({}, cellPubkeyB64(alice.cells[0]));
     const sampleInput = await sampleCreateEncryptedContentInput(sampleContent, [
       "test-dynamic-link",
     ]);
@@ -76,7 +77,7 @@ test("create, update, and read EncryptedContent using dynamic link", async () =>
     const testAppPath = process.cwd() + "/../workdir/humm-earth-core-happ.happ";
 
     // Set up the app to be installed
-    const appSource = { appBundleSource: { path: testAppPath } };
+    const appSource = { appBundleSource: { type: "path" as const, value: testAppPath } };
 
     // Add 2 players with the test app to the Scenario. The returned players
     // can be destructured.
@@ -90,7 +91,7 @@ test("create, update, and read EncryptedContent using dynamic link", async () =>
     await scenario.shareAllAgents();
 
     // Alice creates a EncryptedContent
-    const sampleContent = sampleEncryptedContent();
+    const sampleContent = sampleEncryptedContent({}, cellPubkeyB64(alice.cells[0]));
     const sampleInput = await sampleCreateEncryptedContentInput(sampleContent, [
       "test-dynamic-link",
     ]);
@@ -118,7 +119,7 @@ test("create, update, and read EncryptedContent using dynamic link", async () =>
 
     const contentUpdate = sampleEncryptedContent({
       bytes: Buffer.from("test-bytes-2"),
-    });
+    }, cellPubkeyB64(alice.cells[0]));
     let updateInput = {
       previous_encrypted_content_hash: createReadOutput[0].hash,
       updated_encrypted_content: contentUpdate,

@@ -27,6 +27,7 @@
 
           packages = (with pkgs; [
             inputs'.hds-releases.packages.holo-dev-server-bin
+            binaryen # wasm-opt for scripts/strip-wasms.sh — see .baseline-hashes.txt "Reproducibility contract"
           ]);
         };
 

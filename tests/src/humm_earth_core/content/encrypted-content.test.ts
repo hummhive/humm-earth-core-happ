@@ -16,6 +16,7 @@ import { decode } from "@msgpack/msgpack";
 
 import {
   EncryptedContentResponse,
+  cellPubkeyB64,
   createEncryptedContent,
   sampleCreateEncryptedContentInput,
   sampleEncryptedContent,
@@ -28,7 +29,7 @@ test("create EncryptedContent", async () => {
     const testAppPath = process.cwd() + "/../workdir/humm-earth-core-happ.happ";
 
     // Set up the app to be installed
-    const appSource = { appBundleSource: { path: testAppPath } };
+    const appSource = { appBundleSource: { type: "path" as const, value: testAppPath } };
 
     // Add 2 players with the test app to the Scenario. The returned players
     // can be destructured.
@@ -65,7 +66,8 @@ test("create and read EncryptedContent", async () => {
       { appBundleSource },
     ]);
 
-    const sampleContent = sampleEncryptedContent();
+    const alicePubkeyB64 = cellPubkeyB64(alice.cells[0]);
+    const sampleContent = sampleEncryptedContent({}, alicePubkeyB64);
     const sampleInput = await sampleCreateEncryptedContentInput(sampleContent);
 
     // Alice creates a EncryptedContent
@@ -95,7 +97,7 @@ test("create and read EncryptedContent by author link", async () => {
     const testAppPath = process.cwd() + "/../workdir/humm-earth-core-happ.happ";
 
     // Set up the app to be installed
-    const appSource = { appBundleSource: { path: testAppPath } };
+    const appSource = { appBundleSource: { type: "path" as const, value: testAppPath } };
 
     // Add 2 players with the test app to the Scenario. The returned players
     // can be destructured.
@@ -108,7 +110,8 @@ test("create and read EncryptedContent by author link", async () => {
     // conductor of the scenario.
     await scenario.shareAllAgents();
 
-    const sampleContent = sampleEncryptedContent();
+    const alicePubkeyB64 = cellPubkeyB64(alice.cells[0]);
+    const sampleContent = sampleEncryptedContent({}, alicePubkeyB64);
     const sampleInput = await sampleCreateEncryptedContentInput(sampleContent);
 
     // Alice creates a EncryptedContent
@@ -141,7 +144,7 @@ test("create and update EncryptedContent", async () => {
     const testAppPath = process.cwd() + "/../workdir/humm-earth-core-happ.happ";
 
     // Set up the app to be installed
-    const appSource = { appBundleSource: { path: testAppPath } };
+    const appSource = { appBundleSource: { type: "path" as const, value: testAppPath } };
 
     // Add 2 players with the test app to the Scenario. The returned players
     // can be destructured.
@@ -163,7 +166,7 @@ test("create and update EncryptedContent", async () => {
     // Alice updates the EncryptedContent
     const contentUpdate = sampleEncryptedContent({
       bytes: Buffer.from("test-bytes-2"),
-    });
+    }, cellPubkeyB64(alice.cells[0]));
     let updateInput = {
       previous_encrypted_content_hash: originalActionHash,
       updated_encrypted_content: contentUpdate,
@@ -195,7 +198,7 @@ test("create and update EncryptedContent", async () => {
     // Alice updates the EncryptedContent again
     const contentUpdate2 = sampleEncryptedContent({
       bytes: Buffer.from("test-bytes-3"),
-    });
+    }, cellPubkeyB64(alice.cells[0]));
 
     updateInput = {
       previous_encrypted_content_hash: updatedRecord.hash,
@@ -232,7 +235,7 @@ test("create and delete EncryptedContent", async () => {
     const testAppPath = process.cwd() + "/../workdir/humm-earth-core-happ.happ";
 
     // Set up the app to be installed
-    const appSource = { appBundleSource: { path: testAppPath } };
+    const appSource = { appBundleSource: { type: "path" as const, value: testAppPath } };
 
     // Add 2 players with the test app to the Scenario. The returned players
     // can be destructured.
@@ -281,7 +284,7 @@ test("create, update, and delete EncryptedContent using original hash", async ()
     const testAppPath = process.cwd() + "/../workdir/humm-earth-core-happ.happ";
 
     // Set up the app to be installed
-    const appSource = { appBundleSource: { path: testAppPath } };
+    const appSource = { appBundleSource: { type: "path" as const, value: testAppPath } };
 
     // Add 2 players with the test app to the Scenario. The returned players
     // can be destructured.
@@ -301,7 +304,7 @@ test("create, update, and delete EncryptedContent using original hash", async ()
     // Alice updates the EncryptedContent
     const contentUpdate = sampleEncryptedContent({
       bytes: Buffer.from("test-bytes-2"),
-    });
+    }, cellPubkeyB64(alice.cells[0]));
     let updateInput = {
       previous_encrypted_content_hash: record.hash,
       updated_encrypted_content: contentUpdate,
@@ -372,7 +375,7 @@ test("create, update, and delete EncryptedContent using updated hash", async () 
     const testAppPath = process.cwd() + "/../workdir/humm-earth-core-happ.happ";
 
     // Set up the app to be installed
-    const appSource = { appBundleSource: { path: testAppPath } };
+    const appSource = { appBundleSource: { type: "path" as const, value: testAppPath } };
 
     // Add 2 players with the test app to the Scenario. The returned players
     // can be destructured.
@@ -392,7 +395,7 @@ test("create, update, and delete EncryptedContent using updated hash", async () 
     // Alice updates the EncryptedContent
     const contentUpdate = sampleEncryptedContent({
       bytes: Buffer.from("test-bytes-2"),
-    });
+    }, cellPubkeyB64(alice.cells[0]));
     let updateInput = {
       previous_encrypted_content_hash: record.hash,
       updated_encrypted_content: contentUpdate,
