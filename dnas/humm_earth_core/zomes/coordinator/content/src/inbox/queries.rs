@@ -77,7 +77,7 @@ pub fn probe_inbox(input: ProbeInboxInput) -> ExternResult<Vec<InboxItem>> {
     // Oldest-first ordering matches the watermark-sweep convention
     // shared by list_by_hive_link: callers can pin a cursor on
     // the highest returned timestamp without skipping older items.
-    items.sort_by(|a, b| a.created_at.cmp(&b.created_at));
+    items.sort_by_key(|i| i.created_at);
     Ok(items)
 }
 
@@ -94,7 +94,7 @@ pub fn get_last_probe(_: ()) -> ExternResult<Option<DmProbeLog>> {
         .include_entries(true);
     let mut records = query(filter)?;
     // Newest-first.
-    records.sort_by(|a, b| b.action().timestamp().cmp(&a.action().timestamp()));
+    records.sort_by_key(|r| std::cmp::Reverse(r.action().timestamp()));
     let Some(record) = records.into_iter().next() else {
         return Ok(None);
     };

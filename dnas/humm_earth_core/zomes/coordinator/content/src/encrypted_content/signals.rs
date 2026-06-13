@@ -406,7 +406,7 @@ mod tests {
         ActionHash::from_raw_39(
             vec![0x84u8, 0x29, 0x24]
                 .into_iter()
-                .chain(std::iter::repeat(0u8).take(36))
+                .chain(std::iter::repeat_n(0u8, 36))
                 .collect(),
         )
     }
@@ -525,7 +525,7 @@ mod tests {
         let fake_caller = AgentPubKey::from_raw_39(
             vec![0x84u8, 0x20, 0x24]
                 .into_iter()
-                .chain(std::iter::repeat(0xAAu8).take(36))
+                .chain(std::iter::repeat_n(0xAAu8, 36))
                 .collect(),
         );
 

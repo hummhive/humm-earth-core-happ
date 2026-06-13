@@ -168,9 +168,10 @@ pub fn update_encrypted_content(
     )?;
 
     if original_hash_link.is_empty() {
-        return Err(wasm_error!(WasmErrorInner::Guest(format!(
+        return Err(wasm_error!(WasmErrorInner::Guest(
             "Could not find the hash of the original EncryptedContent that is trying to be updated"
-        ))));
+                .to_string(),
+        )));
     }
     create_link(
         original_hash_link[0]

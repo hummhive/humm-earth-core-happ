@@ -124,7 +124,7 @@ pub fn list_by_hive_link(input: ListByHiveInput) -> ExternResult<Vec<EncryptedCo
 
     // OLDEST-FIRST sort + truncate. See doc-comment above for why this is
     // load-bearing for the watermark sweep.
-    all_links.sort_by(|a, b| a.timestamp.cmp(&b.timestamp));
+    all_links.sort_by_key(|l| l.timestamp);
     if let Some(limit) = input.limit {
         all_links.truncate(limit);
     }

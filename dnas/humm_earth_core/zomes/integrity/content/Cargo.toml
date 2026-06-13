@@ -13,3 +13,23 @@ hdi = { workspace = true }
 holochain_serialized_bytes = { workspace = true }
 
 serde = { workspace = true }
+
+# content_integrity wasm is DNA-FROZEN at v1.0.0 (integrity wasm
+# 06b01fb3527e266a5cb1b5ffbf01b83541d7a572c4b4a252521154c3e0c2cd83 / DNA
+# uhC0k26bYG0qmTCFk4_D996GRCTecEtMdL5pXyvCUu0ACJN12omCV). Editing this crate's
+# source shifts rustc's embedded #[track_caller] panic-Location line numbers, which
+# changes the integrity wasm sha -> changes the DNA hash -> forks the chain and breaks
+# every deployed conductor. (Proven: a cargo-fmt reflow alone bumped the wasm sha at
+# identical byte length.) These are all cosmetic lints; they are suppressed at the
+# manifest level -- lint levels have zero codegen effect, so the wasm stays byte-
+# identical -- instead of being "fixed" in source. Do NOT fix in source until a
+# deliberate integrity-bump pass intentionally changes the DNA hash. See
+# .baseline-hashes.txt (pass-4 invariant).
+[lints.clippy]
+redundant_static_lifetimes = "allow"
+doc_lazy_continuation = "allow"
+too_many_arguments = "allow"
+result_large_err = "allow"
+useless_format = "allow"
+large_enum_variant = "allow"
+cloned_ref_to_slice_refs = "allow"

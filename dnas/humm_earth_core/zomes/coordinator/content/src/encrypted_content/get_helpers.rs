@@ -14,9 +14,9 @@ use hdk::prelude::*;
 pub fn get_eh(ah: ActionHash) -> ExternResult<EntryHash> {
     let record = get_record(AnyDhtHash::from(ah))?;
     let Some(eh) = record.action().entry_hash() else {
-        return Err(wasm_error!(WasmErrorInner::Guest(format!(
-            "ah_to_eh(): Record not found"
-        ))));
+        return Err(wasm_error!(WasmErrorInner::Guest(
+            "ah_to_eh(): Record not found".to_string(),
+        )));
     };
     Ok(eh.to_owned())
 }
@@ -30,9 +30,9 @@ pub fn get_record(dh: AnyDhtHash) -> ExternResult<Record> {
         },
     )?;
     let Some(record) = maybe_record else {
-        return Err(wasm_error!(WasmErrorInner::Guest(format!(
-            "no Record found at given hash"
-        ))));
+        return Err(wasm_error!(WasmErrorInner::Guest(
+            "no Record found at given hash".to_string(),
+        )));
     };
     Ok(record)
 }

@@ -224,6 +224,9 @@ pub fn recv_remote_signal(signal: ExternIO) -> ExternResult<()> {
 }
 #[derive(Serialize, Deserialize, Debug)]
 #[serde(tag = "type")]
+// Transient local signal enum (post_commit -> emit_signal/remote_signal); boxing the
+// EntryTypes-bearing variants is serde-wire-safe but the perf gain is marginal. Allow.
+#[allow(clippy::large_enum_variant)]
 pub enum Signal {
     LinkCreated {
         action: SignedActionHashed,
@@ -408,11 +411,7 @@ fn get_entry_for_action(action_hash: &ActionHash) -> ExternResult<Option<EntryTy
             return Ok(None);
         }
     };
-    Ok(EntryTypes::deserialize_from_type(
-        zome_index.clone(),
-        entry_index.clone(),
-        entry,
-    )?)
+    EntryTypes::deserialize_from_type(*zome_index, *entry_index, entry)
 }
 
 /// Input for [`get_messages_since`].
