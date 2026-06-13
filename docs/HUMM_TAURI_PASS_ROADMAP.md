@@ -179,10 +179,11 @@ pass-4 inherits the pass-3 wire-shape change):**
 
 **DNA status:** ✅ shipped. DNA hash
 `uhC0k26bYG0qmTCFk4_D996GRCTecEtMdL5pXyvCUu0ACJN12omCV`;
-hApp SHA256 `d74e5f2f272ab6da7e0e429da2f5419cd7d74f364055c238378decf02a681861`.
-humm-tauri already bundles this hApp (`src-tauri/bin/humm-earth-core-happ.happ`);
-DNA hash pinned in `coordinator.rs:185`, `tests/bdd/conductor.ts:23`,
-`.testdata/happs/MANIFEST.tsv`.
+hApp SHA256 (pass-4 FINAL) `d74e5f2f…1861`. The DNA hash is UNCHANGED across all
+subsequent coordinator hot-swaps, so the humm-tauri DNA-hash pins (`coordinator.rs`,
+`tests/bdd/conductor.ts:23`, `.testdata/happs/MANIFEST.tsv`) do NOT move — only the
+bundled happ sha advances. **Current bundled target: `v1.0.0` / `2205337c`** (see
+"Pass-4 coordinator follow-ups + downstream RC status" below).
 
 **What changed in this repo:**
 - G-6.2 — `AclSpec::HiveGroup` gains REQUIRED
@@ -317,14 +318,54 @@ DNA after migration.
 **DNA status:** ✅ shipped (separate branch; no DNA bump — test infra
 only). **Tryorama 0.19.2 is broken** on holochain/hc 0.6.0 (the
 `quic` → `webrtc` sandbox-CLI rename produces a K2Error panic).
-Integration tests use a **tryorama-free conductor harness** instead:
-`e2e/` (this repo, 30 scenarios) and `tests/bdd/` (humm-tauri, 20+
-scenarios including DM, note-to-self, and AclSpec coverage). Both use
-one real holochain 0.6.0 conductor, N agents, network_seed-isolated
-DHT over AppWebsocket.
+Integration tests use **tryorama-free in-process conductor harnesses**:
+`crates/sweettest/` (this repo — in-process holochain conductor, the current path,
+2/2 green on v1.0.0) and `tests/bdd/` (humm-tauri, 20+ scenarios incl. DM,
+note-to-self, AclSpec). Note: humm-tauri's S1 stack hop REVIVED tryorama 0.19.2 on
+their **0.6.1** stack (specs 00/01/10 green); in THIS repo on **0.6.0** tryorama
+still can't boot (quic→webrtc CLI rename) — use Sweettest here.
 
 **humm-tauri tasks:** None. This branch ships test infrastructure
 and does not affect the wire shape, externs, or DNA hash.
+
+---
+## Pass-4 coordinator follow-ups + downstream RC status (2026-06-13)
+
+Two coordinator hot-swaps shipped on top of pass-4 FINAL — DNA hash HELD `uhC0k26b`
+(integrity wasm byte-identical `06b01fb3`; no chain fork, no migration). Lineage:
+pass-4 FINAL `d74e5f2f` → recv-signal-fix `4aacd52f` → **query-tolerance `2205337c`
+= `v1.0.0` (current)**.
+
+| Coordinator gen | hApp | content.wasm | What changed |
+|---|---|---|---|
+| recv-signal-fix | 4aacd52f | cb51c376 | `recv_remote_signal` ExternIO pre-encode — cross-host signals deliver |
+| query-tolerance (v1.0.0) | 2205337c | 78f0602e | decode-tolerant queries (`get_many` filter_map; `list_my_hives`/`_groups` + `get_latest_membership` `.ok().flatten()`) |
+
+**Downstream RC status** — reconciled against humm-tauri `dm-invite-media-pickup`@`f61dbeaa`:
+`ROADMAP.md`@`198b1127` (2026-06-11) + `.newTasks/00_RC_CRITICAL_PATH.md`@`cfcafd61`
+(2026-06-13), both clean (committed). They're mid merge/commit dance — if these SHAs
+have moved, re-check before trusting the statuses below:
+- 🟢 **recv_remote_signal fix SHIPPED + live-proven** — activated via a bundled
+  fix-coordinator + `COORDINATOR_WASM_VERSION` hot-swap (DNA unchanged); relay→relay
+  real-time `EncryptedContentSignal` PUSH verified live.
+- 🟢 **pass-4 wire shape live-proven** at humm-tauri's S1 (relay↔relay + GUI↔relay
+  decrypted round-trips; auto-ack chains).
+- 🟡 **Bundled-happ refresh** (their RC task `02/04/01`, "content_integrity 0.0.2 real
+  author validation") = adopt the real pass-4 happ → satisfied by `v1.0.0`/`2205337c`
+  (integrity `06b01fb3` = content_integrity 0.0.2, carrying pass-1 `check_author_matches_header`).
+- 🟡 **Coordinator wire C0/C2/C5** in progress downstream
+  (`02_PROJECT_CoordinatorWireAndDmScaling`): C0 `get_messages_since` dispatch, C2
+  `list_by_hive_link` pagination, C5 `get_many` cap-grant. query-tolerance already lands
+  the `get_many` all-or-nothing fix.
+- ⏳ **Cross-hive DM body decrypt** (their `02_A`) is humm-tauri-side (`extractRecord` /
+  pass-4 `entryToCamelCase` shim + pair-SS `groupId`) — not an earth-core change.
+
+**Stack skew to track:** humm-tauri's S1 migrated fleet + GUI to **holochain 0.6.1 /
+kitsune2 0.4.1 / iroh transport** (DNA hash deliberately preserved). earth-core still
+builds on **0.6.0** (hdi 0.7.0 / hdk 0.6.0). The `2205337c` happ (0.6.0-built, DNA
+`uhC0k26b`) is consensus-compatible with their 0.6.1 conductor today; a future
+earth-core bump to the 0.6.1 line should preserve the DNA hash (verify on rebuild) to
+stay a hot-swap.
 
 ---
 
