@@ -11,15 +11,16 @@
 **pass-4-query-tolerance**, hApp `2205337c`, DNA
 `uhC0k26bYG0qmTCFk4_D996GRCTecEtMdL5pXyvCUu0ACJN12omCV` (held).
 `feat-self-notes-architecture` merged `--no-ff` into `main` + tagged `v1.0.0`.
-**HEAD `25ad4df`** = clippy/fmt cleanup (NOT a release): `1dee7f3` cargo fmt
-(coordinator + sweettest only) + `25ad4df` clippy-clean. Coordinator content.wasm
-→ `c2a2a2fa`, happ → `bef54a1c`; **integrity wasm `06b01fb3` + DNA `uhC0k26b` HELD**
-(integrity is frozen — its clippy lints are suppressed via `content_integrity/Cargo.toml
-[lints]`, NEVER source-edited; see Gotchas + `.baseline-hashes.txt`). The v1.0.0 tag
-(`db2a264`) + distributed happ (`2205337c`) are UNCHANGED. The `414142c` handoff/roadmap
-docs commit is also on `main`.
-**Pushed to GitHub:** `db2a264` + tag `v1.0.0`. **main is ahead** (docs + 2 cleanup
-commits) — user `git push origin main` pending. Assistant never pushes.
+**HEAD `b3ed816`** = clippy/fmt cleanup (NOT a release), 4 commits on top of v1.0.0:
+`1dee7f3` cargo fmt (coordinator + sweettest only) · `25ad4df` clippy-clean (workspace
+`-D warnings`) · `83ec309` baseline row · `b3ed816` fmt-safety note. Coordinator
+content.wasm → `c2a2a2fa`, happ → `bef54a1c`; **integrity wasm `06b01fb3` + DNA
+`uhC0k26b` HELD** (integrity frozen — clippy lints suppressed via
+`content_integrity/Cargo.toml [lints]`, NEVER source-edited; see Gotchas +
+`.baseline-hashes.txt`). The v1.0.0 tag (`db2a264`) + distributed happ (`2205337c`)
+are UNCHANGED; the cleanup happ (`bef54a1c`) is not distributed.
+**Pushed to GitHub:** `db2a264` + tag `v1.0.0`. **main is 5 commits ahead** (docs +
+cleanup) — user `git push origin main` pending. Assistant never pushes.
 
 **DNA:** pass-4, frozen. Integrity wasm `06b01fb3…` byte-identical across all
 pass-4 coordinator gens; every coordinator change this session was a hot-swap
@@ -51,6 +52,26 @@ pass-4 coordinator gens; every coordinator change this session was a hot-swap
   cross-hive >4MB = chunked DM entries; the list_my_hives wart is fixed in 2205337c).
 - Cloned + pruned standard-workflow / update-docs-workflow skills + reviewer agents.
 - Released v1.0.0: merged to main, tagged, full gate ladder green.
+
+## Outstanding follow-ups
+
+1. **N1 — griefing bug in `update_encrypted_content`** (pre-existing, coordinator,
+   DNA-safe; surfaced by rust review during the clippy cleanup — NOT a clippy warning,
+   NOT yet fixed). In
+   `dnas/humm_earth_core/zomes/coordinator/content/src/encrypted_content/crud.rs`,
+   `update_encrypted_content` does `original_hash_link[0].clone().target.into_action_hash().unwrap()`
+   (two sites) which traps (wasm panic) on a non-ActionHash link target. Integrity
+   validates `LinkTypes::OriginalHashPointer` as unconditionally `Valid` (no target-type
+   / author check), so a remote peer can plant a poison link and the victim's next
+   update traps. Severity P2 (availability/griefing; source-chain rolls back, no
+   corruption). **Fix:** replace each `.unwrap()` with `let Some(ah) =
+   …into_action_hash() else { return Err(wasm_error!(WasmErrorInner::Guest(
+   "OriginalHashPointer target is not an ActionHash".to_string()))) };`, mirroring
+   `probe_inbox`'s existing guard. Add a host test. Coordinator-only → content.wasm
+   changes, DNA `uhC0k26b` must stay held; rebuild + confirm integrity `06b01fb3` +
+   add a `.baseline-hashes.txt` row. Do NOT touch the integrity crate.
+2. **`git push origin main`** (user) — `b3ed816`, 5 commits ahead of GitHub; v1.0.0
+   tag already pushed.
 
 ---
 
