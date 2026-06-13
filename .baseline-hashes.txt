@@ -360,6 +360,35 @@ Host tests: 25 coordinator (3 new) + 69 integrity, all green.
 Conductor proof via humm-tauri tryorama-free BDD RS-1; in-repo
 tryorama cannot boot on hc 0.6.0 (quic->webrtc CLI rename).
 
+Pass-4 coordinator follow-up — query tolerance (cross-type + dangling)
+---------------------------------------------------------------------
+Built from: 2e8ae4a (branch fix-coordinator-query-tolerance, off the
+deployed coordinator). Coordinator-only. get_many_encrypted_content now
+returns the resolvable subset instead of an all-or-nothing collect(),
+fixing the dangling / gossip-lagged / tombstoned-target poison shared by
+list_by_hive_link / list_by_dynamic_link / list_by_acl_link /
+list_by_author. list_my_hives, get_latest_membership, list_my_groups
+(resolve_genesis_invite + resolve_membership_invite), and
+get_latest_group_membership decode mixed-type Inbox targets with
+.ok().flatten() instead of `?`-propagating the wrong-type deserialize
+(the first joined hive otherwise broke list_my_hives for the joiner
+forever). Integrity zome untouched; DNA hash + integrity wasm sha256
+HELD byte-identical to pass-4 FINAL. Coordinator hot-swap — no chain fork.
+
+  DNA hash (HELD):         uhC0k26bYG0qmTCFk4_D996GRCTecEtMdL5pXyvCUu0ACJN12omCV
+  content_integrity.wasm:  06b01fb3527e266a5cb1b5ffbf01b83541d7a572c4b4a252521154c3e0c2cd83 (UNCHANGED)
+  content.wasm:            78f0602ea78edc4e8996642ba0623953fedf66c9cd1e266a42b60980a6daa9b0 (NEW — coordinator fix)
+  hApp bundle sha256:      2205337c085f5d148fdddf63a688e3ad6d4a1b79dc3a70facad180c38b29928b (NEW)
+
+Reproducibility: VERIFIED — double-build from two paths
+(~/humm-earth-core-happ + /tmp/repro-qt) produced byte-identical
+content.wasm + content_integrity.wasm + .happ.
+Official prebuilt: ~/hummhive-official-happ-versions label
+"pass-4-query-tolerance" (mirrored to humm-tauri/.testdata/happs).
+Host tests: 25 coordinator + 69 integrity, all green.
+Behavior conductor-proof pending Sweettest (in-repo tryorama still
+cannot boot on hc 0.6.0 — quic->webrtc CLI rename).
+
 Reproducibility contract (effective pass-4 re-record)
 =====================================================
 
