@@ -11,11 +11,15 @@
 **pass-4-query-tolerance**, hApp `2205337c`, DNA
 `uhC0k26bYG0qmTCFk4_D996GRCTecEtMdL5pXyvCUu0ACJN12omCV` (held).
 `feat-self-notes-architecture` merged `--no-ff` into `main` + tagged `v1.0.0`.
-**HEAD `414142c`** = post-tag docs (canonical humm-tauri entry point
-`docs/HUMM_TAURI_v1.0.0_HANDOFF_DOC.md` + roadmap RC-status reconciliation vs
-humm-tauri `dm-invite-media-pickup`@`f61dbeaa`).
-**Pushed to GitHub:** `db2a264` + tag `v1.0.0`. **main is 1 commit ahead** (the
-`414142c` docs commit) — user `git push origin main` pending. Assistant never pushes.
+**HEAD `25ad4df`** = clippy/fmt cleanup (NOT a release): `1dee7f3` cargo fmt
+(coordinator + sweettest only) + `25ad4df` clippy-clean. Coordinator content.wasm
+→ `c2a2a2fa`, happ → `bef54a1c`; **integrity wasm `06b01fb3` + DNA `uhC0k26b` HELD**
+(integrity is frozen — its clippy lints are suppressed via `content_integrity/Cargo.toml
+[lints]`, NEVER source-edited; see Gotchas + `.baseline-hashes.txt`). The v1.0.0 tag
+(`db2a264`) + distributed happ (`2205337c`) are UNCHANGED. The `414142c` handoff/roadmap
+docs commit is also on `main`.
+**Pushed to GitHub:** `db2a264` + tag `v1.0.0`. **main is ahead** (docs + 2 cleanup
+commits) — user `git push origin main` pending. Assistant never pushes.
 
 **DNA:** pass-4, frozen. Integrity wasm `06b01fb3…` byte-identical across all
 pass-4 coordinator gens; every coordinator change this session was a hot-swap
@@ -97,7 +101,13 @@ pass-4 coordinator gens; every coordinator change this session was a hot-swap
 - AdminWebsocket 400 → pass `wsClientOptions: { origin: "<anything>" }`.
 - Two agents, one conductor: same `network_seed` → shared DHT → offline cross-agent validation.
 - Reproducibility requires `nix develop` (`wasm-opt`) + `codegen-units = 1`.
-- Pre-existing cosmetic clippy nits: 8 `clone_on_copy` in `content` lib.rs (deferred — fixing churns the released happ).
+- **Editing the integrity crate forks the DNA** — even a `cargo fmt` reflow or an
+  inserted `#[allow]` shifts rustc's embedded `#[track_caller]` panic-`Location` line
+  numbers → integrity wasm sha bumps at identical byte length → DNA fork (proven this
+  session). Integrity is frozen: NEVER fmt or source-edit it; suppress its clippy lints
+  via `content_integrity/Cargo.toml [lints.clippy]` (zero codegen effect, survives
+  `-D warnings`). Coordinator is free to fmt/fix (content.wasm may change). Workspace
+  clippy is clean as of `25ad4df`.
 
 ## Key references
 

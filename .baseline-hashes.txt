@@ -393,6 +393,34 @@ and a joiner's list_my_hives returns the joined hive across two conductors
 without the cross-type Inbox decode failure. In-repo tryorama still cannot
 boot on hc 0.6.0 (quic->webrtc CLI rename) — Sweettest is the in-tree path.
 
+Pass-4 coordinator follow-up — clippy / fmt cleanup
+---------------------------------------------------------------------
+Built from: 25ad4df (main). Two commits: 1dee7f3 (style: cargo fmt —
+coordinator + sweettest ONLY) + 25ad4df (fix(clippy): clear all workspace
+clippy warnings). The integrity crate (content_integrity) source is
+BYTE-IDENTICAL to v1.0.0: its 7 cosmetic clippy lints are suppressed via
+content_integrity/Cargo.toml [lints.clippy] (lint levels have zero codegen
+effect), and it is deliberately NOT cargo-fmt'd. Why: editing integrity
+source — even a fmt reflow or an inserted #[allow] — shifts rustc's embedded
+#[track_caller] panic-Location line numbers and bumps the integrity wasm
+sha (proven this session: a fmt-only reflow changed the sha at IDENTICAL
+byte length → DNA fork). So the manifest allow holds the integrity wasm +
+DNA byte-identical. Coordinator content.wasm sha256 BUMPS (clippy fixes +
+fmt). Coordinator hot-swap — no chain fork.
+
+  DNA hash (HELD):         uhC0k26bYG0qmTCFk4_D996GRCTecEtMdL5pXyvCUu0ACJN12omCV
+  content_integrity.wasm:  06b01fb3527e266a5cb1b5ffbf01b83541d7a572c4b4a252521154c3e0c2cd83 (UNCHANGED)
+  content.wasm:            c2a2a2faa883fa61a953e238653c25fd9954b677208f6ba577d382a502af04ed (NEW — coordinator clippy/fmt)
+  hApp bundle sha256:      bef54a1cee4705b5fa064fd132e616f0c18528882bb723cee7c289ddf9a87eb9 (NEW)
+
+Verification: cargo clippy --workspace --all-targets -- -D warnings clean
+(integrity lints allowed at the manifest level — survives -D warnings).
+Host tests: 25 coordinator + 69 integrity green. Control: v1.0.0 source
+(45503c2) rebuilt to the same 06b01fb3 + 78f0602e in this nix env BEFORE the
+cleanup; then 25ad4df rebuilt to 06b01fb3 (integrity HELD) + c2a2a2fa (content
+NEW). NOT a new release — the v1.0.0 tag (db2a264) + distributed happ
+(2205337c) are unchanged; the cleanup happ (bef54a1c) is not distributed.
+
 Reproducibility contract (effective pass-4 re-record)
 =====================================================
 
