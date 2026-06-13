@@ -15,14 +15,14 @@ use hdi::hash_path::path::Component;
 use hdk::prelude::*;
 
 use crate::{
-    dynamic_links::create_dynamic_links,
-    hive_link::create_hive_link,
-    humm_content_id_link::create_humm_content_id_link,
-    linking::acl_links::create_acl_links,
+    dynamic_links::create_dynamic_links, hive_link::create_hive_link,
+    humm_content_id_link::create_humm_content_id_link, linking::acl_links::create_acl_links,
 };
 
 use super::get_helpers::{get_eh, get_latest_typed_from_eh};
-use super::signals::{remote_signal_acl_readers, EncryptedContentSignal, EncryptedContentSignalType};
+use super::signals::{
+    remote_signal_acl_readers, EncryptedContentSignal, EncryptedContentSignalType,
+};
 use super::{CreateEncryptedContentInput, EncryptedContentResponse, UpdateEncryptedContentInput};
 
 #[hdk_extern]

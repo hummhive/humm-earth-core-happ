@@ -6,8 +6,8 @@ pub mod linking;
 
 use content_integrity::*;
 use hdk::prelude::*;
-use std::collections::HashSet;
 pub use linking::*;
+use std::collections::HashSet;
 
 use encrypted_content::signals::{DmRemoteSignal, EncryptedContentSignal};
 
@@ -48,7 +48,10 @@ pub fn set_cap_tokens() -> ExternResult<()> {
     // Read surface — every query extern over public DHT data.
     fns.insert((zome.clone(), "get_encrypted_content".into()));
     fns.insert((zome.clone(), "get_many_encrypted_content".into()));
-    fns.insert((zome.clone(), "get_encrypted_content_by_time_and_author".into()));
+    fns.insert((
+        zome.clone(),
+        "get_encrypted_content_by_time_and_author".into(),
+    ));
     fns.insert((zome.clone(), "list_by_dynamic_link".into()));
     fns.insert((zome.clone(), "list_by_hive_link".into()));
     fns.insert((zome.clone(), "get_by_content_id_link".into()));
@@ -371,9 +374,7 @@ fn signal_entry_deleted(action: SignedActionHashed, delete: Delete) -> ExternRes
         // for a different zome). Skip the signal.
         Ok(None) => {}
         Err(err) => {
-            warn!(
-                "signal_entry_deleted: get_entry_for_action failed; signal skipped: {err:?}"
-            );
+            warn!("signal_entry_deleted: get_entry_for_action failed; signal skipped: {err:?}");
         }
     }
     Ok(())

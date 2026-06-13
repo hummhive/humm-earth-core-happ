@@ -74,8 +74,11 @@ pub fn get_latest_group_membership(
         // Tolerate an undecodable target instead of failing the whole
         // query (defensive; AgentToGroupMemberships targets are
         // homogeneous by design, but a foreign/corrupt one must skip).
-        let Some(membership) =
-            record.entry().to_app_option::<GroupMembership>().ok().flatten()
+        let Some(membership) = record
+            .entry()
+            .to_app_option::<GroupMembership>()
+            .ok()
+            .flatten()
         else {
             continue;
         };
@@ -144,10 +147,8 @@ pub fn list_group_members(
 
     // Best-per-agent: walk all links, keep latest-timestamped unexpired
     // membership per `for_agent`. Final pass returns the dedup'd set.
-    let mut best: std::collections::HashMap<
-        AgentPubKey,
-        (Timestamp, GroupMembership, ActionHash),
-    > = std::collections::HashMap::new();
+    let mut best: std::collections::HashMap<AgentPubKey, (Timestamp, GroupMembership, ActionHash)> =
+        std::collections::HashMap::new();
     for link in links {
         let Some(target_ah) = link.target.into_action_hash() else {
             continue;
@@ -230,10 +231,7 @@ pub fn list_my_groups(_: ()) -> ExternResult<Vec<ListedGroup>> {
     let my_pubkey = agent_info()?.agent_initial_pubkey;
     let invite_byte = InboxEvent::GroupInvite.as_byte();
     let links = get_links(
-        LinkQuery::try_new(
-            AnyLinkableHash::from(my_pubkey.clone()),
-            LinkTypes::Inbox,
-        )?,
+        LinkQuery::try_new(AnyLinkableHash::from(my_pubkey.clone()), LinkTypes::Inbox)?,
         GetStrategy::Network,
     )?;
 
@@ -279,8 +277,11 @@ fn resolve_genesis_invite(
     // GroupMembership inbox targets through here, so a membership target
     // failing the genesis decode must fall through (Ok(None)) — never
     // `?`-propagate, which broke the whole list once any group was joined.
-    let Some(genesis) =
-        record.entry().to_app_option::<GroupGenesis>().ok().flatten()
+    let Some(genesis) = record
+        .entry()
+        .to_app_option::<GroupGenesis>()
+        .ok()
+        .flatten()
     else {
         return Ok(None);
     };
@@ -307,8 +308,11 @@ fn resolve_membership_invite(
     my_pubkey: &AgentPubKey,
     now: &Timestamp,
 ) -> ExternResult<Option<ListedGroup>> {
-    let Some(membership) =
-        record.entry().to_app_option::<GroupMembership>().ok().flatten()
+    let Some(membership) = record
+        .entry()
+        .to_app_option::<GroupMembership>()
+        .ok()
+        .flatten()
     else {
         return Ok(None);
     };
@@ -320,13 +324,15 @@ fn resolve_membership_invite(
             return Ok(None);
         }
     }
-    let Some(genesis_record) =
-        get(membership.group_genesis_hash.clone(), GetOptions::network())?
+    let Some(genesis_record) = get(membership.group_genesis_hash.clone(), GetOptions::network())?
     else {
         return Ok(None);
     };
-    let Some(genesis) =
-        genesis_record.entry().to_app_option::<GroupGenesis>().ok().flatten()
+    let Some(genesis) = genesis_record
+        .entry()
+        .to_app_option::<GroupGenesis>()
+        .ok()
+        .flatten()
     else {
         return Ok(None);
     };
@@ -351,9 +357,7 @@ fn resolve_membership_invite(
 /// caller's per-group membership. Pair with `get_latest_group_membership`
 /// per-group if the caller's role matters for the UI surface.
 #[hdk_extern]
-pub fn list_groups_in_hive(
-    hive_genesis_hash: ActionHash,
-) -> ExternResult<Vec<ListedGroup>> {
+pub fn list_groups_in_hive(hive_genesis_hash: ActionHash) -> ExternResult<Vec<ListedGroup>> {
     let links = get_links(
         LinkQuery::try_new(
             AnyLinkableHash::from(hive_genesis_hash.clone()),
@@ -401,9 +405,7 @@ pub fn list_groups_in_hive(
 /// UI consumers that already hold a group identity and need display
 /// fields.
 #[hdk_extern]
-pub fn get_group_genesis(
-    action_hash: ActionHash,
-) -> ExternResult<Option<GroupGenesisResponse>> {
+pub fn get_group_genesis(action_hash: ActionHash) -> ExternResult<Option<GroupGenesisResponse>> {
     let Some(record) = get(action_hash.clone(), GetOptions::network())? else {
         return Ok(None);
     };

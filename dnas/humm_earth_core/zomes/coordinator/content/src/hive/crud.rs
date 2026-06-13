@@ -40,9 +40,7 @@ pub struct HiveGenesisResponse {
 /// Permissionless: any agent on the DNA may call this. The integrity
 /// validator returns `Valid` for every author.
 #[hdk_extern]
-pub fn create_hive_genesis(
-    input: CreateHiveGenesisInput,
-) -> ExternResult<HiveGenesisResponse> {
+pub fn create_hive_genesis(input: CreateHiveGenesisInput) -> ExternResult<HiveGenesisResponse> {
     let now = sys_time()?;
     let genesis = HiveGenesis {
         display_id: input.display_id,

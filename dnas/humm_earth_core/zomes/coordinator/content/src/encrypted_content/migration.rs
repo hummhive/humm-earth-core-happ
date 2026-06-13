@@ -175,9 +175,7 @@ pub fn mark_migrated(input: MarkMigratedInput) -> ExternResult<EncryptedContentR
 /// does not resolve, action carries no entry hash, entry is not Live,
 /// no trusted-author updates, latest update lacks the sentinel
 /// content_type). Errors propagate transport failures unchanged.
-fn fetch_latest_marker_envelope(
-    action_hash: ActionHash,
-) -> ExternResult<Option<EncryptedContent>> {
+fn fetch_latest_marker_envelope(action_hash: ActionHash) -> ExternResult<Option<EncryptedContent>> {
     let Some(original_record) = get(
         AnyDhtHash::from(action_hash),
         GetOptions {
@@ -278,9 +276,7 @@ fn fetch_latest_marker_envelope(
 ///   as `Ok(None)`, which would silently hide a real migration during
 ///   a transient network blip.
 #[hdk_extern]
-pub fn get_migration_marker(
-    action_hash: ActionHash,
-) -> ExternResult<Option<MigrationMarkerV1>> {
+pub fn get_migration_marker(action_hash: ActionHash) -> ExternResult<Option<MigrationMarkerV1>> {
     let Some(typed_entry) = fetch_latest_marker_envelope(action_hash)? else {
         return Ok(None);
     };
@@ -478,9 +474,7 @@ pub struct MarkMigratedV2Input {
 /// is sufficient when V1-only readers still exist in the wild; pass-2.5
 /// hosts can write V2 here too without breaking V2-aware readers.
 #[hdk_extern]
-pub fn mark_migrated_v2(
-    input: MarkMigratedV2Input,
-) -> ExternResult<EncryptedContentResponse> {
+pub fn mark_migrated_v2(input: MarkMigratedV2Input) -> ExternResult<EncryptedContentResponse> {
     let original = super::crud::get_encrypted_content(input.original_action_hash.clone())?;
     let marker_payload = build_marker_v2_payload(&original.encrypted_content, &input.marker)?;
     super::crud::update_encrypted_content(super::UpdateEncryptedContentInput {
@@ -525,9 +519,7 @@ fn decode_marker(bytes: SerializedBytes) -> Option<MigrationMarker> {
 /// Return semantics mirror the V1 reader; see its doc-comment for the
 /// full table.
 #[hdk_extern]
-pub fn get_migration_marker_v2(
-    action_hash: ActionHash,
-) -> ExternResult<Option<MigrationMarker>> {
+pub fn get_migration_marker_v2(action_hash: ActionHash) -> ExternResult<Option<MigrationMarker>> {
     let Some(typed_entry) = fetch_latest_marker_envelope(action_hash)? else {
         return Ok(None);
     };
@@ -597,7 +589,10 @@ mod tests {
         let payload = build_marker_payload(&original, &marker).expect("build");
         assert_eq!(payload.header.content_type, "_migrated/dm");
         assert_eq!(payload.header.id, original.header.id);
-        assert_eq!(payload.header.display_hive_id, original.header.display_hive_id);
+        assert_eq!(
+            payload.header.display_hive_id,
+            original.header.display_hive_id
+        );
         assert_eq!(
             payload.header.revision_author_signing_public_key,
             original.header.revision_author_signing_public_key
@@ -681,7 +676,10 @@ mod tests {
         let payload = build_marker_v2_payload(&original, &marker).expect("build");
         assert_eq!(payload.header.content_type, "_migrated/dm");
         assert_eq!(payload.header.id, original.header.id);
-        assert_eq!(payload.header.display_hive_id, original.header.display_hive_id);
+        assert_eq!(
+            payload.header.display_hive_id,
+            original.header.display_hive_id
+        );
         assert_eq!(payload.header.acl_spec, original.header.acl_spec);
         assert_eq!(
             payload.header.revision_author_signing_public_key,
@@ -739,8 +737,7 @@ mod tests {
     /// V1 fallback work for V1 bytes.
     #[test]
     fn v1_marker_bytes_decode_as_v2_struct_with_none_fields() {
-        let v1 =
-            MigrationMarkerV1::new("uhC0k".into(), "uhCkk".into(), "app".into(), 1);
+        let v1 = MigrationMarkerV1::new("uhC0k".into(), "uhCkk".into(), "app".into(), 1);
         let bytes = SerializedBytes::try_from(v1).expect("serialize V1");
         let v2_view = MigrationMarkerV2::try_from(bytes).expect("decode V2");
         assert_eq!(v2_view.schema_version, 1);
@@ -763,7 +760,10 @@ mod tests {
             Some("hive-1-display".into()),
         );
         let payload = build_marker_v2_payload(&original, &marker).expect("build");
-        assert_eq!(payload.header.display_hive_id, original.header.display_hive_id);
+        assert_eq!(
+            payload.header.display_hive_id,
+            original.header.display_hive_id
+        );
         assert_eq!(payload.header.acl_spec, original.header.acl_spec);
         let decoded = MigrationMarkerV2::try_from(payload.bytes).expect("decode");
         assert_eq!(
@@ -813,8 +813,7 @@ mod tests {
                  tagging would break TS callers that switch on the outer key.",
                 bytes.first(),
             );
-            let back: MigrationMarker =
-                holochain_serialized_bytes::decode(&bytes).expect("de");
+            let back: MigrationMarker = holochain_serialized_bytes::decode(&bytes).expect("de");
             assert_eq!(back, variant);
         }
     }
@@ -842,8 +841,7 @@ mod tests {
     /// decode succeeds via `#[serde(default)]` but fails well_formed.
     #[test]
     fn decode_marker_falls_back_to_v1_for_v1_bytes() {
-        let v1 =
-            MigrationMarkerV1::new("uhC0k".into(), "uhCkk".into(), "app".into(), 1);
+        let v1 = MigrationMarkerV1::new("uhC0k".into(), "uhCkk".into(), "app".into(), 1);
         let bytes = SerializedBytes::try_from(v1.clone()).expect("ser");
         let decoded = decode_marker(bytes).expect("decoded");
         match decoded {

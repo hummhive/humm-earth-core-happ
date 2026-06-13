@@ -15,14 +15,11 @@
 //! byte. This piggybacks on the I-C inbox infrastructure (single link
 //! type, simple validator).
 
-
 pub mod crud;
 pub mod queries;
 
 pub use crud::{
-    create_hive_genesis, create_hive_membership, CreateHiveGenesisInput,
-    CreateHiveMembershipInput, HiveGenesisResponse, HiveMembershipResponse,
+    create_hive_genesis, create_hive_membership, CreateHiveGenesisInput, CreateHiveMembershipInput,
+    HiveGenesisResponse, HiveMembershipResponse,
 };
-pub use queries::{
-    get_latest_membership, list_my_hives, GetLatestMembershipInput, ListedHive,
-};
+pub use queries::{get_latest_membership, list_my_hives, GetLatestMembershipInput, ListedHive};

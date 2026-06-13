@@ -363,7 +363,9 @@ pub fn send_dm_call_sdp_data(input: SendDmCallSdpDataInput) -> ExternResult<()> 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use content_integrity::{Acl, AclByGroupGenesis, AclSpec, EncryptedContent, EncryptedContentHeader};
+    use content_integrity::{
+        Acl, AclByGroupGenesis, AclSpec, EncryptedContent, EncryptedContentHeader,
+    };
 
     fn sample_response() -> EncryptedContentResponse {
         EncryptedContentResponse {
@@ -419,7 +421,10 @@ mod tests {
         };
         let io = ExternIO::encode(&sig).expect("encode");
         let back: EncryptedContentSignal = io.decode().expect("decode");
-        assert!(matches!(back.action_type, EncryptedContentSignalType::Create));
+        assert!(matches!(
+            back.action_type,
+            EncryptedContentSignalType::Create
+        ));
         assert!(back.from_agent.is_none());
     }
 
@@ -582,9 +587,13 @@ mod tests {
             .decode()
             .expect("recv_remote_signal ExternIO param must decode (dropped-signal bug)");
         // Dispatcher try-decode:
-        let back: EncryptedContentSignal =
-            param.decode().expect("dispatcher must recover the typed signal");
-        assert!(matches!(back.action_type, EncryptedContentSignalType::Create));
+        let back: EncryptedContentSignal = param
+            .decode()
+            .expect("dispatcher must recover the typed signal");
+        assert!(matches!(
+            back.action_type,
+            EncryptedContentSignalType::Create
+        ));
     }
 
     /// Characterization guard locking the bug shut: a typed signal handed
@@ -605,7 +614,10 @@ mod tests {
         // map16 0xde, map32 0xdf) — NOT a BIN. This is precisely why the
         // ExternIO param decode below fails. Matches the captured
         // conductor log (`[130, ...]` = 0x82 fixmap).
-        assert!(!single.0.is_empty(), "ExternIO::encode produced empty bytes");
+        assert!(
+            !single.0.is_empty(),
+            "ExternIO::encode produced empty bytes"
+        );
         let marker = single.0[0];
         assert!(
             (0x80..=0x8f).contains(&marker) || marker == 0xde || marker == 0xdf,

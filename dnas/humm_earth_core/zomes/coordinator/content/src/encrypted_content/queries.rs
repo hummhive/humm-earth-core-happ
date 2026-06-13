@@ -408,10 +408,7 @@ pub fn fetch_pair_ss_with_hive_check(
     } else {
         (hive_hashes, &author_hashes)
     };
-    let intersection: Vec<ActionHash> = small
-        .into_iter()
-        .filter(|h| large.contains(h))
-        .collect();
+    let intersection: Vec<ActionHash> = small.into_iter().filter(|h| large.contains(h)).collect();
     if intersection.is_empty() {
         return Ok(vec![]);
     }
@@ -424,9 +421,9 @@ pub fn fetch_pair_ss_with_hive_check(
     for ah in intersection {
         match get_encrypted_content(ah.clone()) {
             Ok(resp) => out.push(resp),
-            Err(err) => debug!(
-                "fetch_pair_ss_with_hive_check: skipping unresolvable AH {ah}: {err:?}"
-            ),
+            Err(err) => {
+                debug!("fetch_pair_ss_with_hive_check: skipping unresolvable AH {ah}: {err:?}")
+            }
         }
     }
     Ok(out)

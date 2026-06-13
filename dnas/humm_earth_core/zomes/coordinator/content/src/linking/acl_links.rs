@@ -74,19 +74,17 @@ pub fn create_acl_links(
 ) -> ExternResult<Vec<ActionHash>> {
     let hive_hash = encrypted_content.header.hive_context().ok_or_else(|| {
         wasm_error!(WasmErrorInner::Guest(
-            "create_acl_links called on a header with no hive_context"
+            "create_acl_links called on a header with no hive_context".into(),
+        ))
+    })?;
+    let group_acl: &AclByGroupGenesis = encrypted_content.header.group_acl().ok_or_else(|| {
+        wasm_error!(WasmErrorInner::Guest(
+            "create_acl_links called on a header whose acl_spec is not \
+                 HiveGroup; HummContent* links anchor only to HiveGroup \
+                 content"
                 .into(),
         ))
     })?;
-    let group_acl: &AclByGroupGenesis =
-        encrypted_content.header.group_acl().ok_or_else(|| {
-            wasm_error!(WasmErrorInner::Guest(
-                "create_acl_links called on a header whose acl_spec is not \
-                 HiveGroup; HummContent* links anchor only to HiveGroup \
-                 content"
-                    .into(),
-            ))
-        })?;
     let hive_b64 = hive_hash.to_string();
     let content_type = encrypted_content.header.content_type.clone();
 

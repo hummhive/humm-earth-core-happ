@@ -67,8 +67,11 @@ pub fn get_latest_membership(
         // Targets are either HiveGenesis or HiveMembership; only
         // HiveMembership concerns this query. Decode-as-membership and
         // skip on failure.
-        let Some(membership) =
-            record.entry().to_app_option::<HiveMembership>().ok().flatten()
+        let Some(membership) = record
+            .entry()
+            .to_app_option::<HiveMembership>()
+            .ok()
+            .flatten()
         else {
             continue;
         };
@@ -84,7 +87,11 @@ pub fn get_latest_membership(
             }
         }
         let ts = record.action().timestamp();
-        if best.as_ref().map(|(prev_ts, _, _)| ts > *prev_ts).unwrap_or(true) {
+        if best
+            .as_ref()
+            .map(|(prev_ts, _, _)| ts > *prev_ts)
+            .unwrap_or(true)
+        {
             best = Some((ts, membership, target_ah));
         }
     }
@@ -150,9 +157,7 @@ pub fn list_my_hives(_: ()) -> ExternResult<Vec<ListedHive>> {
         // HiveMembership targets, so decoding a membership target as a
         // genesis fails by design — treat it as None and fall through,
         // never `?`-propagate (that broke the whole list for any joiner).
-        if let Some(genesis) =
-            record.entry().to_app_option::<HiveGenesis>().ok().flatten()
-        {
+        if let Some(genesis) = record.entry().to_app_option::<HiveGenesis>().ok().flatten() {
             if record.action().author() != &my_pubkey {
                 continue;
             }
@@ -164,8 +169,11 @@ pub fn list_my_hives(_: ()) -> ExternResult<Vec<ListedHive>> {
             continue;
         }
         // Fall through to HiveMembership.
-        if let Some(membership) =
-            record.entry().to_app_option::<HiveMembership>().ok().flatten()
+        if let Some(membership) = record
+            .entry()
+            .to_app_option::<HiveMembership>()
+            .ok()
+            .flatten()
         {
             if membership.for_agent != my_pubkey {
                 continue;
@@ -176,7 +184,9 @@ pub fn list_my_hives(_: ()) -> ExternResult<Vec<ListedHive>> {
                 }
             }
             // Resolve the genesis to get the display_id.
-            let Some(genesis_record) = get(membership.hive_genesis_hash.clone(), GetOptions::network())? else {
+            let Some(genesis_record) =
+                get(membership.hive_genesis_hash.clone(), GetOptions::network())?
+            else {
                 continue;
             };
             let Some(genesis) = genesis_record

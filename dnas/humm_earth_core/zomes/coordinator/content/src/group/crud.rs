@@ -66,9 +66,7 @@ pub struct GroupGenesisResponse {
 /// demands hive Admin+. The integrity validator returns Invalid on
 /// authority failure.
 #[hdk_extern]
-pub fn create_group_genesis(
-    input: CreateGroupGenesisInput,
-) -> ExternResult<GroupGenesisResponse> {
+pub fn create_group_genesis(input: CreateGroupGenesisInput) -> ExternResult<GroupGenesisResponse> {
     let now = sys_time()?;
     let genesis = GroupGenesis {
         hive_genesis_hash: input.hive_genesis_hash.clone(),
@@ -233,8 +231,8 @@ pub struct RevokeGroupMembershipInput {
 pub fn revoke_group_membership(
     input: RevokeGroupMembershipInput,
 ) -> ExternResult<GroupMembershipResponse> {
-    let original_record = get(input.membership_hash.clone(), GetOptions::network())?
-        .ok_or_else(|| {
+    let original_record =
+        get(input.membership_hash.clone(), GetOptions::network())?.ok_or_else(|| {
             wasm_error!(WasmErrorInner::Guest(format!(
                 "revoke_group_membership: original membership {} not found",
                 input.membership_hash,

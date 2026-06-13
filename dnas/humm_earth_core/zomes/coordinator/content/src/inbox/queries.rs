@@ -51,7 +51,11 @@ pub fn probe_inbox(input: ProbeInboxInput) -> ExternResult<Vec<InboxItem>> {
 
     let mut items: Vec<InboxItem> = Vec::with_capacity(links.len());
     for link in links {
-        let decoded = link.tag.0.first().and_then(|b| InboxEvent::from_byte(*b).ok());
+        let decoded = link
+            .tag
+            .0
+            .first()
+            .and_then(|b| InboxEvent::from_byte(*b).ok());
         if let Some(filter) = input.event_filter {
             // Filter mode: only include links whose decoded byte matches.
             if decoded != Some(filter) {
@@ -94,9 +98,6 @@ pub fn get_last_probe(_: ()) -> ExternResult<Option<DmProbeLog>> {
     let Some(record) = records.into_iter().next() else {
         return Ok(None);
     };
-    let probe: Option<DmProbeLog> = record
-        .entry()
-        .to_app_option()
-        .map_err(|e| wasm_error!(e))?;
+    let probe: Option<DmProbeLog> = record.entry().to_app_option().map_err(|e| wasm_error!(e))?;
     Ok(probe)
 }

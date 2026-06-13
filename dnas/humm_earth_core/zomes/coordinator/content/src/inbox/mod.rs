@@ -20,6 +20,4 @@ pub mod queries;
 pub use crud::{
     consume_inbox_item, record_probe, send_to_inbox, RecordProbeInput, SendToInboxInput,
 };
-pub use queries::{
-    get_last_probe, probe_inbox, InboxItem, ProbeInboxInput,
-};
+pub use queries::{get_last_probe, probe_inbox, InboxItem, ProbeInboxInput};
