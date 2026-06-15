@@ -48,10 +48,6 @@ pub fn set_cap_tokens() -> ExternResult<()> {
     // Read surface — every query extern over public DHT data.
     fns.insert((zome.clone(), "get_encrypted_content".into()));
     fns.insert((zome.clone(), "get_many_encrypted_content".into()));
-    fns.insert((
-        zome.clone(),
-        "get_encrypted_content_by_time_and_author".into(),
-    ));
     fns.insert((zome.clone(), "list_by_dynamic_link".into()));
     fns.insert((zome.clone(), "list_by_hive_link".into()));
     fns.insert((zome.clone(), "get_by_content_id_link".into()));
@@ -427,9 +423,10 @@ pub struct GetMessagesSinceInput {
 /// or cross-agent query. It is intended for the startup cache to detect
 /// outgoing messages that were committed after the cache was last written.
 ///
-/// `since_seq = u32::MAX` causes `saturating_add(1)` to wrap to 0, which
-/// returns the full chain — this is the intended behaviour for a "full
-/// resync" path.
+/// Pass `since_seq = 0` to replay the full chain: the range becomes
+/// `(1, u32::MAX)`, returning every action after the genesis `Dna`
+/// action. Any higher value is an incremental cursor — only actions
+/// with sequence greater than `since_seq` are returned.
 #[hdk_extern]
 pub fn get_messages_since(input: GetMessagesSinceInput) -> ExternResult<Vec<Record>> {
     debug!(

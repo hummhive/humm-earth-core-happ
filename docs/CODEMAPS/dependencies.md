@@ -1,4 +1,4 @@
-<!-- codemap:dependencies | generated:2026-06-05 | updated:2026-06-13 | scope:full -->
+<!-- codemap:dependencies | generated:2026-06-05 | updated:2026-06-15 | scope:full -->
 
 # Dependencies
 
@@ -73,7 +73,6 @@ run-local-services --signal-port`.
 | Dependency | Status | Reason |
 |---|---|---|
 | `p2p-shipyard` (Tauri plugin) | disabled | Private repo; contact darksoil-studio |
-| `time_indexing` | disabled | Waiting for hdk-4.0 update |
 | `zome_utils` | disabled | Waiting for hdk-4.0 update |
 
 ## Official hApp Versions

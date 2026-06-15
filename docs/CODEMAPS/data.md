@@ -1,4 +1,4 @@
-<!-- codemap:data | generated:2026-06-05 | updated:2026-06-13 | scope:full -->
+<!-- codemap:data | generated:2026-06-05 | updated:2026-06-15 | scope:full -->
 
 # Data Model
 
@@ -75,8 +75,8 @@ Role: Owner | Admin | Writer | Reader. Dominance: Owner > Admin > Writer > Reade
 |---|---|---|---|---|---|
 | 0 | OriginalHashPointer | updated AH | original AH | — | update-chain back-pointer |
 | 1 | EncryptedContentUpdates | original AH | updated AH | — | update-chain forward index |
-| 2 | TimePath | path | path | — | time-index tree (unused) |
-| 3 | TimeItem | path | entry AH | — | time-index leaf (unused) |
+| 2 | TimePath | path | path | — | declared integrity variant, never created |
+| 3 | TimeItem | path | entry AH | — | declared integrity variant, never created |
 | 4 | Hive | Path([key, content_type]) | entry AH | — | dual-shape: author OR hive discovery |
 | 5 | Dynamic | Path([hive, type, label]) | entry AH | label (UTF-8) | per-group/topic index |
 | 6 | HummContentId | Path([hive, id]) | entry AH | — | content-id lookup within hive |

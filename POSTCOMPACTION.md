@@ -23,6 +23,11 @@ are UNCHANGED; none of these cleanup/fix happs are distributed.
 **Pushed to GitHub:** `db2a264` + tag `v1.0.0`. **main is 8 commits ahead** (docs +
 cleanup + N1 fix) — user `git push origin main` pending. Assistant never pushes.
 
+**Active branch:** `fix-coordinator-pass4-cleanup` (UNMERGED) — coordinator-only
+delete-link cleanup + dead time-index removal + `get_messages_since` resync-doc fix.
+content.wasm `6df18693`, happ `8e8d3773`; integrity wasm `06b01fb3` + DNA `uhC0k26b`
+HELD (hot-swap, no fork). Awaiting review/merge.
+
 **DNA:** pass-4, frozen. Integrity wasm `06b01fb3…` byte-identical across all
 pass-4 coordinator gens; every coordinator change this session was a hot-swap
 (DNA hash held → no chain fork).
@@ -31,7 +36,9 @@ pass-4 coordinator gens; every coordinator change this session was a hot-swap
 - pass-4 FINAL `d74e5f2f` → recv-signal-fix `4aacd52f` (content.wasm cb51c376) →
   **query-tolerance `2205337c` (content.wasm 78f0602e) = v1.0.0** → clippy/fmt
   `bef54a1c` (content.wasm c2a2a2fa) → **N1 griefing fix `bdefd0b2` (content.wasm
-  0538f18f) = current HEAD**. All hot-swaps; integrity wasm + DNA held throughout.
+  0538f18f) = main HEAD** → **cleanup (content.wasm 6df18693, happ 8e8d3773) on
+  branch `fix-coordinator-pass4-cleanup`, UNMERGED**. All hot-swaps; integrity wasm
+  + DNA held throughout.
 
 ### What landed (merged to main as v1.0.0)
 
@@ -61,12 +68,36 @@ pass-4 coordinator gens; every coordinator change this session was a hot-swap
   poison non-ActionHash link returns a clean error rather than trapping the
   author's update. 2 host regression tests; coordinator hot-swap, DNA held,
   content.wasm `0538f18f` / happ `bdefd0b2`.
+- **Branch `fix-coordinator-pass4-cleanup` (coordinator-only, this session):**
+  `delete_encrypted_content` now sweeps the deleting agent's own discovery
+  CreateLinks (Hive / Dynamic / HummContentId / HummContent*) targeting the
+  tombstoned entry — a self-scoping local-chain query (a foreign I-A delete is a
+  no-op; residue cleaned only by the original author) — closing the
+  `// TODO: delete links` gap + the C3 count over-count. Dead time-index surface
+  removed (the permanent-stub `get_encrypted_content_by_time_and_author` + orphan
+  `time_indexed_links.rs` + its cap-grant + mod re-exports + the commented
+  `time_indexing` dep); integrity `TimePath`/`TimeItem` variants LEFT in place
+  (removing forks the DNA). `get_messages_since` doc corrected (since_seq=0 = full
+  replay; the old `u32::MAX`-wraps claim was false — `saturating_add` doesn't wrap).
+  Stale "alerts all agents in all hives" signal comments removed (code is
+  ACL-scoped). Verified: clippy `-D warnings` clean, 27+69 host tests green,
+  **Sweettest 2/2** (`crates/sweettest/tests/coordinator_cleanup.rs`), wasm rebuilt
+  → DNA + integrity wasm HELD byte-identical, content.wasm `6df18693` / happ
+  `8e8d3773`. The integrity `Cargo.toml [lints.clippy]` gained
+  `uninlined_format_args = "allow"` (manifest-level, wasm-neutral — same pattern as
+  the clippy/fmt row). Deferred (optional, owner discretion): the B4.2-B4.4
+  code-reduction dedups (marker-builder twins, hive inbox-walk, decode-policy) —
+  kept this hot-swap focused on correctness.
 
 ## Outstanding follow-ups
 
 1. **`git push origin main`** (user) — main is 8 commits ahead of GitHub (docs +
    clippy/fmt cleanup + N1 griefing fix); v1.0.0 tag already pushed. Assistant
    never pushes.
+2. **Merge `fix-coordinator-pass4-cleanup`** + decide whether to cut a distributed
+   gen — delete-cleanup is the first behavior change since v1.0.0 that downstream
+   humm-tauri would want via a `.happ` swap + `COORDINATOR_WASM_VERSION` bump. The
+   deferred B4.2-B4.4 dedups can ride a later low-risk PR.
 
 ---
 

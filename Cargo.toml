@@ -21,7 +21,6 @@ hdk = "=0.6.0"
 holochain_integrity_types = "=0.6.0"
 holochain_serialized_bytes = "=0.0.56"
 serde = "1.0"
-# time_indexing = { git = "https://github.com/ddd-mtl/time-indexing", branch = "hdk-4.0-dev.20" }
 # zome_utils = { git = "https://github.com/ddd-mtl/zome-utils", branch = "hdk-4.0" }
 
 [workspace.dependencies.content]

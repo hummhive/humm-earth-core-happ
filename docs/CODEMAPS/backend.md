@@ -1,4 +1,4 @@
-<!-- codemap:backend | generated:2026-06-05 | updated:2026-06-13 | scope:full -->
+<!-- codemap:backend | generated:2026-06-05 | updated:2026-06-15 | scope:full -->
 
 # Backend (Zome Externs)
 
@@ -17,7 +17,7 @@ get_many_encrypted_content(Vec<ActionHash>) → Vec<EncryptedContentResponse>
 update_encrypted_content(UpdateEncryptedContentInput) → EncryptedContentResponse
   └─ crud.rs → update_entry + EncryptedContentUpdates link + OriginalHashPointer link
 delete_encrypted_content(ActionHash) → ActionHash
-  └─ crud.rs → delete_entry (I-A receiver-initiated tombstone)
+  └─ crud.rs → delete_entry (I-A tombstone) + sweep author's discovery links (self-scoping local-chain CreateLink query)
 ```
 
 ## Coordinator Externs — Queries
@@ -37,7 +37,6 @@ get_by_content_id_link(ListByContentIdInput) → EncryptedContentResponse
   └─ queries.rs → Path([hive_genesis_hash, content_id])
 fetch_pair_ss_with_hive_check(FetchPairWithHiveCheckInput) → Vec<EncryptedContentResponse>
   └─ queries.rs → intersect author-path ∩ dynamic-path (C4)
-get_encrypted_content_by_time_and_author(_) → [] (stub)
 ```
 
 All list/get-many reads above resolve targets through `get_many_encrypted_content`,
@@ -123,7 +122,7 @@ get_migration_marker_v2(ActionHash) → Option<MigrationMarker>      (V2, reads 
 init(()) → InitCallbackResult            → set_cap_tokens()
 recv_remote_signal(ExternIO)             → try-decode dispatcher (C1 anti-spoof)
 post_commit(Vec<SignedActionHashed>)      → emit local Signal per committed action
-get_messages_since(GetMessagesSinceInput) → Vec<Record>  (source-chain replay)
+get_messages_since(GetMessagesSinceInput) → Vec<Record>  (source-chain replay; since_seq=0 = full chain)
 ```
 
 ## Cap Grant Policy (set_cap_tokens)

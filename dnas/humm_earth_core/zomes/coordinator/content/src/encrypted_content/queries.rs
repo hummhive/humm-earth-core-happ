@@ -27,27 +27,6 @@ use super::crud::{get_encrypted_content, get_many_encrypted_content};
 use super::EncryptedContentResponse;
 
 #[derive(Serialize, Deserialize, Debug)]
-pub struct GetEncryptedContentByTimeAndAuthorInput {
-    pub author: AgentPubKey,
-    pub content_type: String,
-    pub start_time: Option<Timestamp>,
-    pub end_time: Option<Timestamp>,
-    pub limit: Option<usize>,
-}
-
-/// Stub kept for callsite compat while the time-indexing crate path is
-/// still on hold (see commented-out code in the original
-/// `encrypted_content.rs`). Returns empty without erroring so the
-/// upstream `humm-tauri` callsite continues to compile and behave as
-/// it did before the refactor.
-#[hdk_extern]
-pub fn get_encrypted_content_by_time_and_author(
-    _input: GetEncryptedContentByTimeAndAuthorInput,
-) -> ExternResult<Vec<EncryptedContentResponse>> {
-    Ok(vec![])
-}
-
-#[derive(Serialize, Deserialize, Debug)]
 pub struct ListByDynamicLinkInput {
     pub hive_genesis_hash: ActionHash,
     pub content_type: String,
