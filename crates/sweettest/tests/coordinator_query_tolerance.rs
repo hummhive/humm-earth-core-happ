@@ -18,7 +18,7 @@ use std::path::Path;
 
 use holo_hash::{ActionHash, AgentPubKey};
 use holochain::sweettest::{
-    await_consistency, SweetCell, SweetConductor, SweetConductorBatch, SweetDnaFile,
+    await_consistency_s, SweetCell, SweetConductor, SweetConductorBatch, SweetDnaFile,
 };
 use serde::de::IgnoredAny;
 use serde::{Deserialize, Serialize};
@@ -116,7 +116,7 @@ async fn joiner_lists_hive_without_cross_type_decode_failure() {
     let ((alice,), (bob,)): ((SweetCell,), (SweetCell,)) = apps.into_tuples();
     let bob_agent: AgentPubKey = bob.agent_pubkey().clone();
 
-    await_consistency(30, [&alice, &bob]).await.unwrap();
+    await_consistency_s(30, [&alice, &bob]).await.unwrap();
 
     // Alice founds a hive (she is the genesis author → implicit Owner).
     let genesis: GenesisResponse = conductors[0]
@@ -144,7 +144,7 @@ async fn joiner_lists_hive_without_cross_type_decode_failure() {
         )
         .await;
 
-    await_consistency(60, [&alice, &bob]).await.unwrap();
+    await_consistency_s(60, [&alice, &bob]).await.unwrap();
 
     // Bob's Inbox now holds a HiveInvite → HiveMembership target. Pre-fix,
     // list_my_hives decoded it as HiveGenesis FIRST and `?`-propagated the

@@ -16,7 +16,7 @@
 use std::path::Path;
 
 use holo_hash::ActionHash;
-use holochain::sweettest::{await_consistency, SweetCell, SweetConductor, SweetDnaFile};
+use holochain::sweettest::{await_consistency_s, SweetCell, SweetConductor, SweetDnaFile};
 use holochain_types::prelude::{SerializedBytes, UnsafeBytes};
 use serde::de::IgnoredAny;
 use serde::{Deserialize, Serialize};
@@ -158,7 +158,7 @@ async fn delete_encrypted_content_cleans_up_discovery_links() {
         )
         .await;
 
-    await_consistency(30, [&cell]).await.unwrap();
+    await_consistency_s(30, [&cell]).await.unwrap();
 
     // Pre-delete: the hive-shape Hive link, the Dynamic link, and the hive
     // link count all see exactly the one entry.
@@ -218,7 +218,7 @@ async fn delete_encrypted_content_cleans_up_discovery_links() {
         .call(&zome, "delete_encrypted_content", content_ah)
         .await;
 
-    await_consistency(30, [&cell]).await.unwrap();
+    await_consistency_s(30, [&cell]).await.unwrap();
 
     // Post-delete: every discovery link the author created is swept, so the
     // tombstoned entry no longer dangles in any index.
