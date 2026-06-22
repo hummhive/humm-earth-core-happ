@@ -26,7 +26,10 @@ rule). Error strings below are copied verbatim from the validators and
 are wire-stable; treat them as a contract for failure-path assertions.
 
 **DNA under test:**
-`uhC0k26bYG0qmTCFk4_D996GRCTecEtMdL5pXyvCUu0ACJN12omCV` (pass-4).
+`uhC0k2dXMIa1yI-V4ibCWMiTY5G6-p0laq6IOAVQ2F8XXReDHSxyS` (pass-5).
+
+_Line numbers in `(file:NNN)` refs are approximate after the pass-5 edits — the
+`file::test_name` is the durable, grep-able reference._
 
 ---
 
@@ -157,13 +160,17 @@ Admin+ / Path C group membership). Role order:
 - **Then** commit rejected by the underlying `check_hive_authority`
   (`group.rs:262-268`)
 
-### C-4 GroupGenesis is immutable / non-deletable (expected failure)
-- **When** an update or delete is attempted
-- **Then** rejected with `"immutable"` (`"found a new group instead"`) /
-  `"cannot be deleted"` (`"stop granting memberships instead"`)
-- **Validator unit tests** `group.rs::group_genesis_update_is_invalid`
-  (`group.rs:763`), `group.rs::group_genesis_delete_is_invalid`
-  (`group.rs:776`)
+### C-4 GroupGenesis update immutable; delete is author-gated (pass-5)
+- **When** an update is attempted **Then** rejected with `"immutable"`
+  (`"found a new group instead"`).
+- **When** the GROUP CREATOR deletes an empty group's genesis **Then** commit
+  succeeds (pass-5 author-gated cosmetic tombstone — a deleted GroupGenesis still
+  resolves via `must_get_valid_record`, so it is NOT a revocation; coordinator
+  `delete_group_genesis` additionally refuses `"refusing to delete a group with
+  live members"`). A NON-creator delete is rejected with `"GroupGenesis delete
+  must be authored by the group creator"`.
+- **Validator unit tests** `group.rs::group_genesis_update_is_invalid`,
+  `group.rs::group_genesis_delete_author_gated`
 
 ---
 
@@ -483,46 +490,41 @@ buckets empty.
 
 ---
 
-## I. Content delete authority (I-A)
+## I. Content delete authority (I-A) — pass-5 reader read-only
 
-`delete_encrypted_content` (`encrypted_content/crud.rs:205`); validator
-`validate_delete_encrypted_content`. **Permitted deleters:** the original
-author, or any agent whose pubkey string appears in *any*
-`public_key_acl` bucket (owner/admin/writer/reader).
+`delete_encrypted_content`; validator `validate_delete_encrypted_content`.
+**Permitted deleters (pass-5, variant-aware on `acl_spec`):** the original author
+ALWAYS; on a `DirectMessage` the `reader` bucket (= the recipient set) may delete
+its copy; on `HiveGroup`/`Public`/`OpenWrite` ONLY `owner`/`admin`/`writer` may
+delete — a pure `reader` is READ-ONLY (the pass-5 reader write/edit/delete
+bugfix). In-place update stays author-only; "manage all docs" = re-author+delete.
 
 ### I-1 Original author deletes own content (happy)
-- **Validator unit test**
-  `encrypted_content.rs::delete_accepts_original_author` (`:1529`)
+- **Validator unit test** `encrypted_content.rs::delete_accepts_original_author`
 
-### I-2 DM recipient (in reader bucket) can delete (happy)
-- **Given** a DM where Bob is in `public_key_acl.reader`
-- **When** Bob deletes it
-- **Then** commit succeeds (symmetric delete authority for DMs)
+### I-2 DM recipient (reader bucket) can delete; non-recipient cannot
+- **Given** a DM where Bob is in `public_key_acl.reader` **When** Bob deletes
+  **Then** succeeds; a non-recipient is rejected.
 - **Validator unit tests**
-  `encrypted_content.rs::delete_accepts_recipient_in_public_key_acl_reader`
-  (`:1562`), plus admin/writer/owner-bucket variants
-  (`:1581`/`:1598`/`:1615`), and the accept/reject pin
-  `delete_reader_acl_accept_reject_pair` (`:1716`)
+  `encrypted_content.rs::delete_dm_recipient_in_reader_bucket_is_valid`,
+  `delete_dm_non_recipient_is_rejected`
 
-### I-3 Stranger cannot delete (expected failure)
-- **Given** Mallory is the author of nothing and is not in any PKA bucket
-- **When** Mallory deletes the entry
-- **Then** commit rejected
+### I-3 Non-DM: writer/admin/owner delete; reader is REJECTED (pass-5 bugfix)
+- **Given** HiveGroup content **When** a `writer`/`admin`/`owner`-bucket agent
+  deletes **Then** succeeds; **When** a `reader`-bucket agent deletes **Then**
+  rejected (`"not authorised for this content's ACL scope"`).
+- **Validator unit tests**
+  `encrypted_content.rs::delete_hive_group_writer_admin_owner_are_valid`,
+  `delete_hive_group_reader_is_rejected`
+
+### I-4 Stranger cannot delete (expected failure)
 - **Validator unit test**
   `encrypted_content.rs::delete_rejects_stranger_with_empty_public_key_acl`
-  (`:1545`)
 
-### I-4 Substring confusion does not grant delete (expected failure)
-- **Given** an ACL value that is a strict super/substring of the
-  deleter's pubkey
-- **When** that agent deletes
-- **Then** commit rejected — exact-string match required in all four
-  buckets
+### I-5 Substring confusion does not grant delete (expected failure)
 - **Validator unit tests**
-  `encrypted_content.rs::delete_rejects_when_author_string_is_substring_of_acl_value`
-  (`:1632`),
-  `encrypted_content.rs::delete_rejects_when_acl_value_is_substring_of_author_string`
-  (`:1691`)
+  `encrypted_content.rs::delete_rejects_when_author_string_is_substring_of_acl_value`,
+  `delete_rejects_when_acl_value_is_substring_of_author_string`
 
 ---
 
@@ -607,3 +609,45 @@ The substrings above are copied verbatim from the pass-4 validators and
 are part of the contract — assert on them directly. If a substring stops
 matching after a happ upgrade, that is a deliberate validator change to
 review, not a flaky test.
+
+---
+
+## L. Hive ownership (pass-5) — handshake transfer + role-grant hardening
+
+Single owner per hive, transferable only by a two-party offer/accept handshake,
+undemotable by admins. Integrity proves a validly-descended owner; the
+coordinator (`resolve_current_owner`) resolves THE current owner + gates the
+owner-only mutators. Full protocol + the honest double-spend residual:
+`HUMM_TAURI_OWNER_ROLE_AND_ACL_INTEGRATION.md`. Conductor proof:
+`crates/sweettest/tests/owner_and_acl.rs` (3-agent iroh, 3/3 green).
+
+### L-1 Owner is not grantable via membership (expected failure)
+- **When** `create_hive_membership({ role: "Owner", … })` **Then** rejected
+  `"the Owner role cannot be granted via membership; use the owner-handoff handshake"`.
+
+### L-2 Handshake transfers ownership (happy)
+- **Given** founder A's hive **When** A `initiate_owner_handoff(H, B)` + grants B
+  Admin, then B `accept_owner_handoff` **Then** `get_member_hive_role(B) ==
+  Some("Owner")`, `get_member_hive_role(A) != Some("Owner")`.
+- **Conductor test** `owner_and_acl::owner_handshake_admin_authority_and_owner_reject`
+
+### L-3 Only the current owner grants Admin (expected failure)
+- **Given** ownership transferred A→B **When** A (former owner) grants Admin
+  **Then** rejected `"only the current hive owner may grant the Admin role"`;
+  **When** B (current owner, citing B's accept + a Rule-2 Admin membership) grants
+  Admin **Then** succeeds.
+
+### L-4 Two transfers resolve deterministically on every node
+- **Given** A→B→C **When** any node calls `get_member_hive_role(C)` **Then** all
+  agree `Some("Owner")`. **Conductor test**
+  `owner_and_acl::two_transfers_resolve_to_same_owner_on_every_node`
+
+### L-5 Current owner's membership is revoke-protected (expected failure)
+- **When** `revoke_hive_membership` targets the current owner's membership
+  **Then** rejected `"refusing to revoke the current hive owner's membership"`.
+  **Conductor test** `owner_and_acl::revoke_refuses_the_current_owner_membership`
+
+### L-6 Contested ownership is detectable, not preventable
+- **Given** a malicious past owner forks the lineage (irreducible residual)
+  **Then** resolution stays deterministic (smallest offer hash) + the fork is
+  `warn!`ed; `is_ownership_contested(H) -> bool` surfaces it for the UI.

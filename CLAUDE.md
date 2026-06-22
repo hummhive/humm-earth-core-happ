@@ -15,7 +15,7 @@ Holochain conductor and loads this `.happ` at runtime.
 
 - Domain vocabulary (Hive, Sidecar, Node, Cell, Vault, …): `../humm-tauri/GLOSSARY.md`
 - Zome workspace members: `dnas/*/zomes/coordinator/*`, `dnas/*/zomes/integrity/*`
-- Holochain SDK: hdi 0.7.0 / hdk 0.6.0 (holonix main-0.6)
+- Holochain SDK: hdi 0.7.1 / hdk 0.6.1 (holonix main-0.6 @ holochain 0.6.1)
 
 ---
 

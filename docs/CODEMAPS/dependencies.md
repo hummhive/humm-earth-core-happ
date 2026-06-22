@@ -1,4 +1,4 @@
-<!-- codemap:dependencies | generated:2026-06-05 | updated:2026-06-15 | scope:full -->
+<!-- codemap:dependencies | generated:2026-06-05 | updated:2026-06-22 | scope:full -->
 
 # Dependencies
 
@@ -15,9 +15,10 @@ Integration path: `workdir/humm-earth-core-happ.happ` → `../humm-tauri/src-tau
 
 | Crate | Version | Used By |
 |---|---|---|
-| `hdi` | =0.7.0 | integrity zome (validation, entry helpers, link types) |
-| `hdk` | =0.6.0 | coordinator zome (externs, signals, DHT ops) |
-| `holochain_serialized_bytes` | =0.0.56 | both zomes (SerializedBytes wire type) |
+| `hdi` | =0.7.1 | integrity zome (validation, entry helpers, link types) |
+| `hdk` | =0.6.1 | coordinator zome (externs, signals, DHT ops) |
+| `holochain_integrity_types` | =0.6.1 | integrity zome (shared wire types) |
+| `holochain_serialized_bytes` | =0.0.57 | both zomes (SerializedBytes wire type) |
 | `serde` | 1.0 | both zomes (de/serialization) |
 | `base64` | 0.22 | coordinator only (decode AgentPubKey from Acl::reader) |
 
@@ -25,7 +26,7 @@ Integration path: `workdir/humm-earth-core-happ.happ` → `../humm-tauri/src-tau
 
 | Dependency | Source | Purpose |
 |---|---|---|
-| holonix | `github:holochain/holonix/main-0.6` | Holochain toolchain (hc, holochain, lair) |
+| holonix | `github:holochain/holonix/main-0.6` | Holochain 0.6.1 toolchain (hc, holochain, lair, rustc 1.94) |
 | hds-releases | `github:holo-host/hds-releases` | `holo-dev-server-bin` for Holo hosting dev |
 | binaryen | nixpkgs | `wasm-opt` for `strip-wasms.sh` (DNA hash reproducibility) |
 
@@ -54,13 +55,14 @@ Runtime: `npx tsx`. Uses `@holochain/client` (AdminWebsocket + AppWebsocket),
 
 ## Conductor Test Harness (crates/sweettest)
 
-In-process holochain-0.6.0 Sweettest behavior tests for the `content` coordinator.
-A **separate Cargo workspace** (its own `Cargo.lock`): the `holochain` conductor
-crate needs `holochain_serialized_bytes =0.0.57` while the zomes pin `=0.0.56`.
-Loads the pre-built DNA bundle, so it tests whatever `npm run build:zomes` last
-produced. Run inside `nix develop` with `LIBCLANG_PATH` set (datachannel-sys
-bindgen); first compile ~15-40 min (conductor + wasmer + libdatachannel). This is
-the conductor-test path — tryorama cannot boot on hc 0.6.0 (quic→webrtc CLI rename).
+In-process holochain-0.6.1 Sweettest behavior tests for the `content` coordinator.
+A **separate Cargo workspace** (its own `Cargo.lock`): the conductor crate drags a
+large dep tree with no place in the lean wasm zome workspace; both now pin
+`holochain_serialized_bytes =0.0.57`. Loads the pre-built DNA bundle, so it tests
+whatever `npm run build:zomes` last produced. Run inside `nix develop` with
+`LIBCLANG_PATH` set; transport is **iroh** (`transport-iroh`; tx5/datachannel
+dropped in 0.6.1) so the devShell provides `openssl` + `pkg-config`. First compile
+is slow (conductor + wasmer + iroh). Tryorama cannot boot on hc 0.6.x.
 
 ## External Services
 
@@ -80,7 +82,9 @@ run-local-services --signal-port`.
 Prebuilt binaries for every DNA generation live at `~/hummhive-official-happ-versions/`
 with `MANIFEST.tsv` mapping label → commit → DNA hash → SHA256 → filename.
 Mirrored in `../humm-tauri/.testdata/happs/` for migration testing.
-Current production: **pass-4-query-tolerance** (DNA uhC0k26b, hApp 2205337c, released as v1.0.0).
+Current production: **pass-4-query-tolerance** (DNA uhC0k26b, hApp 2205337c, v1.0.0).
+**pass-5-owner-role** (DNA uhC0k2dX, hApp 8f284777) is built + distributed — the
+next integrity bump (holochain 0.6.1), bundled by humm-tauri on cutover.
 
 ## Build Artifacts
 
