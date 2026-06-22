@@ -280,16 +280,23 @@ pub fn validate_update_group_genesis(
     ))
 }
 
-/// GroupGenesis is non-deletable. Deletion would orphan every membership
-/// + content entry rooted in it.
+/// Author-gated cosmetic tombstone: a deleted `GroupGenesis` still resolves
+/// via `must_get_valid_record`, so this prunes listings without revoking
+/// authority (the coordinator refuses deletion while a group has live members).
 pub fn validate_delete_group_genesis(
-    _action: Delete,
-    _original_action: EntryCreationAction,
+    action: Delete,
+    original_action: EntryCreationAction,
     _original_entry: GroupGenesis,
 ) -> ExternResult<ValidateCallbackResult> {
-    Ok(ValidateCallbackResult::Invalid(
-        "GroupGenesis entries cannot be deleted; stop granting memberships instead".into(),
-    ))
+    if &action.author == original_action.author() {
+        return Ok(ValidateCallbackResult::Valid);
+    }
+    Ok(ValidateCallbackResult::Invalid(format!(
+        "GroupGenesis delete must be authored by the group creator \
+         (creator: {}, attempted by: {})",
+        original_action.author(),
+        action.author,
+    )))
 }
 
 // =============================================================================
@@ -483,7 +490,7 @@ pub fn validate_delete_group_membership(
 
 /// Resolve a link `target_address` to its `ActionHash`, erroring if the
 /// target is not action-addressed.
-fn target_action_hash(target_address: &AnyLinkableHash) -> ExternResult<ActionHash> {
+pub(crate) fn target_action_hash(target_address: &AnyLinkableHash) -> ExternResult<ActionHash> {
     target_address.clone().into_action_hash().ok_or_else(|| {
         wasm_error!(WasmErrorInner::Guest(format!(
             "link target {target_address} must be an ActionHash",
@@ -493,7 +500,7 @@ fn target_action_hash(target_address: &AnyLinkableHash) -> ExternResult<ActionHa
 
 /// `link_author == target_author` guard shared by the three group link
 /// create validators.
-fn require_link_author_is(
+pub(crate) fn require_link_author_is(
     link_author: &AgentPubKey,
     target_author: &AgentPubKey,
 ) -> ValidateCallbackResult {
@@ -503,6 +510,34 @@ fn require_link_author_is(
         ));
     }
     ValidateCallbackResult::Valid
+}
+
+/// Decoded link target, or the `Invalid` verdict when the link author is not
+/// the target entry's author.
+pub(crate) fn link_authors_target_entry<T>(
+    link_action: &CreateLink,
+    target_address: &AnyLinkableHash,
+) -> ExternResult<Result<T, ValidateCallbackResult>>
+where
+    T: TryFrom<SerializedBytes, Error = SerializedBytesError>,
+{
+    let record = must_get_valid_record(target_action_hash(target_address)?)?;
+    if let invalid @ ValidateCallbackResult::Invalid(_) =
+        require_link_author_is(&link_action.author, record.action().author())
+    {
+        return Ok(Err(invalid));
+    }
+    let entry = record
+        .entry()
+        .to_app_option()
+        .map_err(|e| wasm_error!(e))?
+        .ok_or_else(|| {
+            wasm_error!(WasmErrorInner::Guest(format!(
+                "link target {} references an unexpected entry type",
+                record.action_address(),
+            )))
+        })?;
+    Ok(Ok(entry))
 }
 
 /// `AgentToGroupMemberships`: base = grantee `AgentPubKey`, target =
@@ -635,8 +670,8 @@ pub fn validate_create_link_hive_to_groups(
     Ok(ValidateCallbackResult::Valid)
 }
 
-/// All three group index links delete on the link author's authority,
-/// mirroring the pass-2 link-delete discipline.
+/// Author-gated delete shared by the group index, owner-handoff, and
+/// invite-redemption links: only the link creator may delete.
 ///
 /// **Index-vs-entry contract (security-relevant).** A link's `delete`
 /// is the link author's prerogative, which means a grantor (who is the
@@ -773,17 +808,30 @@ mod tests {
     }
 
     #[test]
-    fn group_genesis_delete_is_invalid() {
+    fn group_genesis_delete_author_gated() {
         let alice = agent_pubkey(1);
-        let original = EntryCreationAction::Create(make_create(alice.clone()));
-        let result = validate_delete_group_genesis(make_delete(alice), original, sample_group_genesis())
-            .expect("validator should not error in test");
-        match result {
-            ValidateCallbackResult::Invalid(msg) => {
-                assert!(msg.to_lowercase().contains("cannot be deleted"));
-            }
-            other => panic!("expected Invalid, got {other:?}"),
-        }
+        let bob = agent_pubkey(2);
+        let by_author = validate_delete_group_genesis(
+            make_delete(alice.clone()),
+            EntryCreationAction::Create(make_create(alice.clone())),
+            sample_group_genesis(),
+        )
+        .expect("validator should not error in test");
+        assert!(
+            matches!(by_author, ValidateCallbackResult::Valid),
+            "group creator may delete; got {by_author:?}",
+        );
+
+        let by_other = validate_delete_group_genesis(
+            make_delete(bob),
+            EntryCreationAction::Create(make_create(alice)),
+            sample_group_genesis(),
+        )
+        .expect("validator should not error in test");
+        assert!(
+            matches!(by_other, ValidateCallbackResult::Invalid(_)),
+            "non-creator rejected; got {by_other:?}",
+        );
     }
 
     // -----------------------------------------------------------------
@@ -879,14 +927,13 @@ mod tests {
             grantor_hive_membership_hash: None,
             expiry: Some(Timestamp(1_000)),
         };
-        let result =
-            enforce_grant_window(
-                &agent_pubkey(3),
-                &action_hash(9),
-                &Timestamp(0),
-                &membership,
-            )
-            .expect("no fetch on the None-witness path");
+        let result = enforce_grant_window(
+            &agent_pubkey(3),
+            &action_hash(9),
+            &Timestamp(0),
+            &membership,
+        )
+        .expect("no fetch on the None-witness path");
         assert!(matches!(result, ValidateCallbackResult::Valid));
     }
 

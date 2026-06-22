@@ -35,6 +35,7 @@
 //! H" pays exactly: `must_get_valid_record(H)` + `must_get_valid_record(
 //! alice_membership_in_H)`. O(1) regardless of grant-chain depth.
 
+use crate::group::link_authors_target_entry;
 use hdi::hash_path::path::Component;
 use hdi::prelude::*;
 
@@ -110,6 +111,8 @@ pub use self::Role as HiveRole;
 ///   grantor's authorising membership.
 /// - `expiry` — `None` = permanent; `Some(ts)` = invalid past this
 ///   timestamp. Mirrors Moss `permission_duration_until`.
+/// - `grantor_owner_accept_hash` — pass-5; for `Admin` grants, cites the
+///   grantor's owner-accept proving lineage ownership.
 #[hdk_entry_helper]
 #[derive(Clone, PartialEq)]
 pub struct HiveMembership {
@@ -118,6 +121,9 @@ pub struct HiveMembership {
     pub role: Role,
     pub grantor_membership_hash: Option<ActionHash>,
     pub expiry: Option<Timestamp>,
+    // serde(default): pass-4 HiveMembership wire data predates this field.
+    #[serde(default)]
+    pub grantor_owner_accept_hash: Option<ActionHash>,
 }
 
 /// Permission containment: does `held` satisfy `required`? Higher roles
@@ -136,45 +142,37 @@ pub fn role_satisfies(held: Role, required: Role) -> bool {
     rank(held) >= rank(required)
 }
 
-/// Fetch and decode a [`HiveGenesis`] entry by action hash, returning
-/// `(genesis_author, genesis_entry)`. Wraps `must_get_valid_record` +
-/// a typed `to_app_option` decode with explicit error context so the
-/// "wrong entry type at that hash" failure mode produces a useful
-/// validation message instead of a generic deserialization error.
-pub fn fetch_genesis(
-    genesis_hash: &ActionHash,
-) -> ExternResult<(AgentPubKey, HiveGenesis)> {
-    let record = must_get_valid_record(genesis_hash.clone())?;
+/// Fetch + decode an entry by action hash into `(author, entry)`, with an
+/// explicit "wrong entry type" message (`type_label`) rather than a bare
+/// deserialization error. Shared by the typed fetchers below.
+fn fetch_authored_entry<T: TryFrom<SerializedBytes, Error = SerializedBytesError>>(
+    action_hash: &ActionHash,
+    type_label: &str,
+) -> ExternResult<(AgentPubKey, T)> {
+    let record = must_get_valid_record(action_hash.clone())?;
     let author = record.action().author().clone();
-    let entry: HiveGenesis = record
+    let entry = record
         .entry()
         .to_app_option()
         .map_err(|e| wasm_error!(e))?
         .ok_or_else(|| {
             wasm_error!(WasmErrorInner::Guest(format!(
-                "hive_genesis_hash {genesis_hash} does not reference a HiveGenesis entry",
+                "{action_hash} does not reference a {type_label} entry"
             )))
         })?;
     Ok((author, entry))
 }
 
-/// Fetch and decode a [`HiveMembership`] entry by action hash, returning
-/// `(membership_author, membership_entry)`.
+/// `(genesis_author, genesis_entry)` for a [`HiveGenesis`] action hash.
+pub fn fetch_genesis(genesis_hash: &ActionHash) -> ExternResult<(AgentPubKey, HiveGenesis)> {
+    fetch_authored_entry(genesis_hash, "HiveGenesis")
+}
+
+/// `(membership_author, membership_entry)` for a [`HiveMembership`] action hash.
 pub fn fetch_membership(
     membership_hash: &ActionHash,
 ) -> ExternResult<(AgentPubKey, HiveMembership)> {
-    let record = must_get_valid_record(membership_hash.clone())?;
-    let author = record.action().author().clone();
-    let entry: HiveMembership = record
-        .entry()
-        .to_app_option()
-        .map_err(|e| wasm_error!(e))?
-        .ok_or_else(|| {
-            wasm_error!(WasmErrorInner::Guest(format!(
-                "membership_hash {membership_hash} does not reference a HiveMembership entry",
-            )))
-        })?;
-    Ok((author, entry))
+    fetch_authored_entry(membership_hash, "HiveMembership")
 }
 
 /// Verify `agent` holds at least `required_role` for `genesis_hash` at
@@ -332,22 +330,34 @@ pub fn validate_create_hive_membership(
         return Ok(grantor_check);
     }
 
-    // Rule 3 — grantor cannot grant a role higher than their own. We
-    // already know the grantor satisfies Admin; if they're attempting
-    // to grant Owner, they must themselves be Owner.
-    if matches!(membership.role, Role::Owner) {
-        let owner_check = check_hive_authority(
-            grantor,
-            &membership.hive_genesis_hash,
-            membership.grantor_membership_hash.as_ref(),
-            Role::Owner,
-            timestamp,
-        )?;
-        if !matches!(owner_check, ValidateCallbackResult::Valid) {
+    // Rule 3 — Owner is never membership-grantable (only the handoff
+    // handshake confers it); only a lineage owner may grant Admin.
+    match membership.role {
+        Role::Owner => {
             return Ok(ValidateCallbackResult::Invalid(
-                "only an Owner may grant the Owner role".into(),
+                "the Owner role cannot be granted via membership; use the owner-handoff handshake"
+                    .into(),
             ));
         }
+        Role::Admin => {
+            if !is_lineage_owner(
+                grantor,
+                &membership.hive_genesis_hash,
+                membership.grantor_owner_accept_hash.as_ref(),
+            )? {
+                return Ok(ValidateCallbackResult::Invalid(
+                    "only the hive Owner may grant the Admin role".into(),
+                ));
+            }
+        }
+        Role::Writer | Role::Reader => {}
+    }
+
+    let (genesis_author, _) = fetch_genesis(&membership.hive_genesis_hash)?;
+    if membership.for_agent == genesis_author {
+        return Ok(ValidateCallbackResult::Invalid(
+            "cannot assign a membership role to the hive's founding owner".into(),
+        ));
     }
 
     // Rule 4 — grant-window containment (G-4.4 hive-layer back-port).
@@ -427,9 +437,7 @@ fn enforce_hive_grant_window(
         return Ok(ValidateCallbackResult::Valid);
     };
     match membership.expiry {
-        Some(new_expiry) if new_expiry <= grantor_expiry => {
-            Ok(ValidateCallbackResult::Valid)
-        }
+        Some(new_expiry) if new_expiry <= grantor_expiry => Ok(ValidateCallbackResult::Valid),
         Some(new_expiry) => Ok(ValidateCallbackResult::Invalid(format!(
             "granted expiry {new_expiry:?} exceeds the grantor membership's \
              expiry {grantor_expiry:?}; an expiring grantor may not extend \
@@ -485,6 +493,182 @@ pub fn recompute_path_hash(components: &[&str]) -> ExternResult<AnyLinkableHash>
             .collect::<Vec<_>>(),
     );
     Ok(path.path_entry_hash()?.into())
+}
+
+// =============================================================================
+// Hive ownership: single-owner, transferred by offer/accept handshake (pass-5)
+// =============================================================================
+
+#[hdk_entry_helper]
+#[derive(Clone, PartialEq)]
+pub struct HiveOwnerHandoffOffer {
+    pub hive_genesis_hash: ActionHash,
+    pub to_agent: AgentPubKey,
+    pub offerer_owner_accept_hash: Option<ActionHash>,
+    pub created_at_microseconds: i64,
+}
+
+#[hdk_entry_helper]
+#[derive(Clone, PartialEq)]
+pub struct HiveOwnerHandoffAccept {
+    pub offer_hash: ActionHash,
+}
+
+fn fetch_owner_handoff_offer(
+    offer_hash: &ActionHash,
+) -> ExternResult<(AgentPubKey, HiveOwnerHandoffOffer)> {
+    fetch_authored_entry(offer_hash, "HiveOwnerHandoffOffer")
+}
+
+fn fetch_owner_handoff_accept(
+    accept_hash: &ActionHash,
+) -> ExternResult<(AgentPubKey, HiveOwnerHandoffAccept)> {
+    fetch_authored_entry(accept_hash, "HiveOwnerHandoffAccept")
+}
+
+/// EVER-owner, not current-owner: a validator cannot detect a completed
+/// downstream transfer without forbidden link-enumeration, so this proves
+/// only that `agent` is the genesis root or a past handoff recipient. The
+/// coordinator's resolve_current_owner folds the lineage to the live owner.
+pub fn is_lineage_owner(
+    agent: &AgentPubKey,
+    genesis_hash: &ActionHash,
+    owner_accept_hash: Option<&ActionHash>,
+) -> ExternResult<bool> {
+    let Some(accept_hash) = owner_accept_hash else {
+        let (genesis_author, _) = fetch_genesis(genesis_hash)?;
+        return Ok(&genesis_author == agent);
+    };
+    let (_, accept) = fetch_owner_handoff_accept(accept_hash)?;
+    let (_, offer) = fetch_owner_handoff_offer(&accept.offer_hash)?;
+    Ok(&offer.to_agent == agent && &offer.hive_genesis_hash == genesis_hash)
+}
+
+pub fn validate_create_hive_owner_handoff_offer(
+    action: EntryCreationAction,
+    offer: HiveOwnerHandoffOffer,
+) -> ExternResult<ValidateCallbackResult> {
+    let offerer = action.author();
+    if &offer.to_agent == offerer {
+        return Ok(ValidateCallbackResult::Invalid(
+            "cannot hand off ownership to yourself".into(),
+        ));
+    }
+    let offerer_is_owner = is_lineage_owner(
+        offerer,
+        &offer.hive_genesis_hash,
+        offer.offerer_owner_accept_hash.as_ref(),
+    )?;
+    if !offerer_is_owner {
+        return Ok(ValidateCallbackResult::Invalid(
+            "offer author is not an owner of the hive".into(),
+        ));
+    }
+    Ok(ValidateCallbackResult::Valid)
+}
+
+pub fn validate_update_hive_owner_handoff_offer(
+    _action: Update,
+    _entry: HiveOwnerHandoffOffer,
+) -> ExternResult<ValidateCallbackResult> {
+    Ok(ValidateCallbackResult::Invalid(
+        "HiveOwnerHandoffOffer entries are immutable".into(),
+    ))
+}
+
+pub fn validate_delete_hive_owner_handoff_offer(
+    _action: Delete,
+    _original_action: EntryCreationAction,
+    _original_entry: HiveOwnerHandoffOffer,
+) -> ExternResult<ValidateCallbackResult> {
+    Ok(ValidateCallbackResult::Invalid(
+        "HiveOwnerHandoffOffer is immutable; cancel a pending offer by deleting its AgentToOwnerHandoffs link"
+            .into(),
+    ))
+}
+
+pub fn validate_create_hive_owner_handoff_accept(
+    action: EntryCreationAction,
+    accept: HiveOwnerHandoffAccept,
+) -> ExternResult<ValidateCallbackResult> {
+    // No one-accept-per-offer check: forks are tolerated and the coordinator
+    // de-duplicates by offer hash when resolving the current owner.
+    let (_, offer) = fetch_owner_handoff_offer(&accept.offer_hash)?;
+    if &offer.to_agent != action.author() {
+        return Ok(ValidateCallbackResult::Invalid(
+            "accept author is not the offer's to_agent".into(),
+        ));
+    }
+    Ok(ValidateCallbackResult::Valid)
+}
+
+pub fn validate_update_hive_owner_handoff_accept(
+    _action: Update,
+    _entry: HiveOwnerHandoffAccept,
+) -> ExternResult<ValidateCallbackResult> {
+    Ok(ValidateCallbackResult::Invalid(
+        "HiveOwnerHandoffAccept entries are immutable".into(),
+    ))
+}
+
+pub fn validate_delete_hive_owner_handoff_accept(
+    _action: Delete,
+    _original_action: EntryCreationAction,
+    _original_entry: HiveOwnerHandoffAccept,
+) -> ExternResult<ValidateCallbackResult> {
+    Ok(ValidateCallbackResult::Invalid(
+        "HiveOwnerHandoffAccept entries cannot be deleted".into(),
+    ))
+}
+
+pub fn validate_create_link_agent_to_owner_handoffs(
+    action: CreateLink,
+    base_address: AnyLinkableHash,
+    target_address: AnyLinkableHash,
+    tag: LinkTag,
+) -> ExternResult<ValidateCallbackResult> {
+    if !tag.0.is_empty() {
+        return Ok(ValidateCallbackResult::Invalid(
+            "AgentToOwnerHandoffs link tag must be empty".into(),
+        ));
+    }
+    let offer: HiveOwnerHandoffOffer = match link_authors_target_entry(&action, &target_address)? {
+        Ok(offer) => offer,
+        Err(invalid) => return Ok(invalid),
+    };
+    if base_address != AnyLinkableHash::from(offer.to_agent.clone()) {
+        return Ok(ValidateCallbackResult::Invalid(format!(
+            "AgentToOwnerHandoffs base {base_address} does not match offer.to_agent {}",
+            offer.to_agent,
+        )));
+    }
+    Ok(ValidateCallbackResult::Valid)
+}
+
+pub fn validate_create_link_hive_to_owner_handoffs(
+    action: CreateLink,
+    base_address: AnyLinkableHash,
+    target_address: AnyLinkableHash,
+    tag: LinkTag,
+) -> ExternResult<ValidateCallbackResult> {
+    if !tag.0.is_empty() {
+        return Ok(ValidateCallbackResult::Invalid(
+            "HiveToOwnerHandoffs link tag must be empty".into(),
+        ));
+    }
+    let accept: HiveOwnerHandoffAccept = match link_authors_target_entry(&action, &target_address)?
+    {
+        Ok(accept) => accept,
+        Err(invalid) => return Ok(invalid),
+    };
+    let (_, offer) = fetch_owner_handoff_offer(&accept.offer_hash)?;
+    if base_address != AnyLinkableHash::from(offer.hive_genesis_hash.clone()) {
+        return Ok(ValidateCallbackResult::Invalid(format!(
+            "HiveToOwnerHandoffs base {base_address} does not match offer.hive_genesis_hash {}",
+            offer.hive_genesis_hash,
+        )));
+    }
+    Ok(ValidateCallbackResult::Valid)
 }
 
 #[cfg(test)]
@@ -623,6 +807,7 @@ mod tests {
             role,
             grantor_membership_hash,
             expiry,
+            grantor_owner_accept_hash: None,
         }
     }
 
@@ -648,9 +833,8 @@ mod tests {
     fn hive_genesis_delete_is_invalid() {
         let alice = agent_pubkey(1);
         let original = EntryCreationAction::Create(make_create(alice.clone()));
-        let result =
-            validate_delete_hive_genesis(make_delete(alice), original, sample_genesis())
-                .expect("validator should not error in test");
+        let result = validate_delete_hive_genesis(make_delete(alice), original, sample_genesis())
+            .expect("validator should not error in test");
         match result {
             ValidateCallbackResult::Invalid(msg) => {
                 assert!(msg.to_lowercase().contains("cannot be deleted"));
@@ -769,10 +953,10 @@ mod tests {
             role: HiveRole::Writer,
             grantor_membership_hash: None,
             expiry: Some(Timestamp(1_000)),
+            grantor_owner_accept_hash: None,
         };
-        let result =
-            enforce_hive_grant_window(&agent_pubkey(3), &membership)
-                .expect("Path 1 short-circuit requires no fetch");
+        let result = enforce_hive_grant_window(&agent_pubkey(3), &membership)
+            .expect("Path 1 short-circuit requires no fetch");
         assert!(
             matches!(result, ValidateCallbackResult::Valid),
             "expected Valid, got {result:?}",
@@ -794,10 +978,10 @@ mod tests {
             role: HiveRole::Owner,
             grantor_membership_hash: None,
             expiry: None,
+            grantor_owner_accept_hash: None,
         };
-        let result =
-            enforce_hive_grant_window(&agent_pubkey(3), &membership)
-                .expect("Path 1 short-circuit requires no fetch");
+        let result = enforce_hive_grant_window(&agent_pubkey(3), &membership)
+            .expect("Path 1 short-circuit requires no fetch");
         assert!(
             matches!(result, ValidateCallbackResult::Valid),
             "expected Valid, got {result:?}",
