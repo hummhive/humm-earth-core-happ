@@ -16,6 +16,7 @@
 //! Coordinator side simply assembles the payloads from caller input and
 //! defers the security decisions to the integrity layer.
 
+use crate::get_typed_entry;
 use content_integrity::*;
 use hdk::prelude::*;
 
@@ -71,6 +72,8 @@ pub struct CreateHiveMembershipInput {
     /// membership hash.
     pub grantor_membership_hash: Option<ActionHash>,
     pub expiry: Option<Timestamp>,
+    #[serde(default)]
+    pub grantor_owner_accept_hash: Option<ActionHash>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -79,30 +82,30 @@ pub struct HiveMembershipResponse {
     pub hash: ActionHash,
 }
 
-/// Commit a new [`HiveMembership`] entry granting `for_agent` the
-/// specified role in `hive_genesis_hash`. Publishes an `Inbox` link
-/// tagged `InboxEvent::HiveInvite` to the grantee so they can discover
-/// the new membership.
-///
-/// Validation lives entirely in the integrity layer: this extern simply
-/// constructs the payload and relies on
-/// [`content_integrity::validate_create_hive_membership`] to enforce
-/// no-self-grant + grantor-has-Admin-or-higher + role-ceiling rules.
+/// Commit a [`HiveMembership`] grant + the grantee's `Inbox` discovery link.
 #[hdk_extern]
 pub fn create_hive_membership(
     input: CreateHiveMembershipInput,
 ) -> ExternResult<HiveMembershipResponse> {
+    if input.role == HiveRole::Admin {
+        // Integrity proves only ever-owner; current-owner is resolvable only here.
+        let my_pubkey = agent_info()?.agent_initial_pubkey;
+        if crate::hive::owner::resolve_current_owner(&input.hive_genesis_hash)? != my_pubkey {
+            return Err(wasm_error!(WasmErrorInner::Guest(
+                "only the current hive owner may grant the Admin role".into(),
+            )));
+        }
+    }
     let membership = HiveMembership {
         hive_genesis_hash: input.hive_genesis_hash,
         for_agent: input.for_agent.clone(),
         role: input.role,
         grantor_membership_hash: input.grantor_membership_hash,
         expiry: input.expiry,
+        grantor_owner_accept_hash: input.grantor_owner_accept_hash,
     };
     let hash = create_entry(&EntryTypes::HiveMembership(membership.clone()))?;
 
-    // Notify the grantee via their Inbox so list_my_hives surfaces the
-    // hive without forcing them to scan every membership in the DHT.
     create_link(
         AnyLinkableHash::from(input.for_agent),
         AnyLinkableHash::from(hash.clone()),
@@ -111,4 +114,41 @@ pub fn create_hive_membership(
     )?;
 
     Ok(HiveMembershipResponse { membership, hash })
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct RevokeHiveMembershipInput {
+    pub membership_hash: ActionHash,
+    pub new_expiry: Timestamp,
+    pub grantor_membership_hash: Option<ActionHash>,
+    #[serde(default)]
+    pub grantor_owner_accept_hash: Option<ActionHash>,
+}
+
+/// Revoke by re-issuing the same `(hive, for_agent, role)` grant with a past
+/// `expiry`; the current owner's own membership is protected.
+#[hdk_extern]
+pub fn revoke_hive_membership(
+    input: RevokeHiveMembershipInput,
+) -> ExternResult<HiveMembershipResponse> {
+    let original: HiveMembership = get_typed_entry(&input.membership_hash)?.ok_or_else(|| {
+        wasm_error!(WasmErrorInner::Guest(format!(
+            "revoke_hive_membership: membership {} not found",
+            input.membership_hash,
+        )))
+    })?;
+    if crate::hive::owner::resolve_current_owner(&original.hive_genesis_hash)? == original.for_agent
+    {
+        return Err(wasm_error!(WasmErrorInner::Guest(
+            "refusing to revoke the current hive owner's membership".into(),
+        )));
+    }
+    create_hive_membership(CreateHiveMembershipInput {
+        hive_genesis_hash: original.hive_genesis_hash,
+        for_agent: original.for_agent,
+        role: original.role,
+        grantor_membership_hash: input.grantor_membership_hash,
+        grantor_owner_accept_hash: input.grantor_owner_accept_hash,
+        expiry: Some(input.new_expiry),
+    })
 }

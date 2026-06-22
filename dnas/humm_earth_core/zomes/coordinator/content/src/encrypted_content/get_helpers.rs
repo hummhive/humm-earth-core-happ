@@ -23,12 +23,7 @@ pub fn get_eh(ah: ActionHash) -> ExternResult<EntryHash> {
 
 /// DHT-get wrapping `Network` strategy with a uniform error message.
 pub fn get_record(dh: AnyDhtHash) -> ExternResult<Record> {
-    let maybe_record = get(
-        dh,
-        GetOptions {
-            strategy: GetStrategy::Network,
-        },
-    )?;
+    let maybe_record = get(dh, GetOptions::network())?;
     let Some(record) = maybe_record else {
         return Err(wasm_error!(WasmErrorInner::Guest(
             "no Record found at given hash".to_string(),
@@ -51,12 +46,7 @@ pub fn get_latest_typed_from_eh<T: TryFrom<SerializedBytes, Error = SerializedBy
     entry_hash: EntryHash,
 ) -> ExternResult<OptionTypedEntryAndHash<T>> {
     // First, make sure we DO have the latest action_hash address
-    let maybe_maybe_details = get_details(
-        entry_hash.clone(),
-        GetOptions {
-            strategy: GetStrategy::Network,
-        },
-    )?;
+    let maybe_maybe_details = get_details(entry_hash.clone(), GetOptions::network())?;
     let Some(Details::Entry(details)) = maybe_maybe_details else {
         return Ok(None);
     };
@@ -76,13 +66,7 @@ pub fn get_latest_typed_from_eh<T: TryFrom<SerializedBytes, Error = SerializedBy
         }
     };
     // Second, go and get that Record, and return its entry and action_address
-    let Some(record) = get(
-        latest_ah,
-        GetOptions {
-            strategy: GetStrategy::Network,
-        },
-    )?
-    else {
+    let Some(record) = get(latest_ah, GetOptions::network())? else {
         return Ok(None);
     };
     let maybe_maybe_typed_entry = record.entry().to_app_option::<T>();

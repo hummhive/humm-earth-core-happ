@@ -259,3 +259,16 @@ pub fn revoke_group_membership(
     };
     create_group_membership(revocation)
 }
+
+/// Author-gated tombstone of an empty group's genesis; refuses while members remain.
+#[hdk_extern]
+pub fn delete_group_genesis(group_genesis_hash: ActionHash) -> ExternResult<ActionHash> {
+    if !crate::group::queries::list_group_members(group_genesis_hash.clone())?.is_empty() {
+        return Err(wasm_error!(WasmErrorInner::Guest(
+            "refusing to delete a group with live members".into(),
+        )));
+    }
+    let deleted = delete_entry(group_genesis_hash.clone())?;
+    crate::delete_own_links_targeting(AnyLinkableHash::from(group_genesis_hash))?;
+    Ok(deleted)
+}

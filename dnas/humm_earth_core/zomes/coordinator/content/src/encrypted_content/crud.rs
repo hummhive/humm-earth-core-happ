@@ -246,22 +246,7 @@ pub fn delete_encrypted_content(
         },
     );
 
-    // Delete every discovery link this agent authored that targets the
-    // tombstoned entry. The Hive / Dynamic / HummContentId / HummContent*
-    // delete validators require deleter == link author, so cleanup is only
-    // possible on a self-delete; querying the LOCAL source chain self-scopes
-    // — a foreign I-A deleter holds none of these CreateLinks, so the sweep
-    // is a harmless no-op for them (their links survive until the original
-    // author cleans up). EncryptedContentUpdates is never matched here (its
-    // target is the revision, not the original) and is immortal by design.
-    let deleted_target = AnyLinkableHash::from(original_encrypted_content_hash);
-    for link_record in query(ChainQueryFilter::new().include_entries(false))? {
-        if let Action::CreateLink(create_link) = link_record.action() {
-            if create_link.target_address == deleted_target {
-                delete_link(link_record.action_address().clone(), GetOptions::network())?;
-            }
-        }
-    }
+    crate::delete_own_links_targeting(AnyLinkableHash::from(original_encrypted_content_hash))?;
 
     Ok(ah)
 }

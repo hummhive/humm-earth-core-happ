@@ -826,6 +826,20 @@ async function doGrantMemberships(
       `Unknown role "${role}". Expected one of: ${HIVE_ROLES.join(", ")}`,
     );
   }
+  // Pass-5: hive ownership is conferred by the offer/accept handshake lineage,
+  // not by membership — create_hive_membership rejects role "Owner". The hive's
+  // genesis author is already the owner post-migration, so secondary pass-4
+  // Owner grants are dropped here rather than replayed into a guaranteed reject.
+  if (role === "Owner") {
+    console.warn(
+      `[grant-memberships] SKIPPING ${memberPubkeysB64.length} "Owner" grant(s) ` +
+        `for hive "${oldHiveId}": pass-5 confers ownership by handshake lineage, ` +
+        `not membership. The genesis author is automatically the owner; to hand ` +
+        `ownership to another agent post-migration use initiate_owner_handoff + ` +
+        `accept_owner_handoff. Re-run with --role Admin for operational rights.`,
+    );
+    return;
+  }
   if (memberPubkeysB64.length === 0) {
     throw new Error("grant-memberships requires at least one member pubkey");
   }

@@ -176,13 +176,7 @@ pub fn mark_migrated(input: MarkMigratedInput) -> ExternResult<EncryptedContentR
 /// no trusted-author updates, latest update lacks the sentinel
 /// content_type). Errors propagate transport failures unchanged.
 fn fetch_latest_marker_envelope(action_hash: ActionHash) -> ExternResult<Option<EncryptedContent>> {
-    let Some(original_record) = get(
-        AnyDhtHash::from(action_hash),
-        GetOptions {
-            strategy: GetStrategy::Network,
-        },
-    )?
-    else {
+    let Some(original_record) = get(AnyDhtHash::from(action_hash), GetOptions::network())? else {
         return Ok(None);
     };
     let trusted_author = original_record.action().author().clone();
@@ -191,12 +185,7 @@ fn fetch_latest_marker_envelope(action_hash: ActionHash) -> ExternResult<Option<
     };
     let entry_hash = entry_hash.clone();
 
-    let details = match get_details(
-        entry_hash,
-        GetOptions {
-            strategy: GetStrategy::Network,
-        },
-    )? {
+    let details = match get_details(entry_hash, GetOptions::network())? {
         Some(Details::Entry(d)) => d,
         _ => return Ok(None),
     };
@@ -213,13 +202,7 @@ fn fetch_latest_marker_envelope(action_hash: ActionHash) -> ExternResult<Option<
     };
 
     let update_action_hash = latest_marker_update.as_hash().clone();
-    let Some(update_record) = get(
-        update_action_hash,
-        GetOptions {
-            strategy: GetStrategy::Network,
-        },
-    )?
-    else {
+    let Some(update_record) = get(update_action_hash, GetOptions::network())? else {
         return Ok(None);
     };
     let typed = update_record

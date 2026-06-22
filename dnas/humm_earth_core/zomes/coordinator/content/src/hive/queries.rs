@@ -206,3 +206,59 @@ pub fn list_my_hives(_: ()) -> ExternResult<Vec<ListedHive>> {
 
     Ok(out)
 }
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct ChangesSinceInput {
+    pub hive_genesis_hash: ActionHash,
+    pub content_types: Vec<String>,
+    pub since_seq: u32,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct ChangesSinceSummary {
+    pub new_action_count: usize,
+    pub latest_seq: u32,
+}
+
+/// Local-source-chain delta probe for the caller's OWN commits to this hive
+/// after `since_seq`. Peers' content isn't visible here (use content_summary).
+#[hdk_extern]
+pub fn changes_since(input: ChangesSinceInput) -> ExternResult<ChangesSinceSummary> {
+    let hive_paths: Vec<AnyLinkableHash> = input
+        .content_types
+        .into_iter()
+        .map(|content_type| {
+            Path::from(vec![
+                Component::from(input.hive_genesis_hash.to_string()),
+                Component::from(content_type),
+            ])
+            .path_entry_hash()
+            .map(AnyLinkableHash::from)
+        })
+        .collect::<ExternResult<Vec<_>>>()?;
+
+    let recent = query(
+        ChainQueryFilter::new()
+            .sequence_range(ChainQueryFilterRange::ActionSeqRange(
+                input.since_seq.saturating_add(1),
+                u32::MAX,
+            ))
+            .include_entries(false),
+    )?;
+    let new_action_count = recent
+        .iter()
+        .filter(|record| {
+            matches!(record.action(), Action::CreateLink(cl) if hive_paths.contains(&cl.base_address))
+        })
+        .count();
+
+    let latest_seq = query(ChainQueryFilter::new().include_entries(false))?
+        .last()
+        .map(|record| record.action().action_seq())
+        .unwrap_or(0);
+
+    Ok(ChangesSinceSummary {
+        new_action_count,
+        latest_seq,
+    })
+}
