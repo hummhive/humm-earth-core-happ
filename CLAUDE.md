@@ -26,7 +26,7 @@ prebuilt binaries for every generation live at
 `~/hummhive-official-happ-versions/` with `MANIFEST.tsv` mapping
 label → commit → DNA hash → hApp SHA256.
 
-**Current generation: pass-4** (current code matches).
+**Current generation: pass-5** (current code matches).
 
 The built `.happ` goes into `../humm-tauri/src-tauri/bin/humm-earth-core-happ.happ`
 for integration with the Tauri app.
@@ -34,14 +34,17 @@ for integration with the Tauri app.
 **Pass lineage:**
 
 ```
-main-hc060 → pass-1 → pass-2 → pass-2.5 → pass-3 → pass-4 (current)
+main-hc060 → pass-1 → pass-2 → pass-2.5 → pass-3 → pass-4 → pass-5 (current)
 ```
 
 - `pass-2`, `pass-2.5`, `pass-2.5-cleanup` share the same DNA hash
   (coordinator-only changes between them).
 - `pass-4-prerepro` and `pass-4-repro` share the same DNA + hApp hash
   (reproducible-build fix only).
-- Current: DNA `uhC0k26b…`, hApp `d74e5f2f…`
+- `pass-5` is the first integrity bump since pass-4 (hive Owner role via
+  offer/accept handshake + reader read-only + role-grant hardening; toolchain
+  bumped to holochain 0.6.1 / hdk 0.6.1 / hdi 0.7.1).
+- Current: DNA `uhC0k2dX…`, hApp `8f284777…` (pass-5)
 
 ---
 

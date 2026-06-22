@@ -500,6 +500,34 @@ empty/0; get_messages_since(0) replays the full chain. NOT a new release —
 the v1.0.0 tag + distributed happ (2205337c) are unchanged; this happ
 (8e8d3773) is not distributed.
 
+Pass-5 (branch feat-integrity-pass-5-owner-role, FINAL — intentional integrity bump)
+------------------------------------------------------------------------------------
+Built from: the tip of feat-integrity-pass-5-owner-role (commit recorded in the
+official-versions MANIFEST at distribution). First integrity-zome change since
+pass-4: the hive Owner role (HiveOwnerHandoffOffer/Accept handshake +
+is_lineage_owner), reader read-only content deletes, role-grant hardening (Owner
+not membership-grantable; only the current owner grants Admin), author-gated
+delete_group_genesis, and the InviteRedemption soft-cap. Toolchain bumped to
+holochain 0.6.1 / hdk 0.6.1 / hdi 0.7.1, so the wasm baseline moves with the new
+toolchain. Intentionally bumps the DNA hash; pass-4's invariant is dead on this
+branch — pass-5's DNA hash is the new invariant.
+
+  DNA hash (FINAL):          uhC0k2dXMIa1yI-V4ibCWMiTY5G6-p0laq6IOAVQ2F8XXReDHSxyS
+  content_integrity.wasm:    53d867f72cfa1f7835de164382899311d2bd79301abacac1103a70e21c04fb2b
+  content.wasm:              32fae851a8ffcbc180887a53293f7c388935b3f161da4f71eae79ea7b4ced0f2
+  humm_earth_core.dna:       327ee0980383e7f79cf13fa8f12ab18451709b2dcc1fc023bd859604acaca27f
+  humm-earth-core-happ.happ: 8f284777731333de2dab63ece3a8621bf5dd99c4a43539ae228e6a80931defb4
+
+Pass-5 invariants
+-----------------
+- Pass-4 DNA hash HELD on its branch: ✓ (pass-5 is a new branch + new DNA).
+- Pass-5 DNA hash is the new invariant: every subsequent pass-5 commit MUST hold
+  this DNA hash + integrity wasm sha256 byte-identical until pass-6+ does its own
+  intentional integrity-zome bump. Coordinator wasm sha256 MAY change.
+- Reproducible: built via scripts/build-zomes.sh (RUSTFLAGS path-remap + wasm-opt
+  strip) on the holochain 0.6.1 toolchain; re-running the pipeline reproduces
+  these shas. Multi-user behaviour proven via crates/sweettest (iroh transport).
+
 Reproducibility contract (effective pass-4 re-record)
 =====================================================
 
