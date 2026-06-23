@@ -452,6 +452,42 @@ produced by the same reproducible pipeline (build-zomes.sh + strip-wasms.sh).
 NOT a new release — v1.0.0 tag (db2a264) + distributed happ (2205337c) are
 unchanged; this happ (bdefd0b2) is not distributed.
 
+Pass-4 coordinator follow-up — migration-rescue (local enumeration + mark fail-soft)
+-----------------------------------------------------------------------------------
+Built from: tip of feat-coordinator-pass4-migration-rescue (off main HEAD
+e60ed48). Coordinator-only. Adds list_my_hives_local + get_latest_membership_local
+(dormancy-proof twins using source-chain query() + GetStrategy::Local on the
+local DHT store, both Unrestricted-cap-granted), and softens mark_migrated_v2
+to return Option<EncryptedContentResponse> (Ok(None) with a warn! when the
+original entry is unreadable, e.g. on a peerless post-cutover @4 cell, instead
+of erroring). Integrity zome untouched; DNA hash + integrity wasm sha256 HELD
+byte-identical to pass-4 FINAL. Coordinator hot-swap — no chain fork.
+
+The integrity crate gained one Cargo.toml [lints.clippy] allow line
+(uninlined_format_args) so workspace clippy stays -D warnings clean on a newer
+rustc without source-editing the frozen integrity zome (manifest lint levels
+have zero codegen effect — content_integrity.wasm sha256 verified UNCHANGED).
+
+  DNA hash (HELD):         uhC0k26bYG0qmTCFk4_D996GRCTecEtMdL5pXyvCUu0ACJN12omCV
+  content_integrity.wasm:  06b01fb3527e266a5cb1b5ffbf01b83541d7a572c4b4a252521154c3e0c2cd83 (UNCHANGED)
+  content.wasm:            72138815ebda8b0d713101b3c999fd5fe6431f255e519e8cbc440878e88e52d6 (NEW — rescue coordinator)
+  hApp bundle sha256:      e28fc9ae0290e19d651b9a78edbcfd7bfc3197311049b9e1e54833f9b5fdcf1a (NEW)
+
+Verification: host tests 27 coordinator + 69 integrity green; cargo clippy
+--workspace --all-targets -- -D warnings clean (integrity lints allowed at
+the manifest level). Conductor proof: in-tree Sweettest
+(crates/sweettest/tests/migration_rescue.rs, holochain 0.6.0, 3/3 active green
++ 1 documented #[ignore] for the live-iroh dormancy differential that the
+in-process conductor cannot reproduce — covered by humm-tauri's tryorama
+e2e). Official prebuilt: ~/hummhive-official-happ-versions label
+"pass-4-migration-rescue" (NOT mirrored to humm-tauri/.testdata/happs from
+this side — that path is out of scope here; pull from official-versions). NOT
+a new release — v1.0.0 tag (db2a264) + distributed happ (2205337c) are
+unchanged; this happ (e28fc9ae) is staged for hot-swap onto the live @4 cell
+via AdminWebsocket.updateCoordinators.
+
+Root cause + rescue mechanics: docs/PASS_4_MIGRATION_RESCUE_HANDOFF.md.
+
 Reproducibility contract (effective pass-4 re-record)
 =====================================================
 

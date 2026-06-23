@@ -473,14 +473,37 @@ pub struct MarkMigratedV2Input {
 /// `new_hive_genesis_hash_base64`. For per-entry content markers, V1
 /// is sufficient when V1-only readers still exist in the wild; pass-2.5
 /// hosts can write V2 here too without breaking V2-aware readers.
+///
+/// ## Dormant / unresolvable original entry (pass-4 migration rescue)
+///
+/// Returns `Ok(None)` if the original entry is not readable from this
+/// cell (e.g. the post-cutover pass-4 `@4` cell is peerless and the
+/// network `get` cannot resolve the action hash). The marker is
+/// COURTESY metadata for other pass-4 readers — irrelevant on a
+/// dormant cell — so skipping it is correct, not a failure. The miss
+/// is logged via `warn!` (never silently swallowed). On success
+/// returns `Ok(Some(response))` for the marker update so callers can
+/// inspect the new action hash and signal state.
 #[hdk_extern]
-pub fn mark_migrated_v2(input: MarkMigratedV2Input) -> ExternResult<EncryptedContentResponse> {
-    let original = super::crud::get_encrypted_content(input.original_action_hash.clone())?;
+pub fn mark_migrated_v2(
+    input: MarkMigratedV2Input,
+) -> ExternResult<Option<EncryptedContentResponse>> {
+    let original = match super::crud::get_encrypted_content(input.original_action_hash.clone()) {
+        Ok(o) => o,
+        Err(e) => {
+            warn!(
+                "mark_migrated_v2: original entry {} not readable ({e:?}); skipping forward-pointer marker (dormant/absent cell)",
+                input.original_action_hash
+            );
+            return Ok(None);
+        }
+    };
     let marker_payload = build_marker_v2_payload(&original.encrypted_content, &input.marker)?;
-    super::crud::update_encrypted_content(super::UpdateEncryptedContentInput {
+    let resp = super::crud::update_encrypted_content(super::UpdateEncryptedContentInput {
         previous_encrypted_content_hash: input.original_action_hash,
         updated_encrypted_content: marker_payload,
-    })
+    })?;
+    Ok(Some(resp))
 }
 
 /// Pure decode: try V2 first, fall back to V1; return `None` if neither

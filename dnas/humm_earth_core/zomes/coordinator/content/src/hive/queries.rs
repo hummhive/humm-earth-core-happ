@@ -99,6 +99,70 @@ pub fn get_latest_membership(
     Ok(best.map(|(_, membership, hash)| HiveMembershipResponse { membership, hash }))
 }
 
+/// Dormancy-proof twin of [`get_latest_membership`]: reads the caller's
+/// granted membership from the local DHT store only
+/// (`GetStrategy::Local` / `GetOptions::local()`), so the non-owner
+/// content-stamping path resolves a membership on a peerless cell.
+///
+/// Best-effort: returns `Some` only if the membership link + entry
+/// integrated locally while the agent was online; if the agent went
+/// dormant before the grant ever reached its store, this returns
+/// `None` (mirrors `get_latest_membership`'s semantics — "no recent
+/// valid membership"). Issues NO network calls.
+#[hdk_extern]
+pub fn get_latest_membership_local(
+    input: GetLatestMembershipInput,
+) -> ExternResult<Option<HiveMembershipResponse>> {
+    let invite_byte = InboxEvent::HiveInvite.as_byte();
+    let links = get_links(
+        LinkQuery::try_new(AnyLinkableHash::from(input.agent.clone()), LinkTypes::Inbox)?,
+        GetStrategy::Local,
+    )?;
+    let now = sys_time()?;
+
+    let mut best: Option<(Timestamp, HiveMembership, ActionHash)> = None;
+    for link in links {
+        if link.tag.0.first().copied() != Some(invite_byte) {
+            continue;
+        }
+        let Some(target_ah) = link.target.into_action_hash() else {
+            continue;
+        };
+        let Some(record) = get(target_ah.clone(), GetOptions::local())? else {
+            continue;
+        };
+        let Some(membership) = record
+            .entry()
+            .to_app_option::<HiveMembership>()
+            .ok()
+            .flatten()
+        else {
+            continue;
+        };
+        if membership.hive_genesis_hash != input.hive_genesis_hash {
+            continue;
+        }
+        if membership.for_agent != input.agent {
+            continue;
+        }
+        if let Some(expiry) = membership.expiry {
+            if expiry < now {
+                continue;
+            }
+        }
+        let ts = record.action().timestamp();
+        if best
+            .as_ref()
+            .map(|(prev_ts, _, _)| ts > *prev_ts)
+            .unwrap_or(true)
+        {
+            best = Some((ts, membership, target_ah));
+        }
+    }
+
+    Ok(best.map(|(_, membership, hash)| HiveMembershipResponse { membership, hash }))
+}
+
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct ListedHive {
     /// The hive's cryptographic identity.
@@ -202,6 +266,116 @@ pub fn list_my_hives(_: ()) -> ExternResult<Vec<ListedHive>> {
                 role: Some(membership.role),
             });
         }
+    }
+
+    Ok(out)
+}
+
+/// Dormancy-proof twin of [`list_my_hives`]. Reads the caller's OWN
+/// source chain (founder hives) and local DHT store (joined hives)
+/// only — no network authority is consulted, so it returns the
+/// agent's hives even on a peerless cell where `list_my_hives`
+/// (`GetStrategy::Network`) returns `[]`.
+///
+/// Founder branch (deterministic): `query(ChainQueryFilter)` reads the
+/// caller's source chain synchronously; every `HiveGenesis` it returns
+/// was self-authored → `role: None`. `HiveGenesis` is immutable, so no
+/// liveness filtering is needed.
+///
+/// Joiner branch (best-effort): walks the local Inbox link store with
+/// `GetStrategy::Local` / `GetOptions::local()`. The agent is an
+/// authority for its own pubkey base, so its Inbox links + targets
+/// integrate locally while online. A grant that never reached the
+/// local store before dormancy is invisible here — that is correct
+/// "best-effort" semantics and is documented in the rescue handoff.
+#[hdk_extern]
+pub fn list_my_hives_local(_: ()) -> ExternResult<Vec<ListedHive>> {
+    let mut out: Vec<ListedHive> = Vec::new();
+
+    // Founder hives: self-authored HiveGenesis on the local source chain.
+    let records = query(ChainQueryFilter::new().include_entries(true))?;
+    for record in &records {
+        if !matches!(record.action(), Action::Create(_)) {
+            continue;
+        }
+        let Some(genesis) = record.entry().to_app_option::<HiveGenesis>().ok().flatten() else {
+            continue;
+        };
+        out.push(ListedHive {
+            hive_genesis_hash: record.action_address().clone(),
+            display_id: genesis.display_id,
+            role: None,
+        });
+    }
+
+    // Joiner hives: granted memberships in the local DHT store. The
+    // agent is an authority for its own pubkey base, so its Inbox
+    // links were integrated locally while online; GetStrategy::Local
+    // reads them with NO network call (dormancy-proof). Best-effort:
+    // a joined hive is recovered only if its membership link + entry
+    // integrated locally before the cell went dormant.
+    let my_pubkey = agent_info()?.agent_initial_pubkey;
+    let invite_byte = InboxEvent::HiveInvite.as_byte();
+    let now = sys_time()?;
+    let links = get_links(
+        LinkQuery::try_new(AnyLinkableHash::from(my_pubkey.clone()), LinkTypes::Inbox)?,
+        GetStrategy::Local,
+    )?;
+    for link in links {
+        if link.tag.0.first().copied() != Some(invite_byte) {
+            continue;
+        }
+        let Some(target_ah) = link.target.into_action_hash() else {
+            continue;
+        };
+        let Some(record) = get(target_ah, GetOptions::local())? else {
+            continue;
+        };
+        let Some(membership) = record
+            .entry()
+            .to_app_option::<HiveMembership>()
+            .ok()
+            .flatten()
+        else {
+            // Founder self-link (HiveGenesis target) or undecodable → skip.
+            continue;
+        };
+        if membership.for_agent != my_pubkey {
+            continue;
+        }
+        if let Some(expiry) = membership.expiry {
+            if expiry < now {
+                continue;
+            }
+        }
+        if out
+            .iter()
+            .any(|h| h.hive_genesis_hash == membership.hive_genesis_hash)
+        {
+            // Already added by the founder branch or a prior membership.
+            continue;
+        }
+        let Some(genesis_record) = get(membership.hive_genesis_hash.clone(), GetOptions::local())?
+        else {
+            continue;
+        };
+        let Some(genesis) = genesis_record
+            .entry()
+            .to_app_option::<HiveGenesis>()
+            .ok()
+            .flatten()
+        else {
+            warn!(
+                "list_my_hives_local: genesis {} for a valid local membership did not decode as HiveGenesis; skipping (local-store corruption?)",
+                membership.hive_genesis_hash
+            );
+            continue;
+        };
+        out.push(ListedHive {
+            hive_genesis_hash: membership.hive_genesis_hash,
+            display_id: genesis.display_id,
+            role: Some(membership.role),
+        });
     }
 
     Ok(out)
