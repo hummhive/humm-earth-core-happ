@@ -1,0 +1,24 @@
+{
+	"folders":
+	[
+		{
+			"file_exclude_patterns":
+			[
+				"$(basename $(pwd)).sublime-workspace"
+			],
+			"folder_exclude_patterns":
+			[
+				"node_modules",
+				"node_modules_*",
+				"coverage",
+				"dist",
+				"dist-es6",
+				"test-dist",
+				"test-es5",
+				"test-es6"
+			],
+			"follow_symlinks": true,
+			"path": "."
+		}
+	]
+}

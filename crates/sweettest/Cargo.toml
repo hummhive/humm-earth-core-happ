@@ -1,13 +1,16 @@
 # Standalone Sweettest harness — its OWN workspace, deliberately NOT a member
-# of the zome workspace. The zome crates pin holochain_serialized_bytes
-# =0.0.56; the holochain conductor crate (for sweettest) requires =0.0.57.
-# Sharing a workspace would conflict. Keep this isolated.
+# of the zome workspace. Kept isolated because the holochain conductor crate
+# drags in a large dependency tree (tokio runtime, networking, wasmer host)
+# that has no business in the lean wasm zome workspace; sharing a workspace
+# would also fight over feature unification. Both workspaces now pin
+# holochain_serialized_bytes =0.0.57 (pass-5 0.6.1 alignment).
 #
-# Boots an in-process holochain 0.6.0 conductor (matching the flake's hc),
-# loads the pre-built ../../dnas/humm_earth_core/workdir/humm_earth_core.dna
-# (which carries the pass-4-query-tolerance coordinator), and exercises the
-# fixed coordinator query externs on a real conductor — the behavior proof
-# in-repo tryorama can't give on hc 0.6.0 (the quic->webrtc CLI treadmill).
+# Boots an in-process holochain 0.6.1 conductor (matching the flake's hc 0.6.1,
+# rev 3bdeacc), loads the pre-built
+# ../../dnas/humm_earth_core/workdir/humm_earth_core.dna (which carries the
+# pass-5 owner-role + ACL coordinator), and exercises the externs on a real
+# conductor — the behavior proof in-repo tryorama can't give on hc 0.6.x (the
+# quic->webrtc CLI treadmill).
 [package]
 name = "humm-sweettest"
 version = "0.0.0"
@@ -18,14 +21,14 @@ publish = false
 [workspace]
 
 [dev-dependencies]
-holochain = { git = "https://github.com/holochain/holochain", rev = "a6d4e805a0971ccbc0dcb3f3ed6a9e2fac980a3b", default-features = false, features = [
+holochain = { git = "https://github.com/holochain/holochain", rev = "3bdeaccd1c54fa351e76f7347601dfbc061d5bd4", default-features = false, features = [
   "sweettest",
   "wasmer_sys",
-  "datachannel-vendored",
+  "transport-iroh",
 ] }
-holo_hash = { git = "https://github.com/holochain/holochain", rev = "a6d4e805a0971ccbc0dcb3f3ed6a9e2fac980a3b", features = ["full"] }
-holochain_types = { git = "https://github.com/holochain/holochain", rev = "a6d4e805a0971ccbc0dcb3f3ed6a9e2fac980a3b" }
-holochain_zome_types = { git = "https://github.com/holochain/holochain", rev = "a6d4e805a0971ccbc0dcb3f3ed6a9e2fac980a3b" }
+holo_hash = { git = "https://github.com/holochain/holochain", rev = "3bdeaccd1c54fa351e76f7347601dfbc061d5bd4", features = ["full"] }
+holochain_types = { git = "https://github.com/holochain/holochain", rev = "3bdeaccd1c54fa351e76f7347601dfbc061d5bd4" }
+holochain_zome_types = { git = "https://github.com/holochain/holochain", rev = "3bdeaccd1c54fa351e76f7347601dfbc061d5bd4" }
 tokio = { version = "1.36.0", features = ["full"] }
 serde = { version = "1", features = ["derive"] }
-holochain_trace = { git = "https://github.com/holochain/holochain", rev = "a6d4e805a0971ccbc0dcb3f3ed6a9e2fac980a3b" }
+holochain_trace = { git = "https://github.com/holochain/holochain", rev = "3bdeaccd1c54fa351e76f7347601dfbc061d5bd4" }

@@ -2,6 +2,7 @@ pub mod encrypted_content;
 pub mod group;
 pub mod hive;
 pub mod inbox;
+pub mod invite;
 pub mod linking;
 
 use content_integrity::*;
@@ -10,6 +11,33 @@ pub use linking::*;
 use std::collections::HashSet;
 
 use encrypted_content::signals::{DmRemoteSignal, EncryptedContentSignal};
+
+/// Fetch + decode a DHT entry, tolerating absence AND an undecodable/wrong-type
+/// target as `None`. Intentional resilience: owner-resolution and inbox scans
+/// must not let one forged or not-yet-propagated link abort the whole read — a
+/// hard error here would be a cheap DoS on the governance gate.
+pub(crate) fn get_typed_entry<T: TryFrom<SerializedBytes, Error = SerializedBytesError>>(
+    action_hash: &ActionHash,
+) -> ExternResult<Option<T>> {
+    Ok(get(action_hash.clone(), GetOptions::network())?
+        .and_then(|record| record.entry().to_app_option::<T>().ok().flatten()))
+}
+
+/// Delete every `CreateLink` on the caller's OWN source chain whose target is
+/// `target`. Self-scoping: a foreign caller authored none of these links, so a
+/// cross-author call is a harmless no-op (the link-delete validators require
+/// deleter == link author). `EncryptedContentUpdates` (target = revision, not
+/// original) is never matched and stays immortal by design.
+pub(crate) fn delete_own_links_targeting(target: AnyLinkableHash) -> ExternResult<()> {
+    for link_record in query(ChainQueryFilter::new().include_entries(false))? {
+        if let Action::CreateLink(create_link) = link_record.action() {
+            if create_link.target_address == target {
+                delete_link(link_record.action_address().clone(), GetOptions::network())?;
+            }
+        }
+    }
+    Ok(())
+}
 
 /// Register every coordinator-callable extern as an `Unrestricted` cap
 /// grant. Called from `init` (which is `#[hdk_extern]`); the conductor
@@ -48,10 +76,6 @@ pub fn set_cap_tokens() -> ExternResult<()> {
     // Read surface — every query extern over public DHT data.
     fns.insert((zome.clone(), "get_encrypted_content".into()));
     fns.insert((zome.clone(), "get_many_encrypted_content".into()));
-    fns.insert((
-        zome.clone(),
-        "get_encrypted_content_by_time_and_author".into(),
-    ));
     fns.insert((zome.clone(), "list_by_dynamic_link".into()));
     fns.insert((zome.clone(), "list_by_hive_link".into()));
     fns.insert((zome.clone(), "get_by_content_id_link".into()));
@@ -92,6 +116,20 @@ pub fn set_cap_tokens() -> ExternResult<()> {
     // mutates the source chain via `update_encrypted_content`).
     fns.insert((zome.clone(), "list_my_hives_local".into()));
     fns.insert((zome.clone(), "get_latest_membership_local".into()));
+
+    // Owner-handoff reads (pass-5): public DHT data; the mutators
+    // (initiate/cancel/accept/revoke) are excluded by Rule 1.
+    fns.insert((zome.clone(), "get_member_hive_role".into()));
+    fns.insert((zome.clone(), "list_member_hive_roles".into()));
+    fns.insert((zome.clone(), "list_pending_owner_handoffs".into()));
+
+    // pass-5 humm-tauri read helpers over PUBLIC DHT data. The local-chain
+    // readers `my_pair_shared_secret_exists` + `changes_since` are
+    // intentionally NOT granted (same treatment as `get_messages_since` /
+    // `get_last_probe`: a remote cap-call would leak local source-chain state).
+    fns.insert((zome.clone(), "get_hive_owner".into()));
+    fns.insert((zome.clone(), "content_summary".into()));
+    fns.insert((zome.clone(), "is_ownership_contested".into()));
 
     // Group-authority read externs (pass-3). Same rationale as the
     // hive read surface above: GroupGenesis and GroupMembership entries
@@ -302,15 +340,10 @@ fn signal_link_created(action: SignedActionHashed, create_link: CreateLink) -> E
 }
 
 fn signal_link_deleted(action: SignedActionHashed, delete_link: DeleteLink) -> ExternResult<()> {
-    let record = get(
-        delete_link.link_add_address.clone(),
-        GetOptions {
-            strategy: GetStrategy::Network,
-        },
-    )?
-    .ok_or(wasm_error!(WasmErrorInner::Guest(
-        "Failed to fetch CreateLink action".to_string()
-    )))?;
+    let record =
+        get(delete_link.link_add_address.clone(), GetOptions::network())?.ok_or(wasm_error!(
+            WasmErrorInner::Guest("Failed to fetch CreateLink action".to_string())
+        ))?;
     let Action::CreateLink(create_link) = record.action() else {
         return Err(wasm_error!(WasmErrorInner::Guest(
             "Create Link should exist".to_string()
@@ -397,12 +430,7 @@ fn signal_entry_deleted(action: SignedActionHashed, delete: Delete) -> ExternRes
 }
 
 fn get_entry_for_action(action_hash: &ActionHash) -> ExternResult<Option<EntryTypes>> {
-    let record = match get_details(
-        action_hash.clone(),
-        GetOptions {
-            strategy: GetStrategy::Network,
-        },
-    )? {
+    let record = match get_details(action_hash.clone(), GetOptions::network())? {
         Some(Details::Record(record_details)) => record_details.record,
         _ => {
             return Ok(None);
@@ -440,9 +468,10 @@ pub struct GetMessagesSinceInput {
 /// or cross-agent query. It is intended for the startup cache to detect
 /// outgoing messages that were committed after the cache was last written.
 ///
-/// `since_seq = u32::MAX` causes `saturating_add(1)` to wrap to 0, which
-/// returns the full chain — this is the intended behaviour for a "full
-/// resync" path.
+/// Pass `since_seq = 0` to replay the full chain: the range becomes
+/// `(1, u32::MAX)`, returning every action after the genesis `Dna`
+/// action. Any higher value is an incremental cursor — only actions
+/// with sequence greater than `since_seq` are returned.
 #[hdk_extern]
 pub fn get_messages_since(input: GetMessagesSinceInput) -> ExternResult<Vec<Record>> {
     debug!(

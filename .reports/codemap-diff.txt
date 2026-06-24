@@ -125,3 +125,7 @@ Update 2026-06-13 (post pass-4-query-tolerance + v1.0.0 release prep):
 
   Staleness warnings: none (all 4 codemaps re-verified 2026-06-13).
   Next recommended scan: after the next integrity (DNA-bumping) pass or new extern surface.
+
+## 2026-06-22 — pass-5 owner-role + ACL fork
+- Codemaps refreshed: architecture (security model + lineage + pass-5 row), data (3 entries + 3 links + HiveMembership field), backend (owner/invite/read externs + cap-grant policy), dependencies (0.6.1 + iroh sweettest). Additive (<30% each).
+- Pins verified: DNA hash uhC0k2dXMIa1yI-V4ibCWMiTY5G6-p0laq6IOAVQ2F8XXReDHSxyS == hc dna hash; happ 8f284777 == sha256sum; official-versions MANIFEST has the pass-5 row.

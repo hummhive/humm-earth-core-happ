@@ -250,9 +250,7 @@ pub enum AclSpec {
     /// - `public_key_acl.reader` equals `recipients` (for I-A delete
     ///   authority symmetry — either party may delete; routing fanout
     ///   matches).
-    DirectMessage {
-        recipients: Vec<AgentPubKey>,
-    },
+    DirectMessage { recipients: Vec<AgentPubKey> },
     /// World-readable content authored under a hive context. Author
     /// must hold Writer+ in the named hive; recipient set
     /// unconstrained (humm-tauri may use `public_key_acl.reader =
@@ -346,10 +344,8 @@ fn run_content_validators(
     timestamp: &Timestamp,
     content: &EncryptedContent,
 ) -> ExternResult<ValidateCallbackResult> {
-    let header_check = check_author_matches_header(
-        author,
-        &content.header.revision_author_signing_public_key,
-    );
+    let header_check =
+        check_author_matches_header(author, &content.header.revision_author_signing_public_key);
     if !matches!(header_check, ValidateCallbackResult::Valid) {
         return Ok(header_check);
     }
@@ -490,12 +486,7 @@ fn validate_hivegroup_acl(
     }
     // Steps 4-6 — G-6.2 recipient-witness verification
     // (cardinality → bidirectional PKA cross-check → per-witness fetch).
-    validate_recipient_witnesses(
-        recipient_witnesses,
-        public_key_acl,
-        group_acl,
-        timestamp,
-    )
+    validate_recipient_witnesses(recipient_witnesses, public_key_acl, group_acl, timestamp)
 }
 
 /// G-6.2 — recipient-witness verification. Three sub-checks:
@@ -597,9 +588,24 @@ fn check_witness_pka_bidirectional(
     // bearing headers); admin/writer/reader are vecs.
     let pka_iter = std::iter::once((AclBucket::Owner, public_key_acl.owner.as_str()))
         .filter(|(_, s)| !s.is_empty())
-        .chain(public_key_acl.admin.iter().map(|s| (AclBucket::Admin, s.as_str())))
-        .chain(public_key_acl.writer.iter().map(|s| (AclBucket::Writer, s.as_str())))
-        .chain(public_key_acl.reader.iter().map(|s| (AclBucket::Reader, s.as_str())));
+        .chain(
+            public_key_acl
+                .admin
+                .iter()
+                .map(|s| (AclBucket::Admin, s.as_str())),
+        )
+        .chain(
+            public_key_acl
+                .writer
+                .iter()
+                .map(|s| (AclBucket::Writer, s.as_str())),
+        )
+        .chain(
+            public_key_acl
+                .reader
+                .iter()
+                .map(|s| (AclBucket::Reader, s.as_str())),
+        );
     for (bucket, pubkey_str) in pka_iter {
         let backed = witness_strings
             .iter()
@@ -769,8 +775,7 @@ fn validate_directmessage_acl(
             "DirectMessage public_key_acl owner/admin/writer must be empty".into(),
         ));
     }
-    let mut sorted_expected: Vec<String> =
-        recipients.iter().map(|r| r.to_string()).collect();
+    let mut sorted_expected: Vec<String> = recipients.iter().map(|r| r.to_string()).collect();
     sorted_expected.sort();
     let mut sorted_actual = public_key_acl.reader.clone();
     sorted_actual.sort();
@@ -829,19 +834,9 @@ pub fn validate_update_encrypted_content(
     run_content_validators(&action.author, &action.timestamp, &encrypted_content)
 }
 
-/// **I-A** — Receiver-initiated tombstone authorization.
-///
-/// Permitted deleters:
-/// - The original author (`action.author == original_action.author()`).
-/// - Any agent whose holohash string appears in
-///   `original_entry.public_key_acl.{owner, admin, writer, reader}`.
-///
-/// Across all four `AclSpec` variants this rule is uniform. For
-/// `DirectMessage` the reader bucket carries the recipient set
-/// (validated at create-time), so both parties retain delete authority.
-/// For `HiveGroup` and `Public` the rule preserves the pass-2 contract.
-/// For `OpenWrite` only the original author (or any pubkey the author
-/// chose to list) can delete — useful for member-request retraction.
+/// Author may always delete. Otherwise a `DirectMessage`'s `reader` bucket is
+/// its recipient set (they may delete their copy); for every other scope only
+/// owner/admin/writer may delete — a pure reader is read-only.
 pub fn validate_delete_encrypted_content(
     action: Delete,
     original_action: EntryCreationAction,
@@ -850,20 +845,20 @@ pub fn validate_delete_encrypted_content(
     if &action.author == original_action.author() {
         return Ok(ValidateCallbackResult::Valid);
     }
-    let author_str = action.author.to_string();
+    let deleter = action.author.to_string();
     let pka = &original_entry.header.public_key_acl;
-    let listed = pka.owner == author_str
-        || pka.admin.iter().any(|a| a == &author_str)
-        || pka.writer.iter().any(|a| a == &author_str)
-        || pka.reader.iter().any(|a| a == &author_str);
-    if listed {
+    let authorized = match &original_entry.header.acl_spec {
+        AclSpec::DirectMessage { .. } => pka.reader.contains(&deleter),
+        AclSpec::HiveGroup { .. } | AclSpec::Public { .. } | AclSpec::OpenWrite { .. } => {
+            pka.owner == deleter || pka.admin.contains(&deleter) || pka.writer.contains(&deleter)
+        }
+    };
+    if authorized {
         return Ok(ValidateCallbackResult::Valid);
     }
     Ok(ValidateCallbackResult::Invalid(format!(
-        "delete by {} is not authorised: not the original author \
-         ({}) and not listed in public_key_acl",
+        "delete by {} is not authorised for this content's ACL scope",
         action.author,
-        original_action.author(),
     )))
 }
 
@@ -1025,9 +1020,7 @@ fn require_link_author_is_target_author(
 /// publish, not a host failure.
 fn decode_utf8_tag(tag: &LinkTag, tag_label: &str) -> Result<String, ValidateCallbackResult> {
     String::from_utf8(tag.0.clone()).map_err(|e| {
-        ValidateCallbackResult::Invalid(format!(
-            "{tag_label} link tag is not valid UTF-8: {e}",
-        ))
+        ValidateCallbackResult::Invalid(format!("{tag_label} link tag is not valid UTF-8: {e}",))
     })
 }
 
@@ -1320,10 +1313,7 @@ pub fn validate_create_link_humm_content_acl(
     // admin/writer/reader buckets it never inspects.
     let valid_membership = match class {
         AclLinkClass::Owner => group_acl.owner.to_string() == entity_id,
-        AclLinkClass::Admin => group_acl
-            .admin
-            .iter()
-            .any(|h| h.to_string() == entity_id),
+        AclLinkClass::Admin => group_acl.admin.iter().any(|h| h.to_string() == entity_id),
         AclLinkClass::Writer => group_acl
             .admin
             .iter()
@@ -1410,19 +1400,22 @@ mod tests {
         }
     }
 
-    fn sample_content_with_acl(public_key_acl: Acl) -> EncryptedContent {
-        let header = EncryptedContentHeader {
-            id: "id".into(),
-            display_hive_id: "hive".into(),
-            content_type: "ct".into(),
-            acl_spec: sample_acl_spec(),
-            public_key_acl,
-            revision_author_signing_public_key: agent_pubkey(1).to_string(),
-        };
+    fn content_with_spec(acl_spec: AclSpec, public_key_acl: Acl) -> EncryptedContent {
         EncryptedContent {
-            header,
+            header: EncryptedContentHeader {
+                id: "id".into(),
+                display_hive_id: "hive".into(),
+                content_type: "ct".into(),
+                acl_spec,
+                public_key_acl,
+                revision_author_signing_public_key: agent_pubkey(1).to_string(),
+            },
             bytes: SerializedBytes::from(UnsafeBytes::from(vec![])),
         }
+    }
+
+    fn sample_content_with_acl(public_key_acl: Acl) -> EncryptedContent {
+        content_with_spec(sample_acl_spec(), public_key_acl)
     }
 
     // ---------------------------------------------------------------------
@@ -1466,10 +1459,7 @@ mod tests {
     #[test]
     fn check_rejects_legacy_placeholder_header() {
         let alice = agent_pubkey(1);
-        let result = check_author_matches_header(
-            &alice,
-            "test-revision-author-signing-public-key",
-        );
+        let result = check_author_matches_header(&alice, "test-revision-author-signing-public-key");
         assert!(matches!(result, ValidateCallbackResult::Invalid(_)));
     }
 
@@ -1559,22 +1549,50 @@ mod tests {
     }
 
     #[test]
-    fn delete_accepts_recipient_in_public_key_acl_reader() {
-        // DM scenario: sender = alice (entry author), recipient = bob in
-        // public_key_acl.reader. Bob deletes; should be Valid.
-        let alice = agent_pubkey(1);
+    fn delete_dm_recipient_in_reader_bucket_is_valid() {
         let bob = agent_pubkey(2);
-        let action = make_delete(bob.clone());
-        let original = EntryCreationAction::Create(make_create(alice));
+        let content = content_with_spec(
+            AclSpec::DirectMessage {
+                recipients: vec![bob.clone()],
+            },
+            Acl {
+                owner: "x".into(),
+                admin: vec![],
+                writer: vec![],
+                reader: vec![bob.to_string()],
+            },
+        );
+        let result = validate_delete_encrypted_content(
+            make_delete(bob),
+            EntryCreationAction::Create(make_create(agent_pubkey(1))),
+            content,
+        )
+        .expect("validator should not error in test");
+        assert!(
+            matches!(result, ValidateCallbackResult::Valid),
+            "got {result:?}"
+        );
+    }
+
+    #[test]
+    fn delete_hive_group_reader_is_rejected() {
+        let bob = agent_pubkey(2);
         let content = sample_content_with_acl(Acl {
             owner: "x".into(),
             admin: vec![],
             writer: vec![],
             reader: vec![bob.to_string()],
         });
-        let result = validate_delete_encrypted_content(action, original, content)
-            .expect("validator should not error in test");
-        assert!(matches!(result, ValidateCallbackResult::Valid));
+        let result = validate_delete_encrypted_content(
+            make_delete(bob),
+            EntryCreationAction::Create(make_create(agent_pubkey(1))),
+            content,
+        )
+        .expect("validator should not error in test");
+        assert!(
+            matches!(result, ValidateCallbackResult::Invalid(_)),
+            "got {result:?}"
+        );
     }
 
     #[test]
@@ -1713,39 +1731,69 @@ mod tests {
     }
 
     #[test]
-    fn delete_reader_acl_accept_reject_pair() {
-        // Side-by-side accept/reject pin: the same delete-author with
-        // the same original-action, differing only in whether the
-        // entry's `public_key_acl.reader` contains the author's pubkey.
-        // Catches any future regression where the validator stops
-        // consulting the ACL it was given.
-        let alice = agent_pubkey(1);
+    fn delete_hive_group_writer_admin_owner_are_valid() {
         let bob = agent_pubkey(2);
-        let action = make_delete(bob.clone());
-        let original = EntryCreationAction::Create(make_create(alice));
-        let content_with_bob = sample_content_with_acl(Acl {
-            owner: "x".into(),
-            admin: vec![],
-            writer: vec![],
-            reader: vec![bob.to_string()],
-        });
-        let accept = validate_delete_encrypted_content(action, original, content_with_bob)
+        let bob_b64 = bob.to_string();
+        let buckets = [
+            Acl {
+                owner: bob_b64.clone(),
+                admin: vec![],
+                writer: vec![],
+                reader: vec![],
+            },
+            Acl {
+                owner: "x".into(),
+                admin: vec![bob_b64.clone()],
+                writer: vec![],
+                reader: vec![],
+            },
+            Acl {
+                owner: "x".into(),
+                admin: vec![],
+                writer: vec![bob_b64.clone()],
+                reader: vec![],
+            },
+        ];
+        for acl in buckets {
+            let content = sample_content_with_acl(acl);
+            let result = validate_delete_encrypted_content(
+                make_delete(bob.clone()),
+                EntryCreationAction::Create(make_create(agent_pubkey(1))),
+                content,
+            )
             .expect("validator should not error in test");
-        assert!(matches!(accept, ValidateCallbackResult::Valid));
+            assert!(
+                matches!(result, ValidateCallbackResult::Valid),
+                "got {result:?}"
+            );
+        }
+    }
 
-        let alice = agent_pubkey(1);
+    #[test]
+    fn delete_dm_non_recipient_is_rejected() {
         let bob = agent_pubkey(2);
-        let action = make_delete(bob);
-        let original = EntryCreationAction::Create(make_create(alice));
-        let content_without_bob = sample_content_with_acl(Acl {
-            owner: "x".into(),
-            admin: vec![],
-            writer: vec![],
-            reader: vec![],
-        });
-        let reject = validate_delete_encrypted_content(action, original, content_without_bob)
-            .expect("validator should not error in test");
-        assert!(matches!(reject, ValidateCallbackResult::Invalid(_)));
+        let stranger = agent_pubkey(5);
+        let content = content_with_spec(
+            AclSpec::DirectMessage {
+                recipients: vec![stranger.clone()],
+            },
+            Acl {
+                owner: "x".into(),
+                admin: vec![],
+                writer: vec![],
+                reader: vec![stranger.to_string()],
+            },
+        );
+        let result = validate_delete_encrypted_content(
+            make_delete(bob),
+            EntryCreationAction::Create(make_create(agent_pubkey(1))),
+            content,
+        )
+        .expect("validator should not error in test");
+        assert!(
+            matches!(result, ValidateCallbackResult::Invalid(_)),
+            "got {result:?}"
+        );
     }
 
     // ---------------------------------------------------------------------
@@ -1763,8 +1811,8 @@ mod tests {
             .path_entry_hash()
             .expect("path hash should compute in test")
             .into();
-        let recomputed = recompute_base(&["a", "b", "c"])
-            .expect("recompute_base should compute in test");
+        let recomputed =
+            recompute_base(&["a", "b", "c"]).expect("recompute_base should compute in test");
         assert_eq!(manual_hash, recomputed);
     }
 
@@ -2023,7 +2071,11 @@ mod tests {
     #[test]
     fn directmessage_rejects_one_recipient() {
         let alice = agent_pubkey(1);
-        let content = dm_content(alice.clone(), vec![alice.clone()], reader_acl(&[alice.clone()]));
+        let content = dm_content(
+            alice.clone(),
+            vec![alice.clone()],
+            reader_acl(&[alice.clone()]),
+        );
         let result = run_content_validators(&alice, &Timestamp(0), &content)
             .expect("DM validator runs pre-fetch on cardinality check");
         match result {
@@ -2125,12 +2177,8 @@ mod tests {
         let bob = agent_pubkey(2);
         let pka = reader_acl(&[bob.clone(), alice.clone()]); // reversed
         let content = dm_content(alice.clone(), vec![alice, bob], pka);
-        let result = run_content_validators(
-            &agent_pubkey(1),
-            &Timestamp(0),
-            &content,
-        )
-        .expect("DM validator runs pre-fetch on order-independent equality");
+        let result = run_content_validators(&agent_pubkey(1), &Timestamp(0), &content)
+            .expect("DM validator runs pre-fetch on order-independent equality");
         assert!(matches!(result, ValidateCallbackResult::Valid));
     }
 
@@ -2202,7 +2250,12 @@ mod tests {
         writer: Vec<ActionHash>,
         reader: Vec<ActionHash>,
     ) -> AclByGroupGenesis {
-        AclByGroupGenesis { owner, admin, writer, reader }
+        AclByGroupGenesis {
+            owner,
+            admin,
+            writer,
+            reader,
+        }
     }
 
     /// PKA with no owner string + arbitrary per-bucket pubkey strings.
@@ -2220,7 +2273,11 @@ mod tests {
     }
 
     fn witness(pubkey: AgentPubKey, bucket: AclBucket, membership: ActionHash) -> RecipientWitness {
-        RecipientWitness { pubkey, bucket, membership_hash: membership }
+        RecipientWitness {
+            pubkey,
+            bucket,
+            membership_hash: membership,
+        }
     }
 
     #[test]
@@ -2294,10 +2351,7 @@ mod tests {
             ValidateCallbackResult::Invalid(msg) => {
                 assert!(msg.contains("claims bucket Reader"), "got: {msg}");
                 assert!(msg.contains(&mallory.to_string()), "got: {msg}");
-                assert!(
-                    msg.contains("not in public_key_acl.Reader"),
-                    "got: {msg}"
-                );
+                assert!(msg.contains("not in public_key_acl.Reader"), "got: {msg}");
             }
             other => panic!("expected Invalid, got {other:?}"),
         }
@@ -2343,10 +2397,7 @@ mod tests {
             ValidateCallbackResult::Invalid(msg) => {
                 // Forward direction message — the Admin-bucket PKA
                 // entry has no dominating witness.
-                assert!(
-                    msg.contains("public_key_acl.Admin"),
-                    "got: {msg}"
-                );
+                assert!(msg.contains("public_key_acl.Admin"), "got: {msg}");
                 assert!(
                     msg.contains("not backed by any dominating recipient_witness"),
                     "got: {msg}"

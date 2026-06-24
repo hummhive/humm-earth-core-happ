@@ -1,0 +1,23 @@
+# humm-earth-core-happ TTSR settings (project-level).
+#
+# omp loads this as PROJECT settings whenever this folder is the repo's `.omp/`
+# config dir. Deep-merged OVER global `~/.omp/agent/config.yml` (project wins).
+# `omp config set` never writes here — edit by hand. Schema: the `ttsr.*` group.
+ttsr:
+  # Re-remind instead of firing each rule only ONCE per session. "after-gap" makes
+  # a rule eligible again once `repeatGap` turns pass (default mode is "once").
+  repeatMode: after-gap
+
+  # Turns between re-reminders of the SAME rule (global cadence — applies to hard
+  # AND soft rules, but only when the violation recurs). Lower = more frequent;
+  # 1 = every recurring turn (the floor); omp's default is 10.
+  repeatGap: 8
+
+  # Drop oh-my-pi's BUNDLED default rules so only the curated rules in ./rules/
+  # apply. omp ships some genuinely-good RUST builtins (rs-parking-lot,
+  # rs-result-type, rs-lazylock, rs-match-ergonomics, …) you could opt back in with
+  # `true` — but it ALSO ships TS opinions (ts-bare-catch "use bare catch {}",
+  # ts-promise-with-resolvers, …) that would then fire on the tryorama tests and
+  # aren't this repo's standards. Keep false for a predictable, curated set; flip to
+  # true if you want the Rust builtins too.
+  builtinRules: false

@@ -1,4 +1,4 @@
-<!-- codemap:data | generated:2026-06-05 | updated:2026-06-13 | scope:full -->
+<!-- codemap:data | generated:2026-06-05 | updated:2026-06-22 | scope:full -->
 
 # Data Model
 
@@ -19,6 +19,9 @@ No external database. Source file: `integrity/content/src/`.
 | 3 | `DmProbeLog` | **private** | create-only | `inbox.rs` |
 | 4 | `GroupGenesis` | public | immutable | `group.rs` |
 | 5 | `GroupMembership` | public | immutable (revoke via expiry) | `group.rs` |
+| 6 | `HiveOwnerHandoffOffer` | public | immutable | `hive.rs` |
+| 7 | `HiveOwnerHandoffAccept` | public | immutable | `hive.rs` |
+| 8 | `InviteRedemption` | public | immutable | `invite.rs` |
 
 ## Entry Schemas
 
@@ -48,9 +51,12 @@ Identity = action hash. Immutable.
 
 ### HiveMembership (hive.rs)
 ```
-{ hive_genesis_hash, for_agent, role: Role, grantor_membership_hash?, expiry? }
+{ hive_genesis_hash, for_agent, role: Role, grantor_membership_hash?,
+  expiry?, grantor_owner_accept_hash? }
 ```
 Role: Owner | Admin | Writer | Reader. Dominance: Owner > Admin > Writer > Reader.
+`grantor_owner_accept_hash` (pass-5, `#[serde(default)]`): cited for Admin grants
+to prove the grantor is a lineage owner. Owner is NOT grantable via membership.
 
 ### GroupGenesis (group.rs)
 ```
@@ -69,14 +75,29 @@ Role: Owner | Admin | Writer | Reader. Dominance: Owner > Admin > Writer > Reade
 { probed_at_microseconds: i64, last_processed_inbox_link_hash?: ActionHash }
 ```
 
+### HiveOwnerHandoffOffer / HiveOwnerHandoffAccept (hive.rs) — pass-5
+```
+Offer  { hive_genesis_hash, to_agent, offerer_owner_accept_hash?, created_at_microseconds }
+Accept { offer_hash }
+```
+Owner-transfer handshake. `is_lineage_owner` walks accept→offer by induction.
+Immutable. The coordinator folds the accept lineage to resolve the current owner.
+
+### InviteRedemption (invite.rs) — pass-5
+```
+{ invite_action_hash, redeemer }
+```
+Advisory `max_uses` soft-cap marker (approver-authored; count is advisory, not
+authority). Immutable.
+
 ## Link Types (LinkTypes enum — integrity/lib.rs)
 
 | # | Link Type | Base | Target | Tag | Purpose |
 |---|---|---|---|---|---|
 | 0 | OriginalHashPointer | updated AH | original AH | — | update-chain back-pointer |
 | 1 | EncryptedContentUpdates | original AH | updated AH | — | update-chain forward index |
-| 2 | TimePath | path | path | — | time-index tree (unused) |
-| 3 | TimeItem | path | entry AH | — | time-index leaf (unused) |
+| 2 | TimePath | path | path | — | declared integrity variant, never created |
+| 3 | TimeItem | path | entry AH | — | declared integrity variant, never created |
 | 4 | Hive | Path([key, content_type]) | entry AH | — | dual-shape: author OR hive discovery |
 | 5 | Dynamic | Path([hive, type, label]) | entry AH | label (UTF-8) | per-group/topic index |
 | 6 | HummContentId | Path([hive, id]) | entry AH | — | content-id lookup within hive |
@@ -88,6 +109,9 @@ Role: Owner | Admin | Writer | Reader. Dominance: Owner > Admin > Writer > Reade
 | 12 | AgentToGroupMemberships | AgentPubKey | GroupMembership AH | — | forward: "my memberships" |
 | 13 | GroupToGroupMemberships | GroupGenesis AH | GroupMembership AH | for_agent | reverse: roster |
 | 14 | HiveToGroups | HiveGenesis AH | GroupGenesis AH | — | hive → groups enumeration |
+| 15 | AgentToOwnerHandoffs | AgentPubKey (to_agent) | HiveOwnerHandoffOffer AH | — | recipient's pending owner offers |
+| 16 | HiveToOwnerHandoffs | HiveGenesis AH | HiveOwnerHandoffAccept AH | — | owner-lineage resolution |
+| 17 | InviteToRedemptions | invite AH | InviteRedemption AH | — | advisory redemption count |
 
 ## InboxEvent Discriminators (inbox.rs)
 
@@ -104,6 +128,9 @@ HiveGenesis (action hash = hive identity)
             └─ GroupMembership (3-path authority: group author / hive sovereign / explicit)
                  └─ EncryptedContent (AclSpec variant validates per-scope contract)
                       └─ RecipientWitness (per-pubkey membership cross-reference, pass-4)
+       └─ Hive ownership (pass-5): genesis author = root owner; the
+          HiveOwnerHandoffOffer→Accept lineage transfers it; coordinator
+          resolve_current_owner folds to the single current owner.
 ```
 
 ## Constants

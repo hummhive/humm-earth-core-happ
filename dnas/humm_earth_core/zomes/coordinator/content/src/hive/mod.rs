@@ -16,10 +16,12 @@
 //! type, simple validator).
 
 pub mod crud;
+pub mod owner;
 pub mod queries;
 
 pub use crud::{
     create_hive_genesis, create_hive_membership, CreateHiveGenesisInput, CreateHiveMembershipInput,
     HiveGenesisResponse, HiveMembershipResponse,
 };
+pub use owner::*;
 pub use queries::{get_latest_membership, list_my_hives, GetLatestMembershipInput, ListedHive};

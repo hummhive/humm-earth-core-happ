@@ -27,27 +27,6 @@ use super::crud::{get_encrypted_content, get_many_encrypted_content};
 use super::EncryptedContentResponse;
 
 #[derive(Serialize, Deserialize, Debug)]
-pub struct GetEncryptedContentByTimeAndAuthorInput {
-    pub author: AgentPubKey,
-    pub content_type: String,
-    pub start_time: Option<Timestamp>,
-    pub end_time: Option<Timestamp>,
-    pub limit: Option<usize>,
-}
-
-/// Stub kept for callsite compat while the time-indexing crate path is
-/// still on hold (see commented-out code in the original
-/// `encrypted_content.rs`). Returns empty without erroring so the
-/// upstream `humm-tauri` callsite continues to compile and behave as
-/// it did before the refactor.
-#[hdk_extern]
-pub fn get_encrypted_content_by_time_and_author(
-    _input: GetEncryptedContentByTimeAndAuthorInput,
-) -> ExternResult<Vec<EncryptedContentResponse>> {
-    Ok(vec![])
-}
-
-#[derive(Serialize, Deserialize, Debug)]
 pub struct ListByDynamicLinkInput {
     pub hive_genesis_hash: ActionHash,
     pub content_type: String,
@@ -262,19 +241,31 @@ pub fn list_by_acl_link(input: ListByAclInput) -> ExternResult<Vec<EncryptedCont
 pub struct ListByAuthorInput {
     pub author: String,
     pub content_type: String,
+    #[serde(default)]
+    pub since_ts: Option<Timestamp>,
+    #[serde(default)]
+    pub limit: Option<usize>,
 }
 
+/// Author's content of a type, oldest-first. `since_ts`/`limit` page forward;
+/// truncation drops the NEWEST so a bounded page never loses the range start.
 #[hdk_extern]
 pub fn list_by_author(input: ListByAuthorInput) -> ExternResult<Vec<EncryptedContentResponse>> {
     let path = Path::from(vec![
         Component::from(input.author),
         Component::from(input.content_type),
     ]);
-    let links = get_links(
+    let mut links = get_links(
         LinkQuery::try_new(path.path_entry_hash()?, LinkTypes::Hive)?,
         GetStrategy::Network,
     )?;
-
+    if let Some(since) = input.since_ts {
+        links.retain(|link| link.timestamp >= since);
+    }
+    links.sort_by_key(|link| link.timestamp);
+    if let Some(limit) = input.limit {
+        links.truncate(limit);
+    }
     let hashes: Vec<ActionHash> = links
         .into_iter()
         .filter_map(|link| link.target.into_action_hash())
@@ -427,4 +418,76 @@ pub fn fetch_pair_ss_with_hive_check(
         }
     }
     Ok(out)
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct ContentSummaryInput {
+    pub hive_genesis_hash: ActionHash,
+    pub content_types: Vec<String>,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct ContentTypeSummary {
+    pub content_type: String,
+    pub count: usize,
+    pub latest_action_micros: Option<i64>,
+    pub latest_action_hash: Option<ActionHash>,
+}
+
+#[hdk_extern]
+pub fn content_summary(input: ContentSummaryInput) -> ExternResult<Vec<ContentTypeSummary>> {
+    let mut summaries = Vec::with_capacity(input.content_types.len());
+    for content_type in input.content_types {
+        let path = Path::from(vec![
+            Component::from(input.hive_genesis_hash.to_string()),
+            Component::from(content_type.clone()),
+        ]);
+        let links = get_links(
+            LinkQuery::try_new(path.path_entry_hash()?, LinkTypes::Hive)?,
+            GetStrategy::Network,
+        )?;
+        let count = links.len();
+        let (latest_action_micros, latest_action_hash) =
+            match links.into_iter().max_by_key(|link| link.timestamp) {
+                Some(link) => (
+                    Some(link.timestamp.as_micros()),
+                    link.target.into_action_hash(),
+                ),
+                None => (None, None),
+            };
+        summaries.push(ContentTypeSummary {
+            content_type,
+            count,
+            latest_action_micros,
+            latest_action_hash,
+        });
+    }
+    Ok(summaries)
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct PairSharedSecretExistsInput {
+    pub active_hive_genesis_hash: ActionHash,
+    pub content_type: String,
+    pub group_id: String,
+}
+
+#[hdk_extern]
+pub fn my_pair_shared_secret_exists(input: PairSharedSecretExistsInput) -> ExternResult<bool> {
+    let path = Path::from(vec![
+        Component::from(input.active_hive_genesis_hash.to_string()),
+        Component::from(input.content_type),
+        Component::from(input.group_id),
+    ]);
+    let base = AnyLinkableHash::from(path.path_entry_hash()?);
+    // Local-chain query is authoritative with no DHT propagation lag, so a
+    // false result is a genuine miss rather than a transient scan-window gap.
+    for record in query(ChainQueryFilter::new().include_entries(false))? {
+        if let Action::CreateLink(cl) = record.action() {
+            if cl.base_address == base {
+                return Ok(true);
+            }
+        }
+    }
+    Ok(false)
 }

@@ -1,4 +1,4 @@
-<!-- codemap:backend | generated:2026-06-05 | updated:2026-06-23 | scope:full -->
+<!-- codemap:backend | generated:2026-06-05 | updated:2026-06-22 | scope:full -->
 
 # Backend (Zome Externs)
 
@@ -17,7 +17,7 @@ get_many_encrypted_content(Vec<ActionHash>) → Vec<EncryptedContentResponse>
 update_encrypted_content(UpdateEncryptedContentInput) → EncryptedContentResponse
   └─ crud.rs → update_entry + EncryptedContentUpdates link + OriginalHashPointer link
 delete_encrypted_content(ActionHash) → ActionHash
-  └─ crud.rs → delete_entry (I-A receiver-initiated tombstone)
+  └─ crud.rs → delete_entry (I-A tombstone) + sweep author's discovery links (self-scoping local-chain CreateLink query)
 ```
 
 ## Coordinator Externs — Queries
@@ -32,12 +32,15 @@ list_by_dynamic_link(ListByDynamicLinkInput) → Vec<EncryptedContentResponse>
 list_by_acl_link(ListByAclInput) → Vec<EncryptedContentResponse>
   └─ queries.rs → Path([hive_genesis_hash, content_type, entity_id]) by ACL class
 list_by_author(ListByAuthorInput) → Vec<EncryptedContentResponse>
-  └─ queries.rs → Path([author_pubkey, content_type])
+  └─ queries.rs → Path([author_pubkey, content_type]) + since_ts + limit, oldest-first (pass-5)
 get_by_content_id_link(ListByContentIdInput) → EncryptedContentResponse
   └─ queries.rs → Path([hive_genesis_hash, content_id])
 fetch_pair_ss_with_hive_check(FetchPairWithHiveCheckInput) → Vec<EncryptedContentResponse>
   └─ queries.rs → intersect author-path ∩ dynamic-path (C4)
-get_encrypted_content_by_time_and_author(_) → [] (stub)
+content_summary(ContentSummaryInput) → Vec<ContentTypeSummary>
+  └─ queries.rs → per content_type: count + latest (action_micros + hash) (pass-5, humm-tauri)
+my_pair_shared_secret_exists(PairSharedSecretExistsInput) → bool
+  └─ queries.rs → LOCAL-chain check for the pair-SS dynamic link (pass-5; not cap-granted)
 ```
 
 All list/get-many reads above resolve targets through `get_many_encrypted_content`,
@@ -52,15 +55,33 @@ batch. Likewise `list_my_hives` / `get_latest_membership` (+ the group equivalen
 create_hive_genesis(CreateHiveGenesisInput) → HiveGenesisResponse
   └─ hive/crud.rs → create_entry + Inbox::HiveInvite(self)
 create_hive_membership(CreateHiveMembershipInput) → HiveMembershipResponse
-  └─ hive/crud.rs → create_entry + Inbox::HiveInvite(grantee)
+  └─ hive/crud.rs → create_entry + Inbox::HiveInvite(grantee); Admin grants require resolve_current_owner==caller (pass-5)
 get_latest_membership(GetLatestMembershipInput) → Option<HiveMembershipResponse>
   └─ hive/queries.rs → walk Inbox::HiveInvite links (Network), filter by hive + unexpired
 get_latest_membership_local(GetLatestMembershipInput) → Option<HiveMembershipResponse>
   └─ hive/queries.rs → same shape as above, GetStrategy::Local (dormancy-proof)
 list_my_hives(()) → Vec<ListedHive>
-  └─ hive/queries.rs → walk own Inbox::HiveInvite links (Network)
-list_my_hives_local(()) → Vec<ListedHive>
-  └─ hive/queries.rs → source-chain query() (founder) + local-store get_links (joiner); dormancy-proof
+  └─ hive/queries.rs → walk own Inbox::HiveInvite links
+get_member_hive_role(GetMemberHiveRoleInput) → Option<HiveRole>   (pass-5)
+  └─ hive/owner.rs → resolve_current_owner==agent ? Owner : latest non-Owner membership
+list_member_hive_roles(ListMemberHiveRolesInput) → Vec<(AgentPubKey, Option<HiveRole>)>   (pass-5)
+  └─ hive/owner.rs → resolve owner once + per-agent role (batched, no N+1)
+get_hive_owner(ActionHash) → AgentPubKey   (pass-5, humm-tauri)
+  └─ hive/owner.rs → resolve_current_owner
+is_ownership_contested(ActionHash) → bool   (pass-5, humm-tauri)
+  └─ hive/owner.rs → true if the owner lineage has a fork
+initiate_owner_handoff(InitiateOwnerHandoffInput) → ActionHash   (pass-5)
+  └─ hive/owner.rs → HiveOwnerHandoffOffer + AgentToOwnerHandoffs link
+accept_owner_handoff(AcceptOwnerHandoffInput) → ActionHash   (pass-5)
+  └─ hive/owner.rs → HiveOwnerHandoffAccept + HiveToOwnerHandoffs link
+cancel_owner_handoff(ActionHash) → ()   (pass-5)
+  └─ hive/owner.rs → delete the offerer's AgentToOwnerHandoffs link
+list_pending_owner_handoffs(()) → Vec<PendingOwnerHandoff>   (pass-5)
+  └─ hive/owner.rs → get_links(my_pubkey, AgentToOwnerHandoffs)
+revoke_hive_membership(RevokeHiveMembershipInput) → HiveMembershipResponse   (pass-5)
+  └─ hive/crud.rs → re-issue with past expiry; refuses the current owner's membership
+changes_since(ChangesSinceInput) → ChangesSinceSummary   (pass-5; not cap-granted)
+  └─ hive/queries.rs → LOCAL-chain delta count for the hive's content paths
 ```
 
 ## Coordinator Externs — Group
@@ -72,6 +93,8 @@ create_group_membership(CreateGroupMembershipInput) → GroupMembershipResponse
   └─ group/crud.rs → create_entry + 3 discovery links + Inbox::GroupInvite(grantee)
 revoke_group_membership(RevokeGroupMembershipInput) → GroupMembershipResponse
   └─ group/crud.rs → issues new membership with past expiry
+delete_group_genesis(ActionHash) → ActionHash   (pass-5)
+  └─ group/crud.rs → author-gated tombstone; refuses if live members; sweeps own links
 get_group_genesis(ActionHash) → Option<GroupGenesisResponse>
 get_latest_group_membership(GetLatestGroupMembershipInput) → Option<GroupMembershipResponse>
 list_group_members(ActionHash) → Vec<GroupMembershipResponse>
@@ -93,6 +116,13 @@ probe_inbox(ProbeInboxInput) → Vec<InboxItem>
   └─ inbox/queries.rs → get_links(my_pubkey, Inbox) + optional event filter
 get_last_probe(()) → Option<DmProbeLog>
   └─ inbox/queries.rs → source-chain query for latest DmProbeLog
+```
+
+## Coordinator Externs — Invite (pass-5)
+
+```
+redeem_invite_grant(RedeemInviteGrantInput) → HiveMembershipResponse
+  └─ invite.rs → count InviteToRedemptions; advisory max_uses soft-cap; then create_hive_membership
 ```
 
 ## Coordinator Externs — Signals
@@ -127,21 +157,24 @@ get_migration_marker_v2(ActionHash) → Option<MigrationMarker>      (V2, reads 
 init(()) → InitCallbackResult            → set_cap_tokens()
 recv_remote_signal(ExternIO)             → try-decode dispatcher (C1 anti-spoof)
 post_commit(Vec<SignedActionHashed>)      → emit local Signal per committed action
-get_messages_since(GetMessagesSinceInput) → Vec<Record>  (source-chain replay)
+get_messages_since(GetMessagesSinceInput) → Vec<Record>  (source-chain replay; since_seq=0 = full chain)
 ```
 
 ## Cap Grant Policy (set_cap_tokens)
 
-Granted `Unrestricted`: all read-only queries + `recv_remote_signal`.
-NOT granted (local-only): all `create_*/update_*/delete_*` mutators,
-`get_messages_since`, `get_last_probe`, `send_dm_*` signal senders,
-`mark_migrated*`.
+Granted `Unrestricted`: all read-only DHT queries + `recv_remote_signal` + the
+pass-5 public-DHT reads (`get_member_hive_role`, `list_member_hive_roles`,
+`get_hive_owner`, `is_ownership_contested`, `content_summary`,
+`list_pending_owner_handoffs`).
+NOT granted (local-only): all `create_*/update_*/delete_*` + the owner-handoff /
+revoke / redeem mutators, `get_messages_since`, `get_last_probe`,
+`my_pair_shared_secret_exists`, `changes_since`, `send_dm_*`, `mark_migrated*`.
 
 ## Key Files
 
 ```
 coordinator/content/src/
-  lib.rs                          (init, recv_remote_signal, post_commit, cap grants)
+  lib.rs                          (init, recv_remote_signal, post_commit, cap grants, get_typed_entry + delete_own_links_targeting helpers)
   encrypted_content/
     mod.rs                        (wire types: EncryptedContentResponse, CreateInput, UpdateInput)
     crud.rs                       (create/get/update/delete externs)
@@ -156,11 +189,13 @@ coordinator/content/src/
     humm_content_id_link.rs       (create_humm_content_id_link)
   hive/
     crud.rs                       (create_hive_genesis, create_hive_membership)
-    queries.rs                    (get_latest_membership[_local], list_my_hives[_local])
+    queries.rs                    (get_latest_membership, list_my_hives)
+    owner.rs                      (owner handshake, resolve_current_owner, role reads, is_ownership_contested)
   group/
     crud.rs                       (create_group_genesis, create_group_membership, revoke)
     queries.rs                    (get_latest_group_membership, list_group_members, list_my_groups)
   inbox/
     crud.rs                       (send_to_inbox, consume_inbox_item, record_probe)
     queries.rs                    (probe_inbox, get_last_probe)
+  invite.rs                       (redeem_invite_grant — advisory max_uses soft-cap)
 ```

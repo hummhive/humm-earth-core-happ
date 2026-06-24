@@ -511,6 +511,91 @@ Released to main as v1.0.1 at de7abd83fbc86ca65535f615d549645c6eb05570
 
 Root cause + rescue mechanics: docs/PASS_4_MIGRATION_RESCUE_HANDOFF.md.
 
+Pass-4 coordinator follow-up — delete-link cleanup + dead time-index removal
+----------------------------------------------------------------------------
+Built from: tip of branch fix-coordinator-pass4-cleanup (off e60ed48/main,
+whose coordinator was the N1 guard content.wasm 0538f18f). Coordinator-only.
+delete_encrypted_content now sweeps the deleting agent's own discovery
+CreateLinks targeting the tombstoned entry (Hive / Dynamic / HummContentId /
+HummContent*; the EncryptedContentUpdates chain index is never matched — its
+target is the revision, not the original — and is immortal by design),
+closing the `// TODO: delete links` gap that left every create-time link
+dangling (the C3 count_links_by_hive over-count). The sweep is a LOCAL
+source-chain query, so it self-scopes: a foreign I-A deleter holds none of
+these links and the sweep is a harmless no-op for them (residue is cleaned
+only by the original author, per the link-author == deleter validator rule).
+The dead time-index surface is removed: the never-compiled
+linking/time_indexed_links.rs, the permanent-stub
+get_encrypted_content_by_time_and_author + its input struct + cap-grant +
+mod.rs re-exports, and the inert commented `# time_indexing` dep. The
+integrity TimePath/TimeItem LinkTypes variants + ENCRYPTED_CONTENT_TIME_INDEX
+const are LEFT in place (removing them would fork the DNA). get_messages_since
+doc-comment corrected (since_seq=0 is the full-replay sentinel; the old
+comment falsely claimed u32::MAX wrapped to 0 — saturating_add does not).
+Stale "alerts all agents in all hives" signal comments removed (the code is
+ACL-scoped via remote_signal_acl_readers). Integrity zome SOURCE untouched;
+DNA hash + integrity wasm sha256 HELD byte-identical to pass-4 FINAL.
+Coordinator hot-swap — no chain fork.
+
+  DNA hash (HELD):         uhC0k26bYG0qmTCFk4_D996GRCTecEtMdL5pXyvCUu0ACJN12omCV
+  content_integrity.wasm:  06b01fb3527e266a5cb1b5ffbf01b83541d7a572c4b4a252521154c3e0c2cd83 (UNCHANGED)
+  content.wasm:            6df1869388b1135d2cce4774ff405a9ed895bde183c642e7bd28de37fc5e927e (NEW — coordinator cleanup)
+  hApp bundle sha256:      8e8d3773b3663ce741623d0fcd295225c8e3aa75df29450d37e515404f415857 (NEW)
+
+Integrity manifest note: content_integrity/Cargo.toml [lints.clippy] gains
+`uninlined_format_args = "allow"` — manifest-level lint suppression with zero
+codegen effect (same sanctioned pattern as the clippy/fmt follow-up row
+above). This is the ONLY integrity-crate file touched and it is provably
+wasm-neutral: the integrity wasm reproduced byte-identical to 06b01fb3 in
+this build.
+
+Verification: cargo clippy -p content --all-targets -- -D warnings clean
+(integrity cosmetic lints allowed at the manifest level survive -D warnings);
+host tests 27 coordinator + 69 integrity green; behavior conductor-proof via
+in-tree Sweettest (crates/sweettest/tests/coordinator_cleanup.rs, holochain
+0.6.0, 2/2 green) — delete_encrypted_content sweeps the hive + dynamic links
+so list_by_hive_link / list_by_dynamic_link / count_links_by_hive drop to
+empty/0; get_messages_since(0) replays the full chain. NOT a new release —
+the v1.0.0 tag + distributed happ (2205337c) are unchanged; this happ
+(8e8d3773) is not distributed.
+
+Pass-5 (branch feat-integrity-pass-5-owner-role, FINAL — intentional integrity bump)
+------------------------------------------------------------------------------------
+Built from: the tip of feat-integrity-pass-5-owner-role (commit recorded in the
+official-versions MANIFEST at distribution). First integrity-zome change since
+pass-4: the hive Owner role (HiveOwnerHandoffOffer/Accept handshake +
+is_lineage_owner), reader read-only content deletes, role-grant hardening (Owner
+not membership-grantable; only the current owner grants Admin), author-gated
+delete_group_genesis, and the InviteRedemption soft-cap. Toolchain bumped to
+holochain 0.6.1 / hdk 0.6.1 / hdi 0.7.1, so the wasm baseline moves with the new
+toolchain. Intentionally bumps the DNA hash; pass-4's invariant is dead on this
+branch — pass-5's DNA hash is the new invariant.
+
+  DNA hash (FINAL):          uhC0k2dXMIa1yI-V4ibCWMiTY5G6-p0laq6IOAVQ2F8XXReDHSxyS
+  content_integrity.wasm:    53d867f72cfa1f7835de164382899311d2bd79301abacac1103a70e21c04fb2b
+  content.wasm:              32fae851a8ffcbc180887a53293f7c388935b3f161da4f71eae79ea7b4ced0f2
+  humm_earth_core.dna:       327ee0980383e7f79cf13fa8f12ab18451709b2dcc1fc023bd859604acaca27f
+  humm-earth-core-happ.happ: 8f284777731333de2dab63ece3a8621bf5dd99c4a43539ae228e6a80931defb4
+
+Errata (added during the v2.0.0 landing): the as-built `8f284777` coordinator
+has a latent `GroupGenesis`-as-`HiveGenesis` false-positive in `list_my_hives`
+sites 1+2 — the same shape-decode bug fixed in the pass-4 rescue. The pass-5
+`list_my_hives` is protected on the normal path by the Inbox HiveInvite tag
+filter, so the bug only surfaces under hostile Inbox pollution (UI noise, NOT
+data corruption). Fixed in the v2.0.0 build (pass-5 + `try_decode_hive_genesis`
++ pass-4 `_local` externs merged onto main). Do not ship 8f284777 as the final
+pass-5 happ — the v2.0.0 build supersedes it.
+
+Pass-5 invariants
+-----------------
+- Pass-4 DNA hash HELD on its branch: ✓ (pass-5 is a new branch + new DNA).
+- Pass-5 DNA hash is the new invariant: every subsequent pass-5 commit MUST hold
+  this DNA hash + integrity wasm sha256 byte-identical until pass-6+ does its own
+  intentional integrity-zome bump. Coordinator wasm sha256 MAY change.
+- Reproducible: built via scripts/build-zomes.sh (RUSTFLAGS path-remap + wasm-opt
+  strip) on the holochain 0.6.1 toolchain; re-running the pipeline reproduces
+  these shas. Multi-user behaviour proven via crates/sweettest (iroh transport).
+
 Reproducibility contract (effective pass-4 re-record)
 =====================================================
 

@@ -7,69 +7,93 @@
 
 ## Current state
 
-**Release:** `main` carries **v1.0.1** (tag at merge `de7abd8`) =
-pass-4-migration-rescue (coordinator hot-swap, no integrity bump) on top of
-**v1.0.0** (tag at `db2a264`) = pass-4-query-tolerance. **DNA**
-`uhC0k26bYG0qmTCFk4_D996GRCTecEtMdL5pXyvCUu0ACJN12omCV` HELD across the rescue
-(coordinator-only change). v1.0.1 = `02151d3` (rescue base: `_local` twins +
-`mark_migrated_v2` fail-soft) → `0ff26b3` (GroupGenesis filter fix) → `d980c51`
-(reviewer SHOULDs: helper warn+None, exhaustive match, site-2 parity warn) →
-`9a3a73d` (baseline shas), `--no-ff` merged at `de7abd8` preserving the rescue
-block. Rescue happ artifact `ca1b4225…` already in
-`~/hummhive-official-happ-versions/` (commit `9a3a73d`, MANIFEST row 15);
-integrity wasm `06b01fb3…` byte-identical to v1.0.0 (only coordinator
-rebuilt — hot-swap, no chain fork).
-**Pushed to GitHub:** `db2a264` + tag `v1.0.0`. Main is ahead of GitHub by the
-rescue block + merge commit + tag `v1.0.1`; user `git push origin main` +
-`git push origin --tags v1.0.1` pending. Assistant never pushes.
+**Active branch:** `feat-integrity-pass-5-owner-role` (UNMERGED,
+commit-local) — Phase D of the v2.0.0 landing plan
+(`local://pass5-main-landing-plan.md`) merged the GroupGenesis-filter
+fix branch in via `--no-ff` at `6d3e7e5`, preserving the 2-commit fix
+block. Tip carries the same `try_decode_hive_genesis` helper as
+`try_decode_hive_genesis` helper with a 9-variant exhaustive `EntryTypes`
+match + replaces both `to_app_option::<HiveGenesis>` sites in
+`list_my_hives`, ports the rescue's silent-failure containment into the
+pass-5 line, and adds a `load_dna()` DNA-hash freshness guard to the
+sweettest suite so a stale `workdir/humm_earth_core.dna` fails LOUDLY
+(every prior "test broke on 0.6.1" hunt traced back to a stale
+earlier-branch artifact). Coordinator-only — integrity sha + DNA hash
+HELD. New content wasm
+`5444f198553b1a9d46d894c9b631276cf0f1cd66efe2ea310b27cfb02803aff8`, new
+happ `6a568950ebe6a7a393cc87b532247a40fd4f273b07cc608355e6c9afc4b7184c`
+(926494 bytes, NOT distributed — canonical pass-5 artifact is the
+post-merge v2.0.0 from Phase E). 3 reviewer lanes APPROVE 0 MUST / 0
+SHOULD. Full sweettest suite green 7/7 on the rebuilt DNA.
 
-**DNA:** pass-4, frozen. Integrity wasm `06b01fb3…` byte-identical across all
-pass-4 coordinator gens; every coordinator change this session was a hot-swap
-(DNA hash held → no chain fork).
+pass-4 rescue: 9-variant exhaustive `EntryTypes` match + replaces both
+`to_app_option::<HiveGenesis>` sites in `list_my_hives` + sweettest
+DNA-hash freshness guard. Coordinator-only — integrity sha + DNA hash
+HELD across the merge.
 
-**Coordinator gen lineage this session (all DNA uhC0k26b):**
-- pass-4 FINAL `d74e5f2f` → recv-signal-fix `4aacd52f` (content.wasm cb51c376) →
-  **query-tolerance `2205337c` (content.wasm 78f0602e) = v1.0.0** → clippy/fmt
-  `bef54a1c` (content.wasm c2a2a2fa) → **N1 griefing fix `bdefd0b2` (content.wasm
-  0538f18f) = current HEAD**. All hot-swaps; integrity wasm + DNA held throughout.
+The pass-5 integrity bump (first since pass-4): **DNA FORKED** to
+`uhC0k2dXMIa1yI-V4ibCWMiTY5G6-p0laq6IOAVQ2F8XXReDHSxyS` (was pass-4 `uhC0k26b`).
+Toolchain bumped to **holochain 0.6.1 / hdk 0.6.1 / hdi 0.7.1 / HSB 0.0.57**
+(`nix flake update holonix`; sweettest transport `datachannel-vendored` → iroh).
 
-### What landed (merged to main as v1.0.0)
+**Pass-5 shipped (4 commits `f053570`→`046da6e`, + this docs commit):**
+- `chore(build)`: 0.6.1 bump + iroh sweettest (RustCrypto RC pins matching
+  holochain's lock; `await_consistency_s`; devShell + openssl/pkg-config). The
+  only zome-facing 0.6.1 break was `GetOptions{strategy}` → `GetOptions::network()`.
+- `feat(integrity)`: hive **Owner** role — `HiveOwnerHandoffOffer/Accept` entries
+  + `AgentToOwnerHandoffs`/`HiveToOwnerHandoffs` links + `is_lineage_owner`
+  induction; single owner, handshake-transferable, admin-undemotable. Reader
+  **read-only** (variant-aware delete; reader dropped on non-DM). Role hardening:
+  Owner not membership-grantable; only a lineage owner grants Admin; founder not
+  re-castable. `delete_group_genesis` author-gated; `InviteRedemption`.
+- `feat(coordinator)`: owner handshake externs + deterministic
+  `resolve_current_owner` (offer-keyed fold, sort-before-bound,
+  smallest-offer-hash tiebreak, fork detection) + `get_member_hive_role` /
+  `list_member_hive_roles` / `get_hive_owner` / `is_ownership_contested` + Admin
+  current-owner precheck + `revoke_hive_membership` (owner-protected) +
+  `redeem_invite_grant` + `list_by_author` bounds + the 4 humm-tauri reads
+  (`content_summary`, `my_pair_shared_secret_exists`, `changes_since`,
+  `get_hive_owner`). `migrate-dna.ts` skips Owner grants.
+- `docs`: handoff + integration + deploy + lineage + baseline + codemaps.
 
-1. **recv_remote_signal ExternIO pre-encode fix** (coordinator) — all 5 send sites
-   funnel through `send_encoded_remote_signal`/`remote_signal_payload`. Red→green
-   host tests. (`docs/HUMM_TAURI_RECV_REMOTE_SIGNAL_FIX.md`.)
-2. **pass-4-query-tolerance** (coordinator, Mike) — `get_many_encrypted_content`
-   `filter_map(.ok())`; `list_my_hives`/`_groups` + `get_latest_membership`/
-   `_group_membership` `.ok().flatten()` (cross-type Inbox + dangling targets no
-   longer poison reads). Proven by `crates/sweettest` (2/2 green).
-3. **Agent toolkit**: codemaps, CLAUDE.md, AGENTS.md, WSL sync scripts,
-   `.claude/` (commands/agents/skills incl. standard-workflow + update-docs-workflow
-   + reviewer agents).
-4. **Integration handoff docs** (`docs/HUMM_TAURI_*`): self-notes, DM messaging,
-   SharedSecrets public-ACL, content-type+witness, acl_spec mutation, pass roadmap.
+**Hashes (reproducible, 0.6.1):** DNA `uhC0k2dX…`, integrity wasm `53d867f7…`,
+content wasm `32fae851…`, happ `8f284777…`. Distributed to
+`~/hummhive-official-happ-versions/` (`pass-5-owner-role` row + happ). NOT copied
+into `humm-tauri` — the team integrates it into their own final-gates commit; an
+mbox was sent with the artifact + hashes + the exact MANIFEST row + steps.
 
-### Recent session
+**Validation:** integrity host 71/71, coordinator 27/27, workspace clippy
+`-D warnings` clean, fmt clean. **Sweettest 7/7 on iroh** incl. `owner_and_acl.rs`
+3/3 (handshake+admin-authority+owner-reject; two-transfer cross-node determinism;
+revoke owner-protect). Reproducible rebuild reproduces the hashes.
 
-- Answered + archived 4 mbox messages (DHT size cap 4,000,000 B; DirectMessage has
-  no content_type constraint; non-member first entry = OpenWrite not Public;
-  cross-hive >4MB = chunked DM entries; the list_my_hives wart is fixed in 2205337c).
-- Cloned + pruned standard-workflow / update-docs-workflow skills + reviewer agents.
-- Released v1.0.0: merged to main, tagged, full gate ladder green.
-- Fixed N1 griefing bug at `697fde0` — `update_encrypted_content` now guards the
-  `OriginalHashPointer` target via `original_pointer_action_hash`
-  (`let Some(ah) = …into_action_hash() else { Err }`) instead of `.unwrap()`, so a
-  poison non-ActionHash link returns a clean error rather than trapping the
-  author's update. 2 host regression tests; coordinator hot-swap, DNA held,
-  content.wasm `0538f18f` / happ `bdefd0b2`.
+**SECURITY — documented, accepted residual:** owner transfer is NOT final against
+a malicious PAST owner — any past owner can fork the lineage to re-seize ownership
+(irreducible cross-chain double-spend; confirmed by security review + oracle).
+Blast radius = GOVERNANCE only (Admin-grant, revoke-protect, owner UI), NOT
+content decryption. Mitigation = deterministic resolution + fork detection
+(`is_ownership_contested`) + honest docs. User chose "accept + expose
+`is_ownership_contested`".
+
+**Pass-4 status:** `main` still carries v1.0.0 (pass-4-query-tolerance, DNA
+`uhC0k26b`, happ `2205337c`). pass-5 is the next bundle; pass-4 stays the released
+production until the team cuts over.
 
 ## Outstanding follow-ups
 
-1. **`git push origin main` + `git push origin --tags v1.0.1`** (user) — main is
-   ahead of GitHub by the rescue merge `de7abd8` + the 4 rescue commits + the
-   `v1.0.1` tag; v1.0.0 tag already pushed. Assistant never pushes.
-2. **Phases C–F still pending** for the pass-5 owner-role landing as v2.0.0
-   (port the GroupGenesis fix to pass-5, merge fix→pass-5, merge pass-5→main,
-   docs freshness). Tracked in the active todo + `local://pass5-main-landing-plan.md`.
+1. **Phase C done; Phases D–F pending** for the v2.0.0 landing (merge
+   fix-coordinator-pass5-groupgenesis-filter → pass-5, then pass-5 → main
+   as v2.0.0, then docs freshness). Tracked in `local://pass5-main-landing-plan.md`.
+2. **Merge `feat-integrity-pass-5-owner-role`** (user) — eventually as
+   the v2.0.0 main merge per the landing plan. Commit-local; synced
+   WSL→mount via `wsl-push.sh`. Assistant never pushes.
+3. **humm-tauri integration** (their team) — they hold the happ + MANIFEST row +
+   the full cutover contract (`docs/HUMM_TAURI_OWNER_ROLE_AND_ACL_INTEGRATION.md`):
+   repoint the governance owner-gate off `authorMembershipHash===null` to
+   `get_member_hive_role(me)==='Owner'`, the reject-string regexes, reader
+   read-only, migration, the read helpers, the honest owner residual + microcopy.
+4. **pass-4→pass-5 migration** for existing hives — `migrate-dna.ts` now skips
+   Owner grants (lineage-conferred); integration doc §5.
 
 ---
 
@@ -78,30 +102,32 @@ pass-4 coordinator gens; every coordinator change this session was a hot-swap
 - **Linux `~/humm-earth-core-happ`** — authoritative. ALL dev/build/test here.
 - **Windows `/mnt/c/proj/github/hummhive/humm-earth-core-happ`** — ff-merge target (harness cwd).
 - **WSL sync:** `scripts/wsl-pull.sh` / `wsl-push.sh` / `wsl-check.sh`. See `CLAUDE.md`.
-- **Toolchain:** holochain/hc 0.6.0, hdi 0.7.0, hdk 0.6.0 (pinned exact), Node 24,
-  nix (holonix main-0.6). `.baseline-hashes.txt` = reproducibility contract.
+- **Toolchain:** holochain/hc 0.6.1, hdi 0.7.1, hdk 0.6.1 (pinned exact), Node 24,
+  nix (holonix main-0.6 @ 0.6.1, rustc 1.94). `.baseline-hashes.txt` = repro contract.
 - **Build (reproducible):** `nix develop --command bash -c 'bash scripts/build-zomes.sh && hc dna pack dnas/humm_earth_core/workdir && hc app pack workdir --recursive'`,
-  then `hc dna hash …` MUST print `uhC0k26b…`.
-- **Tests:** host `cargo test -p content --lib` (25) + `-p content_integrity --lib` (69).
-  Conductor behavior: `crates/sweettest` (in-process). **Tryorama CANNOT boot on
-  hc 0.6.0** (quic→webrtc CLI rename) — do not use it.
+  then `hc dna hash …` MUST print `uhC0k2dX…` (pass-5).
+- **Tests:** host `cargo test -p content --lib` (27) + `-p content_integrity --lib` (71).
+  Conductor: `crates/sweettest` (in-process, iroh). **Tryorama CANNOT boot on
+  hc 0.6.x** — do not use it.
 
 ## Conductor testing (crates/sweettest)
 
-- Separate Cargo workspace (holochain conductor needs sbt `=0.0.57` vs zomes `=0.0.56`).
-- Run: `cd crates/sweettest && nix develop ../.. --command bash -c 'export LIBCLANG_PATH=<nix clang lib dir>; cargo test -- --test-threads=1'`.
-  **Must set `LIBCLANG_PATH`** to a nix clang lib dir (e.g. `/nix/store/…clang-18.1.8-lib/lib`)
-  or datachannel-sys bindgen falls back to the broken system clang-14 (missing libLLVM-14).
-- First compile ~1.5-40 min (conductor + wasmer + libdatachannel). 2/2 green on v1.0.0.
+- Separate Cargo workspace (the conductor crate's dep tree stays out of the lean
+  zome workspace; both now pin HSB `=0.0.57`). holochain rev `3bdeacc` (0.6.1),
+  transport **iroh** (`transport-iroh`; tx5/datachannel dropped in 0.6.1) — the
+  devShell provides `openssl` + `pkg-config`; RustCrypto pinned to holochain's RCs.
+- Run: `cd crates/sweettest && nix develop ../.. --command bash -c 'export LIBCLANG_PATH=<nix clang lib dir>; cargo test -- --test-threads=1'`
+  (`LIBCLANG_PATH` e.g. `/nix/store/…clang-18.1.8-lib/lib`).
+- **7/7 green on pass-5** (coordinator_cleanup 2, coordinator_query_tolerance 2,
+  owner_and_acl 3). First compile slow (conductor + wasmer + iroh).
 
 ## Other branches (committed, NOT merged to main)
 
 | Branch | Tip | What |
 |---|---|---|
-| `feat-integrity-pass-4-recipient-witnesses` | `8503b48` | Pass-4 integrity (G-6.2 witnesses) — **DNA-changing** |
-| `feat-migration-d1-group-track` | `aca142b` | D.1 migration tooling |
-| `feat-coordinator-pass4-migration-rescue` | (this session) | pass-4 dormancy rescue: `list_my_hives_local` + `get_latest_membership_local` + `mark_migrated_v2` fail-soft. Coordinator-only, DNA `uhC0k26b…` HELD. |
-| `test-tryorama-integrity-coverage` | `bf9fad8` | Old tryorama-free e2e harness (superseded by crates/sweettest) |
+| `feat-integrity-pass-5-owner-role` | HEAD (this) | **Pass-5**: owner role + reader read-only + 0.6.1 — DNA-forked `uhC0k2dX` |
+| `fix-coordinator-pass4-cleanup` | `0196d23` | pass-4 coordinator cleanup (pass-5 branched off it) |
+| `feat-integrity-pass-4-recipient-witnesses` | `8503b48` | Pass-4 integrity (G-6.2 witnesses) |
 
 ## Constraints
 
@@ -121,15 +147,14 @@ pass-4 coordinator gens; every coordinator change this session was a hot-swap
 - AdminWebsocket 400 → pass `wsClientOptions: { origin: "<anything>" }`.
 - Two agents, one conductor: same `network_seed` → shared DHT → offline cross-agent validation.
 - Reproducibility requires `nix develop` (`wasm-opt`) + `codegen-units = 1`.
-- **Editing the integrity crate forks the DNA** — even a `cargo fmt` reflow or an
-  inserted `#[allow]` shifts rustc's embedded `#[track_caller]` panic-`Location` line
-  numbers → integrity wasm sha bumps at identical byte length → DNA fork (proven this
-  session). Integrity is frozen: NEVER fmt or source-edit it; suppress its clippy lints
-  via `content_integrity/Cargo.toml [lints.clippy]` (zero codegen effect, survives
-  `-D warnings`). Coordinator is free to fmt/fix (content.wasm may change). Workspace
-  clippy is clean as of `25ad4df`. Safe fmt = `cargo fmt -p content` (coordinator only);
-  NEVER `cargo fmt --all` (reflows integrity → fork). A `rustfmt.toml` `ignore` does NOT
-  guard this — it is nightly-only (warns + no-ops on stable rustfmt), so don't bother.
+- **Editing the integrity crate forks the DNA.** Pass-5 did this INTENTIONALLY
+  (new DNA `uhC0k2dX`); the pass-4 "integrity frozen" rule is dead on this branch.
+  Going forward, pass-5's integrity wasm `53d867f7` + DNA `uhC0k2dX` are the new
+  invariant — hold them byte-identical on this branch; coordinator hot-swaps are
+  free (content.wasm may change). `cargo fmt --all` is fine on pass-5 (the fork
+  already moved the integrity wasm). rustc embeds `#[track_caller]` line numbers,
+  so any integrity edit shifts the wasm sha — expected for a sanctioned fork,
+  forbidden once a line is frozen.
 
 ## Key references
 
@@ -137,4 +162,4 @@ pass-4 coordinator gens; every coordinator change this session was a hot-swap
 - Conductor tests: `crates/sweettest/README.md` · Reproducibility: `.baseline-hashes.txt`
 - Build: `scripts/build-zomes.sh` + `scripts/strip-wasms.sh`
 - Official happ binaries: `~/hummhive-official-happ-versions/` + `MANIFEST.tsv` (mirrored in `humm-tauri/.testdata/happs/`)
-- Handoffs: `docs/PASS_4_DEPLOY_HANDOFF.md`, `docs/HUMM_TAURI_RECV_REMOTE_SIGNAL_FIX.md`, `docs/HUMM_TAURI_*` (SharedSecrets / content-type+witness / acl_spec-mutation / roadmap)
+- Handoffs: `docs/PASS_5_DEPLOY_HANDOFF.md` + `docs/HUMM_TAURI_OWNER_ROLE_AND_ACL_INTEGRATION.md` (pass-5 owner role); `docs/PASS_4_DEPLOY_HANDOFF.md`, `docs/HUMM_TAURI_*` (recv-signal / SharedSecrets / content-type+witness / acl_spec-mutation / roadmap)

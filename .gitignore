@@ -15,3 +15,4 @@ node_modules/
 # session-scope artifacts (this-pass agent work)
 /target-host/
 /local/
+*.sublime-workspace

@@ -6,8 +6,7 @@
 //!
 //! - `crud.rs` — create / get / get_many / update / delete externs.
 //! - `queries.rs` — every `list_by_*` / `count_links_by_hive` /
-//!   `get_by_content_id_link` / `get_encrypted_content_by_time_and_author` /
-//!   `fetch_pair_ss_with_hive_check` (C4).
+//!   `get_by_content_id_link` / `fetch_pair_ss_with_hive_check` (C4).
 //! - `signals.rs` — `EncryptedContentSignal` + new `DmRemoteSignal`
 //!   (C6 delete-request, C7 WebRTC) + the `send_dm_*` externs and the
 //!   `remote_signal_acl_readers` fan-out helper.
@@ -94,11 +93,10 @@ pub use migration::{
     MIGRATION_MARKER_SCHEMA_TAG,
 };
 pub use queries::{
-    count_links_by_hive, fetch_pair_ss_with_hive_check, get_by_content_id_link,
-    get_encrypted_content_by_time_and_author, list_by_acl_link, list_by_author,
-    list_by_dynamic_link, list_by_hive_link, CountByHiveInput, FetchPairWithHiveCheckInput,
-    GetEncryptedContentByTimeAndAuthorInput, ListByAclInput, ListByAuthorInput,
-    ListByContentIdInput, ListByDynamicLinkInput, ListByHiveInput,
+    count_links_by_hive, fetch_pair_ss_with_hive_check, get_by_content_id_link, list_by_acl_link,
+    list_by_author, list_by_dynamic_link, list_by_hive_link, CountByHiveInput,
+    FetchPairWithHiveCheckInput, ListByAclInput, ListByAuthorInput, ListByContentIdInput,
+    ListByDynamicLinkInput, ListByHiveInput,
 };
 pub use signals::{
     remote_signal_acl_readers, send_dm_call_init_accept, send_dm_call_init_request,

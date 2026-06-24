@@ -25,6 +25,12 @@
             inputs'.holonix.devShells.default
           ];
 
+          # iroh transport (pass-5 sweettest conductor) links openssl-sys via
+          # pkg-config; the zome-only holonix shell omits these. The wasm zome
+          # build never links openssl, so the DNA hash is unaffected.
+          nativeBuildInputs = [ pkgs.pkg-config ];
+          buildInputs = [ pkgs.openssl ];
+
           packages = (with pkgs; [
             inputs'.hds-releases.packages.holo-dev-server-bin
             binaryen # wasm-opt for scripts/strip-wasms.sh — see .baseline-hashes.txt "Reproducibility contract"

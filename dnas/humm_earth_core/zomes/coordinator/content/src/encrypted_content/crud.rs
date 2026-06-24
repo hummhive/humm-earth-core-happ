@@ -206,11 +206,8 @@ pub fn update_encrypted_content(
         (),
     )?;
 
-    // TODO: create time link. get rid of default links and update links?
     let record = get_encrypted_content(updated_encrypted_content_hash.clone())?;
 
-    // temp solution while waiting for pub/sub to be implemented. this will alert
-    // all agents in all hives for every entry created across the network
     emit_signal(EncryptedContentSignal {
         action_type: EncryptedContentSignalType::Update,
         data: record.clone(),
@@ -233,9 +230,7 @@ pub fn delete_encrypted_content(
     original_encrypted_content_hash: ActionHash,
 ) -> ExternResult<ActionHash> {
     let record = get_encrypted_content(original_encrypted_content_hash.clone())?;
-    let ah = delete_entry(original_encrypted_content_hash)?;
-    // temp solution while waiting for pub/sub to be implemented. this will alert
-    // all agents in all hives for every entry created across the network
+    let ah = delete_entry(original_encrypted_content_hash.clone())?;
     emit_signal(EncryptedContentSignal {
         action_type: EncryptedContentSignalType::Delete,
         data: record.clone(),
@@ -250,7 +245,9 @@ pub fn delete_encrypted_content(
             from_agent: None,
         },
     );
-    // TODO: delete links
+
+    crate::delete_own_links_targeting(AnyLinkableHash::from(original_encrypted_content_hash))?;
+
     Ok(ah)
 }
 

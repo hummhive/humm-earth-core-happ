@@ -15,13 +15,15 @@ resolver = "2"
 # For Tauri/Android builds, contact darksoil-studio for access
 # tauri-plugin-holochain = { git = "https://github.com/darksoil-studio/p2p-shipyard", branch = "main-0.6" }
 
-# Holochain 0.6.x dependencies (for zome/hApp builds)
-hdi = "=0.7.0"
-hdk = "=0.6.0"
-holochain_integrity_types = "=0.6.0"
-holochain_serialized_bytes = "=0.0.56"
+# Holochain 0.6.1 dependencies (for zome/hApp builds) — pass-5 alignment bump.
+# Runtime (humm-tauri) is already on holochain 0.6.1; this rides the pass-5 DNA fork.
+# Coherent 0.6.1 set (published 2026-05-12): hdi 0.7.1 / hdk 0.6.1 /
+# holochain_integrity_types 0.6.1 / holochain_serialized_bytes 0.0.57.
+hdi = "=0.7.1"
+hdk = "=0.6.1"
+holochain_integrity_types = "=0.6.1"
+holochain_serialized_bytes = "=0.0.57"
 serde = "1.0"
-# time_indexing = { git = "https://github.com/ddd-mtl/time-indexing", branch = "hdk-4.0-dev.20" }
 # zome_utils = { git = "https://github.com/ddd-mtl/zome-utils", branch = "hdk-4.0" }
 
 [workspace.dependencies.content]

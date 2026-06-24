@@ -21,6 +21,5 @@ base64 = "0.22"
 
 serde = { workspace = true }
 
-# time_indexing = { workspace = true }
 # zome_utils.workspace = true
 content_integrity = { workspace = true } 
