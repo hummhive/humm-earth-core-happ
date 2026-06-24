@@ -7,10 +7,11 @@
 
 ## Current state
 
-**Active branch:** `fix-coordinator-pass5-groupgenesis-filter` (off
-`feat-integrity-pass-5-owner-role @ c4bdda7`, UNMERGED, commit-local) —
-the GroupGenesis-filter port to pass-5 (Phase C of the v2.0.0 landing
-plan, `'/home/aphix/.omp/agent/sessions/--mnt-c-proj-github-hummhive-humm-earth-core-happ--/2026-06-22T16-17-40-842Z_019ef01f-8fea-7000-8df8-8a9ea2236380/local/pass5-main-landing-plan.md'`). Tip `2fbf125` adds the
+**Active branch:** `feat-integrity-pass-5-owner-role` (UNMERGED,
+commit-local) — Phase D of the v2.0.0 landing plan
+(`'/home/aphix/.omp/agent/sessions/--mnt-c-proj-github-hummhive-humm-earth-core-happ--/2026-06-22T16-17-40-842Z_019ef01f-8fea-7000-8df8-8a9ea2236380/local/pass5-main-landing-plan.md'`) merged the GroupGenesis-filter
+fix branch in via `--no-ff` at `6d3e7e5`, preserving the 2-commit fix
+block. Tip carries the same `try_decode_hive_genesis` helper as
 `try_decode_hive_genesis` helper with a 9-variant exhaustive `EntryTypes`
 match + replaces both `to_app_option::<HiveGenesis>` sites in
 `list_my_hives`, ports the rescue's silent-failure containment into the
@@ -25,9 +26,12 @@ happ `6a568950ebe6a7a393cc87b532247a40fd4f273b07cc608355e6c9afc4b7184c`
 post-merge v2.0.0 from Phase E). 3 reviewer lanes APPROVE 0 MUST / 0
 SHOULD. Full sweettest suite green 7/7 on the rebuilt DNA.
 
-**Earlier active branch:** `feat-integrity-pass-5-owner-role` (UNMERGED,
-commit-local) —
-the first integrity bump since pass-4. **DNA FORKED** to
+pass-4 rescue: 9-variant exhaustive `EntryTypes` match + replaces both
+`to_app_option::<HiveGenesis>` sites in `list_my_hives` + sweettest
+DNA-hash freshness guard. Coordinator-only — integrity sha + DNA hash
+HELD across the merge.
+
+The pass-5 integrity bump (first since pass-4): **DNA FORKED** to
 `uhC0k2dXMIa1yI-V4ibCWMiTY5G6-p0laq6IOAVQ2F8XXReDHSxyS` (was pass-4 `uhC0k26b`).
 Toolchain bumped to **holochain 0.6.1 / hdk 0.6.1 / hdi 0.7.1 / HSB 0.0.57**
 (`nix flake update holonix`; sweettest transport `datachannel-vendored` → iroh).
