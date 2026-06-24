@@ -203,16 +203,20 @@ Recovery for cross-member content on a dormant cell relies on the
 ## Artifact and hashes
 
 ```
-File:             humm-earth-core-happ_pass-4-migration-rescue_dna-uhC0k26b_happ-e28fc9ae.happ
+File:             humm-earth-core-happ_pass-4-migration-rescue_dna-uhC0k26b_happ-ca1b4225.happ
 DNA hash:         uhC0k26bYG0qmTCFk4_D996GRCTecEtMdL5pXyvCUu0ACJN12omCV
 integrity_sha256: 06b01fb3527e266a5cb1b5ffbf01b83541d7a572c4b4a252521154c3e0c2cd83
-content_sha256:   72138815ebda8b0d713101b3c999fd5fe6431f255e519e8cbc440878e88e52d6
-happ_sha256:      e28fc9ae0290e19d651b9a78edbcfd7bfc3197311049b9e1e54833f9b5fdcf1a
-size:             942822 bytes
+content_sha256:   89444059a7e7cfcd4c85ef81925a8d6c52865ade1e647980fe43869b3a841d3a
+happ_sha256:      ca1b422506c489f21cb32618951df304dc9c320596a4ddb6317d5f5ed8a2cbcf
+size:             943375 bytes
 ```
 
 (See `.baseline-hashes.txt` "pass-4 coordinator follow-up — migration-rescue"
-for the authoritative copy and the reproducible-build invocation.)
+for the authoritative copy and the reproducible-build invocation.
+The prior `e28fc9ae` build for this same branch is SUPERSEDED — it
+silently false-positived every `GroupGenesis` entry as a hive; the
+filter fix is in this `ca1b4225` build and the bad happ must not be
+redistributed.)
 
 Available in `~/hummhive-official-happ-versions/` (the rescue is NOT mirrored
 into `humm-tauri/.testdata/happs/` from this side — pull it from the
