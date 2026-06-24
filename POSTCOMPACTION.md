@@ -7,7 +7,26 @@
 
 ## Current state
 
-**Active branch:** `feat-integrity-pass-5-owner-role` (UNMERGED, commit-local) —
+**Active branch:** `fix-coordinator-pass5-groupgenesis-filter` (off
+`feat-integrity-pass-5-owner-role @ c4bdda7`, UNMERGED, commit-local) —
+the GroupGenesis-filter port to pass-5 (Phase C of the v2.0.0 landing
+plan, `'/home/aphix/.omp/agent/sessions/--mnt-c-proj-github-hummhive-humm-earth-core-happ--/2026-06-22T16-17-40-842Z_019ef01f-8fea-7000-8df8-8a9ea2236380/local/pass5-main-landing-plan.md'`). Tip `2fbf125` adds the
+`try_decode_hive_genesis` helper with a 9-variant exhaustive `EntryTypes`
+match + replaces both `to_app_option::<HiveGenesis>` sites in
+`list_my_hives`, ports the rescue's silent-failure containment into the
+pass-5 line, and adds a `load_dna()` DNA-hash freshness guard to the
+sweettest suite so a stale `workdir/humm_earth_core.dna` fails LOUDLY
+(every prior "test broke on 0.6.1" hunt traced back to a stale
+earlier-branch artifact). Coordinator-only — integrity sha + DNA hash
+HELD. New content wasm
+`5444f198553b1a9d46d894c9b631276cf0f1cd66efe2ea310b27cfb02803aff8`, new
+happ `6a568950ebe6a7a393cc87b532247a40fd4f273b07cc608355e6c9afc4b7184c`
+(926494 bytes, NOT distributed — canonical pass-5 artifact is the
+post-merge v2.0.0 from Phase E). 3 reviewer lanes APPROVE 0 MUST / 0
+SHOULD. Full sweettest suite green 7/7 on the rebuilt DNA.
+
+**Earlier active branch:** `feat-integrity-pass-5-owner-role` (UNMERGED,
+commit-local) —
 the first integrity bump since pass-4. **DNA FORKED** to
 `uhC0k2dXMIa1yI-V4ibCWMiTY5G6-p0laq6IOAVQ2F8XXReDHSxyS` (was pass-4 `uhC0k26b`).
 Toolchain bumped to **holochain 0.6.1 / hdk 0.6.1 / hdi 0.7.1 / HSB 0.0.57**
@@ -58,14 +77,18 @@ production until the team cuts over.
 
 ## Outstanding follow-ups
 
-1. **Merge `feat-integrity-pass-5-owner-role`** (user) — commit-local; synced
+1. **Phase C done; Phases D–F pending** for the v2.0.0 landing (merge
+   fix-coordinator-pass5-groupgenesis-filter → pass-5, then pass-5 → main
+   as v2.0.0, then docs freshness). Tracked in `'/home/aphix/.omp/agent/sessions/--mnt-c-proj-github-hummhive-humm-earth-core-happ--/2026-06-22T16-17-40-842Z_019ef01f-8fea-7000-8df8-8a9ea2236380/local/pass5-main-landing-plan.md'`.
+2. **Merge `feat-integrity-pass-5-owner-role`** (user) — eventually as
+   the v2.0.0 main merge per the landing plan. Commit-local; synced
    WSL→mount via `wsl-push.sh`. Assistant never pushes.
-2. **humm-tauri integration** (their team) — they hold the happ + MANIFEST row +
+3. **humm-tauri integration** (their team) — they hold the happ + MANIFEST row +
    the full cutover contract (`docs/HUMM_TAURI_OWNER_ROLE_AND_ACL_INTEGRATION.md`):
    repoint the governance owner-gate off `authorMembershipHash===null` to
    `get_member_hive_role(me)==='Owner'`, the reject-string regexes, reader
    read-only, migration, the read helpers, the honest owner residual + microcopy.
-3. **pass-4→pass-5 migration** for existing hives — `migrate-dna.ts` now skips
+4. **pass-4→pass-5 migration** for existing hives — `migrate-dna.ts` now skips
    Owner grants (lineage-conferred); integration doc §5.
 
 ---

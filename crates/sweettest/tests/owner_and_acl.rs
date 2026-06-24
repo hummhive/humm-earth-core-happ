@@ -8,14 +8,32 @@
 use std::path::Path;
 
 use holo_hash::{ActionHash, AgentPubKey};
-use holochain::sweettest::{
-    await_consistency_s, SweetCell, SweetConductorBatch, SweetDnaFile,
-};
+use holochain::prelude::DnaFile;
+use holochain::sweettest::{await_consistency_s, SweetCell, SweetConductorBatch, SweetDnaFile};
 use serde::{Deserialize, Serialize};
 
 fn dna_path() -> std::path::PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../../dnas/humm_earth_core/workdir/humm_earth_core.dna")
+}
+
+/// Expected DNA hash for the pass-5 bundle this suite must run against. See
+/// `coordinator_cleanup.rs::EXPECTED_DNA_HASH` for the rationale (stale
+/// workdir bundles silently mask coordinator behavior; the integrity-bump
+/// hash gates this generation; coordinator-only swaps are a documented blindspot).
+const EXPECTED_DNA_HASH: &str = "uhC0k2dXMIa1yI-V4ibCWMiTY5G6-p0laq6IOAVQ2F8XXReDHSxyS";
+
+async fn load_dna() -> DnaFile {
+    let dna = SweetDnaFile::from_bundle(&dna_path()).await.expect(
+        "load humm_earth_core.dna (build: npm run build:zomes && hc dna pack dnas/humm_earth_core/workdir)",
+    );
+    let actual = dna.dna_hash().to_string();
+    assert_eq!(
+        actual, EXPECTED_DNA_HASH,
+        "Stale workdir/humm_earth_core.dna — loaded DNA hash {actual} but expected pass-5 {EXPECTED_DNA_HASH}. \
+         Rebuild: `nix develop --command bash -c 'npm run build:zomes && hc dna pack dnas/humm_earth_core/workdir'`."
+    );
+    dna
 }
 
 #[derive(Debug, Serialize)]
@@ -70,9 +88,7 @@ struct RevokeHiveMembershipInput {
 }
 
 async fn setup(agents: usize) -> (SweetConductorBatch, Vec<SweetCell>) {
-    let dna = SweetDnaFile::from_bundle(&dna_path())
-        .await
-        .expect("load humm_earth_core.dna (build: npm run build:zomes && hc dna pack)");
+    let dna = load_dna().await;
     let mut conductors = SweetConductorBatch::from_standard_config_rendezvous(agents).await;
     let apps = conductors
         .setup_app("test-app", &[("humm_earth_core".into(), dna)])
@@ -124,7 +140,10 @@ async fn owner_handshake_admin_authority_and_owner_reject() {
             founds_membership(hive.hash.clone(), bob_key.clone(), "Owner"),
         )
         .await;
-    let rejection = format!("{:?}", owner_via_membership.expect_err("Owner grant must reject"));
+    let rejection = format!(
+        "{:?}",
+        owner_via_membership.expect_err("Owner grant must reject")
+    );
     assert!(
         rejection.contains("Owner role cannot be granted via membership"),
         "got {rejection}"
@@ -169,7 +188,11 @@ async fn owner_handshake_admin_authority_and_owner_reject() {
             },
         )
         .await;
-    assert_eq!(bob_role.as_deref(), Some("Owner"), "Bob owns the hive post-accept");
+    assert_eq!(
+        bob_role.as_deref(),
+        Some("Owner"),
+        "Bob owns the hive post-accept"
+    );
 
     let alice_role: Option<String> = conductors[0]
         .call(
@@ -181,7 +204,11 @@ async fn owner_handshake_admin_authority_and_owner_reject() {
             },
         )
         .await;
-    assert_ne!(alice_role.as_deref(), Some("Owner"), "former owner Alice steps down");
+    assert_ne!(
+        alice_role.as_deref(),
+        Some("Owner"),
+        "former owner Alice steps down"
+    );
 
     let former_owner_grant: Result<MembershipResponse, _> = conductors[0]
         .call_fallible(

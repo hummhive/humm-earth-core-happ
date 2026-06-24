@@ -518,6 +518,15 @@ branch — pass-5's DNA hash is the new invariant.
   humm_earth_core.dna:       327ee0980383e7f79cf13fa8f12ab18451709b2dcc1fc023bd859604acaca27f
   humm-earth-core-happ.happ: 8f284777731333de2dab63ece3a8621bf5dd99c4a43539ae228e6a80931defb4
 
+Errata (added during the v2.0.0 landing): the as-built `8f284777` coordinator
+has a latent `GroupGenesis`-as-`HiveGenesis` false-positive in `list_my_hives`
+sites 1+2 — the same shape-decode bug fixed in the pass-4 rescue. The pass-5
+`list_my_hives` is protected on the normal path by the Inbox HiveInvite tag
+filter, so the bug only surfaces under hostile Inbox pollution (UI noise, NOT
+data corruption). Fixed in the v2.0.0 build (pass-5 + `try_decode_hive_genesis`
++ pass-4 `_local` externs merged onto main). Do not ship 8f284777 as the final
+pass-5 happ — the v2.0.0 build supersedes it.
+
 Pass-5 invariants
 -----------------
 - Pass-4 DNA hash HELD on its branch: ✓ (pass-5 is a new branch + new DNA).
