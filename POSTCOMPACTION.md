@@ -7,77 +7,64 @@
 
 ## Current state
 
-**Active branch:** `feat-integrity-pass-5-owner-role` (UNMERGED,
-commit-local) — Phase D of the v2.0.0 landing plan
-(`local://pass5-main-landing-plan.md`) merged the GroupGenesis-filter
-fix branch in via `--no-ff` at `6d3e7e5`, preserving the 2-commit fix
-block. Tip carries the same `try_decode_hive_genesis` helper as
-`try_decode_hive_genesis` helper with a 9-variant exhaustive `EntryTypes`
-match + replaces both `to_app_option::<HiveGenesis>` sites in
-`list_my_hives`, ports the rescue's silent-failure containment into the
-pass-5 line, and adds a `load_dna()` DNA-hash freshness guard to the
-sweettest suite so a stale `workdir/humm_earth_core.dna` fails LOUDLY
-(every prior "test broke on 0.6.1" hunt traced back to a stale
-earlier-branch artifact). Coordinator-only — integrity sha + DNA hash
-HELD. New content wasm
-`5444f198553b1a9d46d894c9b631276cf0f1cd66efe2ea310b27cfb02803aff8`, new
-happ `6a568950ebe6a7a393cc87b532247a40fd4f273b07cc608355e6c9afc4b7184c`
-(926494 bytes, NOT distributed — canonical pass-5 artifact is the
-post-merge v2.0.0 from Phase E). 3 reviewer lanes APPROVE 0 MUST / 0
-SHOULD. Full sweettest suite green 7/7 on the rebuilt DNA.
+**Release:** `main` carries **v2.0.0** (tag at `834335e`) =
+pass-5-owner-role + GroupGenesis filter, merged onto main on top of
+**v1.0.1** (tag at `de7abd8`) = pass-4-migration-rescue, which sits on
+top of **v1.0.0** (tag at `db2a264`) = pass-4-query-tolerance.
 
-pass-4 rescue: 9-variant exhaustive `EntryTypes` match + replaces both
-`to_app_option::<HiveGenesis>` sites in `list_my_hives` + sweettest
-DNA-hash freshness guard. Coordinator-only — integrity sha + DNA hash
-HELD across the merge.
+**DNA FORKED** to
+`uhC0k2dXMIa1yI-V4ibCWMiTY5G6-p0laq6IOAVQ2F8XXReDHSxyS` (pass-5; was
+pass-4 `uhC0k26b...`). Integrity wasm `53d867f72cfa...` HELD against
+pass-5 FINAL across the v2.0.0 merge (the merge brought in pass-5's
+integrity wholesale). New coordinator: content.wasm
+`4806534546c32caf25ceba4ed5707b6bce69f04881f3140b037a5c08ef828ee8`,
+happ `42dbf9df56d88269f629651c1253d31bd2e5a664f3bdf44fe66256345034d361`
+(929643 bytes). Distributed to `~/hummhive-official-happ-versions/` as
+`humm-earth-core-happ_pass-5-owner-role_dna-uhC0k2dX_happ-42dbf9df.happ`
+(MANIFEST row 14 + README row 29 + baseline v2.0.0 block updated; the
+prior latent `8f284777` build is DELETED).
 
-The pass-5 integrity bump (first since pass-4): **DNA FORKED** to
-`uhC0k2dXMIa1yI-V4ibCWMiTY5G6-p0laq6IOAVQ2F8XXReDHSxyS` (was pass-4 `uhC0k26b`).
-Toolchain bumped to **holochain 0.6.1 / hdk 0.6.1 / hdi 0.7.1 / HSB 0.0.57**
-(`nix flake update holonix`; sweettest transport `datachannel-vendored` → iroh).
+**v2.0.0 union of three lineages:**
+- **pass-5 integrity + coordinator** — Owner role via offer/accept
+  handshake (single owner, transferable, admin-undemotable), reader
+  read-only deletes, role-grant hardening (Owner not membership-grantable;
+  only the current owner grants Admin), `delete_group_genesis`,
+  `InviteRedemption` soft-cap, humm-tauri read helpers, 0.6.1 toolchain.
+- **pass-4 GroupGenesis filter** (`try_decode_hive_genesis`) — closes the
+  silent-false-positive bug that surfaced 110 "hives" on a 6-hive chain
+  via shape-decode; now uses `EntryTypes::deserialize_from_type`
+  dispatch. Filter is exhaustive over pass-5's 9-variant `EntryTypes`.
+- **pass-4 rescue's `_local` externs** (`list_my_hives_local`,
+  `get_latest_membership_local`, `mark_migrated_v2` fail-soft) — ride
+  along, additive, for dormancy-proof discovery on future cell migrations.
 
-**Pass-5 shipped (4 commits `f053570`→`046da6e`, + this docs commit):**
-- `chore(build)`: 0.6.1 bump + iroh sweettest (RustCrypto RC pins matching
-  holochain's lock; `await_consistency_s`; devShell + openssl/pkg-config). The
-  only zome-facing 0.6.1 break was `GetOptions{strategy}` → `GetOptions::network()`.
-- `feat(integrity)`: hive **Owner** role — `HiveOwnerHandoffOffer/Accept` entries
-  + `AgentToOwnerHandoffs`/`HiveToOwnerHandoffs` links + `is_lineage_owner`
-  induction; single owner, handshake-transferable, admin-undemotable. Reader
-  **read-only** (variant-aware delete; reader dropped on non-DM). Role hardening:
-  Owner not membership-grantable; only a lineage owner grants Admin; founder not
-  re-castable. `delete_group_genesis` author-gated; `InviteRedemption`.
-- `feat(coordinator)`: owner handshake externs + deterministic
-  `resolve_current_owner` (offer-keyed fold, sort-before-bound,
-  smallest-offer-hash tiebreak, fork detection) + `get_member_hive_role` /
-  `list_member_hive_roles` / `get_hive_owner` / `is_ownership_contested` + Admin
-  current-owner precheck + `revoke_hive_membership` (owner-protected) +
-  `redeem_invite_grant` + `list_by_author` bounds + the 4 humm-tauri reads
-  (`content_summary`, `my_pair_shared_secret_exists`, `changes_since`,
-  `get_hive_owner`). `migrate-dna.ts` skips Owner grants.
-- `docs`: handoff + integration + deploy + lineage + baseline + codemaps.
+**Pushed to GitHub:** `db2a264` + tag `v1.0.0`. Main is ahead of GitHub
+by the rescue (v1.0.1) AND pass-5+v2.0.0 commits + tags. User
+`git push origin main && git push origin --tags v1.0.1 v2.0.0` pending.
+Assistant never pushes.
 
-**Hashes (reproducible, 0.6.1):** DNA `uhC0k2dX…`, integrity wasm `53d867f7…`,
-content wasm `32fae851…`, happ `8f284777…`. Distributed to
-`~/hummhive-official-happ-versions/` (`pass-5-owner-role` row + happ). NOT copied
-into `humm-tauri` — the team integrates it into their own final-gates commit; an
-mbox was sent with the artifact + hashes + the exact MANIFEST row + steps.
+**Validation (Phase E gate):** 71 integrity + 27 coordinator host tests
+green; `cargo clippy --workspace --all-targets -- -D warnings` clean;
+**Sweettest 10/10 active green on the merged DNA** including the
+rescue's `founder_lists_own_hives_via_local_path` regression test as the
+cross-cutting Phase-E end-to-end proof (GroupGenesis filter live on
+pass-5's `list_my_hives_local` path). Reproducible rebuild reproduces
+the shas. DNA-hash freshness guard added to all 4 sweettest setups.
 
-**Validation:** integrity host 71/71, coordinator 27/27, workspace clippy
-`-D warnings` clean, fmt clean. **Sweettest 7/7 on iroh** incl. `owner_and_acl.rs`
-3/3 (handshake+admin-authority+owner-reject; two-transfer cross-node determinism;
-revoke owner-protect). Reproducible rebuild reproduces the hashes.
+**SECURITY — documented, accepted residual:** owner transfer is NOT final
+against a malicious PAST owner — any past owner can fork the lineage to
+re-seize ownership (irreducible cross-chain double-spend; confirmed by
+security review + oracle). Blast radius = GOVERNANCE only (Admin-grant,
+revoke-protect, owner UI), NOT content decryption. Mitigation =
+deterministic resolution + fork detection (`is_ownership_contested`) +
+honest docs.
 
-**SECURITY — documented, accepted residual:** owner transfer is NOT final against
-a malicious PAST owner — any past owner can fork the lineage to re-seize ownership
-(irreducible cross-chain double-spend; confirmed by security review + oracle).
-Blast radius = GOVERNANCE only (Admin-grant, revoke-protect, owner UI), NOT
-content decryption. Mitigation = deterministic resolution + fork detection
-(`is_ownership_contested`) + honest docs. User chose "accept + expose
-`is_ownership_contested`".
+**Pass-4 status:** v1.0.0 (pass-4-query-tolerance, DNA `uhC0k26b`, happ
+`2205337c`) remains the prior production release tag. v1.0.1
+(pass-4-migration-rescue, DNA `uhC0k26b`, happ `ca1b4225`) is the
+coordinator hot-swap staged for the live `@4` cell. v2.0.0 (pass-5, DNA
+`uhC0k2dX`, happ `42dbf9df`) is the next bundled release.
 
-**Pass-4 status:** `main` still carries v1.0.0 (pass-4-query-tolerance, DNA
-`uhC0k26b`, happ `2205337c`). pass-5 is the next bundle; pass-4 stays the released
-production until the team cuts over.
 
 ## Outstanding follow-ups
 

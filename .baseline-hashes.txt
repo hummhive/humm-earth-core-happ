@@ -596,6 +596,60 @@ Pass-5 invariants
   strip) on the holochain 0.6.1 toolchain; re-running the pipeline reproduces
   these shas. Multi-user behaviour proven via crates/sweettest (iroh transport).
 
+
+v2.0.0 (merge pass-5 owner-role + GroupGenesis filter onto main)
+----------------------------------------------------------------
+Built from: main post-merge tip 834335e (v2.0.0 tag) — the --no-ff
+merge of feat-integrity-pass-5-owner-role onto main (which had already
+landed the pass-4 rescue at v1.0.1) plus a follow-up adapting the
+rescue's migration_rescue.rs to holochain 0.6.1's await_consistency_s.
+The merge combines: pass-5's integrity bump + owner-role + 0.6.1
+toolchain + the GroupGenesis filter (try_decode_hive_genesis) AND the
+pass-4 rescue's _local externs (list_my_hives_local +
+get_latest_membership_local + mark_migrated_v2 fail-soft) AND the
+fix-coordinator-pass4-cleanup delete-link sweep (via pass-5's ancestor
+chain). The cap-grant union covers 29 functions (3 rescue-only + 6
+pass-5-only + 20 common).
+
+  DNA hash (HELD):           uhC0k2dXMIa1yI-V4ibCWMiTY5G6-p0laq6IOAVQ2F8XXReDHSxyS
+  content_integrity.wasm:    53d867f72cfa1f7835de164382899311d2bd79301abacac1103a70e21c04fb2b (HELD — integrity unchanged)
+  content.wasm:              4806534546c32caf25ceba4ed5707b6bce69f04881f3140b037a5c08ef828ee8 (NEW — pass-5 owner-role + GroupGenesis filter + rescue _local externs)
+  humm_earth_core.dna:       2568d8332586ace119ebd180ef4316394b69261e47e67538d792eed29247d9c5 (NEW bundle reflecting NEW content wasm)
+  humm-earth-core-happ.happ: 42dbf9df56d88269f629651c1253d31bd2e5a664f3bdf44fe66256345034d361 (NEW — 929643 bytes)
+
+Distribution: ~/hummhive-official-happ-versions/humm-earth-core-happ_pass-5-owner-role_dna-uhC0k2dX_happ-42dbf9df.happ
+Supersedes the latent 8f284777 build (deleted).
+
+Verification (Phase E gate):
+- Reproducible build (npm run build:zomes + hc dna pack + hc app pack):
+  DNA hash + integrity wasm sha256 HELD byte-identical to pass-5 FINAL.
+- Host tests: 71 integrity + 27 coordinator = 98 green.
+- cargo clippy --workspace --all-targets -- -D warnings: clean.
+- Sweettest 10/10 active green on the merged DNA:
+  - coordinator_cleanup (delete-link sweep, C3 over-count, get_messages_since): 2/2.
+  - coordinator_query_tolerance (get_many tolerance, list_my_hives joiner): 2/2.
+  - migration_rescue (founder_lists_own_hives_via_local_path —
+    THE Phase E cross-cutting proof that the GroupGenesis filter is live
+    on pass-5's list_my_hives_local + the rescue's other 2 _local tests +
+    mark_migrated_v2 fail-soft): 3/3 + 1 documented #[ignore].
+  - owner_and_acl (handshake / cross-node owner resolution / revoke): 3/3.
+- DNA-hash freshness guard added to all 4 sweettest setups; a stale
+  workdir/.dna fails LOUDLY instead of silently testing wrong wasm.
+
+Reviewer trail:
+- Phase C (pass-5 port): 3-lane stack (rust / silent-failures /
+  shape-audit) APPROVE 0 MUST + 0 SHOULD. Reports persisted at
+  local://review-pass5-fix-{rust,silent-failures,shape-audit}.md.
+- Phase E debugging: 2 oracles (C3OracleA + C3OracleB) converged on the
+  stale workdir/.dna root cause (NOT a 0.6.0->0.6.1 lib change); fix +
+  durable guard documented at local://oracle-c3-overcount-{a,b}.md.
+
+Coordinator-only blindspot in the freshness guard: dna.dna_hash() covers
+integrity zomes + DNA modifiers only (so coordinator hot-swap works);
+a coordinator-only stale bundle within the same integrity slips through.
+Durable follow-up = content.wasm sha pin or build-at-test-time fixture
+(deferred to Phase F).
+
 Reproducibility contract (effective pass-4 re-record)
 =====================================================
 
