@@ -105,13 +105,46 @@ async fn create_hive(conductor: &SweetConductor, zome: &SweetZome, display_id: &
     response.hash
 }
 
+#[derive(Debug, Serialize)]
+struct CreateGroupGenesisInput {
+    hive_genesis_hash: ActionHash,
+    display_id: String,
+    hive_wide_role: Option<String>,
+    creator_hive_membership_hash: Option<ActionHash>,
+}
+
+async fn create_group(
+    conductor: &SweetConductor,
+    zome: &SweetZome,
+    hive_genesis_hash: ActionHash,
+    display_id: &str,
+) -> ActionHash {
+    let response: GenesisResponse = conductor
+        .call(
+            zome,
+            "create_group_genesis",
+            CreateGroupGenesisInput {
+                hive_genesis_hash,
+                display_id: display_id.to_string(),
+                hive_wide_role: None,
+                creator_hive_membership_hash: None,
+            },
+        )
+        .await;
+    response.hash
+}
+
 /// Founder local enumeration via source-chain `query()` — the migration-critical
 /// regression anchor (dormant founder MUST see their hives).
 #[tokio::test(flavor = "multi_thread")]
 async fn founder_lists_own_hives_via_local_path() {
     let (conductor, zome) = single_conductor_app().await;
-    create_hive(&conductor, &zome, "DevHive").await;
+    let devhive_hash = create_hive(&conductor, &zome, "DevHive").await;
     create_hive(&conductor, &zome, "Hive2").await;
+    // Regression seed: a real GroupGenesis anchored to DevHive. Pre-fix,
+    // `list_my_hives_local` would shape-decode this as `HiveGenesis` and
+    // return 3 entries; the entry-type discriminator keeps it at 2.
+    create_group(&conductor, &zome, devhive_hash, "device-set-v1").await;
 
     let hives: Vec<ListedHive> = conductor.call(&zome, "list_my_hives_local", ()).await;
 

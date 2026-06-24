@@ -41,8 +41,12 @@ cap-grant refresh is required for the rescue to function.
    twin of `list_my_hives`. Founder branch reads the caller's source chain via
    `query(ChainQueryFilter)` (NO network); joiner branch walks the caller's
    local Inbox link store via `get_links(LinkQuery, GetStrategy::Local)` +
-   `get(target, GetOptions::local())`. Returns the same `Vec<ListedHive>`
-   shape as `list_my_hives`.
+   `get(target, GetOptions::local())`. Both branches discriminate
+   `HiveGenesis` by `EntryType::App` entry index (not msgpack shape) so a
+   `GroupGenesis` entry — whose fields are a strict superset of
+   `HiveGenesis`'s — is NOT false-positively surfaced as a hive;
+   `list_my_hives` carries the same filter. Returns the same
+   `Vec<ListedHive>` shape as `list_my_hives`.
 2. **`get_latest_membership_local(GetLatestMembershipInput) -> Option<HiveMembershipResponse>` — new extern**
    in `hive/queries.rs`. Body-identical to `get_latest_membership` except both
    reads use `GetStrategy::Local` / `GetOptions::local()`. Drop-in for the

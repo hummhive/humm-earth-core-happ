@@ -18,6 +18,31 @@ use hdk::prelude::*;
 
 use crate::hive::crud::HiveMembershipResponse;
 
+/// Discriminate `record` as a `HiveGenesis` using the action's
+/// `EntryType::App` entry index, NOT msgpack shape. `GroupGenesis` is a
+/// strict field-superset of `HiveGenesis` (shares `display_id` and
+/// `created_at_microseconds`), so `to_app_option::<HiveGenesis>()` on a
+/// `GroupGenesis` entry succeeds and silently false-positives every
+/// device-set / role-group as a "hive". Returns `Ok(None)` for any other
+/// entry type so callers can fall through to a sibling-type decode.
+fn try_decode_hive_genesis(record: &Record) -> ExternResult<Option<HiveGenesis>> {
+    let Some(EntryType::App(AppEntryDef {
+        zome_index,
+        entry_index,
+        ..
+    })) = record.action().entry_type()
+    else {
+        return Ok(None);
+    };
+    let Some(entry) = record.entry().as_option() else {
+        return Ok(None);
+    };
+    match EntryTypes::deserialize_from_type(*zome_index, *entry_index, entry)? {
+        Some(EntryTypes::HiveGenesis(genesis)) => Ok(Some(genesis)),
+        _ => Ok(None),
+    }
+}
+
 #[derive(Serialize, Deserialize, Debug)]
 pub struct GetLatestMembershipInput {
     pub agent: AgentPubKey,
@@ -217,11 +242,7 @@ pub fn list_my_hives(_: ()) -> ExternResult<Vec<ListedHive>> {
         // arbitrary `role: None` entries (UI confusion / griefing; no
         // privilege escalation since integrity validators still gate
         // every action against the real author identity).
-        // Cross-type tolerant: the Inbox carries BOTH HiveGenesis and
-        // HiveMembership targets, so decoding a membership target as a
-        // genesis fails by design — treat it as None and fall through,
-        // never `?`-propagate (that broke the whole list for any joiner).
-        if let Some(genesis) = record.entry().to_app_option::<HiveGenesis>().ok().flatten() {
+        if let Some(genesis) = try_decode_hive_genesis(&record)? {
             if record.action().author() != &my_pubkey {
                 continue;
             }
@@ -253,11 +274,7 @@ pub fn list_my_hives(_: ()) -> ExternResult<Vec<ListedHive>> {
             else {
                 continue;
             };
-            let Some(genesis) = genesis_record
-                .entry()
-                .to_app_option::<HiveGenesis>()
-                .map_err(|e| wasm_error!(e))?
-            else {
+            let Some(genesis) = try_decode_hive_genesis(&genesis_record)? else {
                 continue;
             };
             out.push(ListedHive {
@@ -298,7 +315,7 @@ pub fn list_my_hives_local(_: ()) -> ExternResult<Vec<ListedHive>> {
         if !matches!(record.action(), Action::Create(_)) {
             continue;
         }
-        let Some(genesis) = record.entry().to_app_option::<HiveGenesis>().ok().flatten() else {
+        let Some(genesis) = try_decode_hive_genesis(record)? else {
             continue;
         };
         out.push(ListedHive {
@@ -359,14 +376,9 @@ pub fn list_my_hives_local(_: ()) -> ExternResult<Vec<ListedHive>> {
         else {
             continue;
         };
-        let Some(genesis) = genesis_record
-            .entry()
-            .to_app_option::<HiveGenesis>()
-            .ok()
-            .flatten()
-        else {
+        let Some(genesis) = try_decode_hive_genesis(&genesis_record)? else {
             warn!(
-                "list_my_hives_local: genesis {} for a valid local membership did not decode as HiveGenesis; skipping (local-store corruption?)",
+                "list_my_hives_local: hash {} for a valid local membership is not a HiveGenesis entry; skipping (local-store corruption or membership grantor authored a foreign type?)",
                 membership.hive_genesis_hash
             );
             continue;
