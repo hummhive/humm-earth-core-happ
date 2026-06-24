@@ -506,6 +506,9 @@ tag (db2a264) + distributed happ (2205337c) are unchanged; this happ
 (ca1b4225) is staged for hot-swap onto the live `@4` cell via
 AdminWebsocket.updateCoordinators.
 
+Released to main as v1.0.1 at de7abd83fbc86ca65535f615d549645c6eb05570
+(--no-ff merge preserving the 4-commit rescue block; v1.0.0 tag db2a264 unchanged).
+
 Root cause + rescue mechanics: docs/PASS_4_MIGRATION_RESCUE_HANDOFF.md.
 
 Reproducibility contract (effective pass-4 re-record)

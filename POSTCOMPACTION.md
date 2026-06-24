@@ -7,21 +7,21 @@
 
 ## Current state
 
-**Release:** `main` carries **v1.0.0** (tag at `db2a264`) = coordinator gen
-**pass-4-query-tolerance**, hApp `2205337c`, DNA
-`uhC0k26bYG0qmTCFk4_D996GRCTecEtMdL5pXyvCUu0ACJN12omCV` (held).
-`feat-self-notes-architecture` merged `--no-ff` into `main` + tagged `v1.0.0`.
-**HEAD = N1 griefing fix** (`697fde0`, coordinator-only) + a `chore(baseline)`
-commit recording its hashes — NOT a release. Earlier commits on top of v1.0.0:
-`1dee7f3` fmt (coordinator + sweettest) · `25ad4df` clippy-clean (workspace
-`-D warnings`) · `83ec309`/`b3ed816` baseline + fmt-safety docs · `5c2cdab` docs.
-Current coordinator content.wasm → `0538f18f`, happ → `bdefd0b2`; **integrity wasm
-`06b01fb3` + DNA `uhC0k26b` HELD** (integrity frozen — clippy lints suppressed via
-`content_integrity/Cargo.toml [lints]`, NEVER source-edited; see Gotchas +
-`.baseline-hashes.txt`). The v1.0.0 tag (`db2a264`) + distributed happ (`2205337c`)
-are UNCHANGED; none of these cleanup/fix happs are distributed.
-**Pushed to GitHub:** `db2a264` + tag `v1.0.0`. **main is 8 commits ahead** (docs +
-cleanup + N1 fix) — user `git push origin main` pending. Assistant never pushes.
+**Release:** `main` carries **v1.0.1** (tag at merge `de7abd8`) =
+pass-4-migration-rescue (coordinator hot-swap, no integrity bump) on top of
+**v1.0.0** (tag at `db2a264`) = pass-4-query-tolerance. **DNA**
+`uhC0k26bYG0qmTCFk4_D996GRCTecEtMdL5pXyvCUu0ACJN12omCV` HELD across the rescue
+(coordinator-only change). v1.0.1 = `02151d3` (rescue base: `_local` twins +
+`mark_migrated_v2` fail-soft) → `0ff26b3` (GroupGenesis filter fix) → `d980c51`
+(reviewer SHOULDs: helper warn+None, exhaustive match, site-2 parity warn) →
+`9a3a73d` (baseline shas), `--no-ff` merged at `de7abd8` preserving the rescue
+block. Rescue happ artifact `ca1b4225…` already in
+`~/hummhive-official-happ-versions/` (commit `9a3a73d`, MANIFEST row 15);
+integrity wasm `06b01fb3…` byte-identical to v1.0.0 (only coordinator
+rebuilt — hot-swap, no chain fork).
+**Pushed to GitHub:** `db2a264` + tag `v1.0.0`. Main is ahead of GitHub by the
+rescue block + merge commit + tag `v1.0.1`; user `git push origin main` +
+`git push origin --tags v1.0.1` pending. Assistant never pushes.
 
 **DNA:** pass-4, frozen. Integrity wasm `06b01fb3…` byte-identical across all
 pass-4 coordinator gens; every coordinator change this session was a hot-swap
@@ -64,9 +64,12 @@ pass-4 coordinator gens; every coordinator change this session was a hot-swap
 
 ## Outstanding follow-ups
 
-1. **`git push origin main`** (user) — main is 8 commits ahead of GitHub (docs +
-   clippy/fmt cleanup + N1 griefing fix); v1.0.0 tag already pushed. Assistant
-   never pushes.
+1. **`git push origin main` + `git push origin --tags v1.0.1`** (user) — main is
+   ahead of GitHub by the rescue merge `de7abd8` + the 4 rescue commits + the
+   `v1.0.1` tag; v1.0.0 tag already pushed. Assistant never pushes.
+2. **Phases C–F still pending** for the pass-5 owner-role landing as v2.0.0
+   (port the GroupGenesis fix to pass-5, merge fix→pass-5, merge pass-5→main,
+   docs freshness). Tracked in the active todo + `local://pass5-main-landing-plan.md`.
 
 ---
 
