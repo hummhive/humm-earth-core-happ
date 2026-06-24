@@ -11,7 +11,7 @@ use std::path::Path;
 
 use holo_hash::{ActionHash, AgentPubKey};
 use holochain::sweettest::{
-    await_consistency, SweetCell, SweetConductor, SweetConductorBatch, SweetDnaFile, SweetZome,
+    await_consistency_s, SweetCell, SweetConductor, SweetConductorBatch, SweetDnaFile, SweetZome,
 };
 use serde::de::IgnoredAny;
 use serde::{Deserialize, Serialize};
@@ -19,6 +19,24 @@ use serde::{Deserialize, Serialize};
 fn dna_path() -> std::path::PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../../dnas/humm_earth_core/workdir/humm_earth_core.dna")
+}
+
+/// Expected DNA hash for the bundle this suite must run against. See
+/// `coordinator_cleanup.rs::EXPECTED_DNA_HASH` for the rationale (stale
+/// workdir bundles silently mask coordinator behavior; the integrity-bump
+/// hash gates this generation; coordinator-only swaps are a documented blindspot).
+const EXPECTED_DNA_HASH: &str = "uhC0k2dXMIa1yI-V4ibCWMiTY5G6-p0laq6IOAVQ2F8XXReDHSxyS";
+
+async fn load_dna() -> holochain::prelude::DnaFile {
+    let dna = SweetDnaFile::from_bundle(&dna_path()).await.expect(
+        "load humm_earth_core.dna (build: npm run build:zomes && hc dna pack dnas/humm_earth_core/workdir)",
+    );
+    let actual = dna.dna_hash().to_string();
+    assert_eq!(
+        actual, EXPECTED_DNA_HASH,
+        "Stale workdir/humm_earth_core.dna — loaded DNA hash {actual} but expected {EXPECTED_DNA_HASH}. Rebuild: `nix develop --command bash -c 'npm run build:zomes && hc dna pack dnas/humm_earth_core/workdir'`."
+    );
+    dna
 }
 
 async fn single_conductor_app() -> (SweetConductor, SweetZome) {
@@ -218,9 +236,7 @@ async fn mark_migrated_v2_returns_none_on_unresolvable_original() {
 #[tokio::test(flavor = "multi_thread")]
 async fn joiner_local_lists_granted_membership() {
     holochain_trace::test_run();
-    let dna = SweetDnaFile::from_bundle(&dna_path())
-        .await
-        .expect("load humm_earth_core.dna");
+    let dna = load_dna().await;
 
     let mut conductors = SweetConductorBatch::from_standard_config_rendezvous(2).await;
     let apps = conductors
@@ -230,7 +246,7 @@ async fn joiner_local_lists_granted_membership() {
     let ((alice,), (bob,)): ((SweetCell,), (SweetCell,)) = apps.into_tuples();
     let bob_agent: AgentPubKey = bob.agent_pubkey().clone();
 
-    await_consistency(30, [&alice, &bob]).await.unwrap();
+    await_consistency_s(30, [&alice, &bob]).await.unwrap();
 
     let genesis_hash = {
         let response: GenesisResponse = conductors[0]
@@ -259,7 +275,7 @@ async fn joiner_local_lists_granted_membership() {
         )
         .await;
 
-    await_consistency(60, [&alice, &bob]).await.unwrap();
+    await_consistency_s(60, [&alice, &bob]).await.unwrap();
 
     let bob_hives: Vec<ListedHive> = conductors[1]
         .call(&bob.zome("content"), "list_my_hives_local", ())
