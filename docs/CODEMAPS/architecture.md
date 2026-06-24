@@ -1,4 +1,4 @@
-<!-- codemap:architecture | generated:2026-06-05 | updated:2026-06-13 | scope:full -->
+<!-- codemap:architecture | generated:2026-06-05 | updated:2026-06-24 | scope:full -->
 
 # Architecture
 
@@ -63,7 +63,7 @@ by humm-tauri (both GUI and headless modes) via `@holochain/client` AppWebsocket
 | Build | `scripts/build-zomes.sh` | Reproducible WASM build + `strip-wasms.sh` |
 | Dev env | `flake.nix` | Holonix 0.6 devShell |
 
-## Security Model (4-pass evolution)
+## Security Model (5-pass evolution)
 
 ```
 Pass 1: author-vs-header binding (check_author_matches_header)
@@ -71,6 +71,9 @@ Pass 2: cryptographic hive identity (HiveGenesis → HiveMembership chain)
 Pass 3: group authority (GroupGenesis → GroupMembership) + AclSpec variants
 Pass 4: recipient-witness integrity (RecipientWitness on HiveGroup entries)
 Pass 5: hive Owner role (offer/accept handshake) + reader read-only + role-grant hardening
+v2.0.0:  GroupGenesis EntryType filter (try_decode_hive_genesis) — closes the
+         HiveGenesis false-positive (GroupGenesis is a strict field-superset);
+         + pass-4 rescue _local twins ride along
 ```
 
 ## Data Flow
@@ -98,8 +101,9 @@ for cross-repo integration testing against this hApp.
 
 ## hApp Version Lineage
 
-Current line: **pass-5-owner-role**, DNA `uhC0k2dX` (intentional integrity bump;
-holochain 0.6.1 / hdk 0.6.1 / hdi 0.7.1). Official binaries:
+Current line: **`main` @ v2.0.0 = pass-5-owner-role**, DNA `uhC0k2dX` (intentional
+integrity bump; holochain 0.6.1 / hdk 0.6.1 / hdi 0.7.1), happ `42dbf9df`, built at
+`834335e` (tag `v2.0.0` @ `4e28a86`). Official binaries:
 `~/hummhive-official-happ-versions/`. Conductor behavior is proven in-process via
 `crates/sweettest` (tryorama can't boot on hc 0.6.x).
 
@@ -113,4 +117,5 @@ holochain 0.6.1 / hdk 0.6.1 / hdi 0.7.1). Official binaries:
 | pass-4 | uhC0k26bYG0q | YES | Recipient-witness integrity (G-6.2) |
 | pass-4-recv-signal-fix | uhC0k26bYG0q | no (coordinator) | recv_remote_signal ExternIO pre-encode (DNA held) |
 | pass-4-query-tolerance (v1.0.0) | uhC0k26bYG0q | no (coordinator) | decode-tolerant queries: `get_many` filter_map + `list_my_hives`/`_groups` `.ok().flatten()` (DNA held) |
-| pass-5-owner-role | uhC0k2dXMIa1 | YES | Hive Owner role (handshake transfer) + reader read-only + role-grant hardening; hc 0.6.1 |
+| pass-4-migration-rescue (v1.0.1) | uhC0k26bYG0q | no (coordinator) | dormancy rescue: `_local` read twins (`list_my_hives_local`, `get_latest_membership_local`) + `mark_migrated_v2` fail-soft + EntryType GroupGenesis filter (`try_decode_hive_genesis`); DNA held |
+| pass-5-owner-role (v2.0.0) | uhC0k2dXMIa1 | YES | Hive Owner role (offer/accept handshake) + reader read-only + role-grant hardening + GroupGenesis EntryType filter + pass-4 rescue `_local` externs merged onto main; hc 0.6.1 |

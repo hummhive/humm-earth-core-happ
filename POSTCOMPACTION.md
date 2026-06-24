@@ -7,7 +7,7 @@
 
 ## Current state
 
-**Release:** `main` carries **v2.0.0** (tag at `834335e`) =
+**Release:** `main` carries **v2.0.0** (tag at `4e28a86`; built at `834335e`) =
 pass-5-owner-role + GroupGenesis filter, merged onto main on top of
 **v1.0.1** (tag at `de7abd8`) = pass-4-migration-rescue, which sits on
 top of **v1.0.0** (tag at `db2a264`) = pass-4-query-tolerance.
@@ -105,14 +105,15 @@ coordinator hot-swap staged for the live `@4` cell. v2.0.0 (pass-5, DNA
   devShell provides `openssl` + `pkg-config`; RustCrypto pinned to holochain's RCs.
 - Run: `cd crates/sweettest && nix develop ../.. --command bash -c 'export LIBCLANG_PATH=<nix clang lib dir>; cargo test -- --test-threads=1'`
   (`LIBCLANG_PATH` e.g. `/nix/store/…clang-18.1.8-lib/lib`).
-- **7/7 green on pass-5** (coordinator_cleanup 2, coordinator_query_tolerance 2,
-  owner_and_acl 3). First compile slow (conductor + wasmer + iroh).
+- **10/10 active green on `main` @ v2.0.0** (coordinator_cleanup 2,
+  coordinator_query_tolerance 2, owner_and_acl 3, migration_rescue 3 active +1
+  ignored). First compile slow (conductor + wasmer + iroh).
 
-## Other branches (committed, NOT merged to main)
+## Other branches (committed; pass-5 + rescue now landed on main)
 
 | Branch | Tip | What |
 |---|---|---|
-| `feat-integrity-pass-5-owner-role` | HEAD (this) | **Pass-5**: owner role + reader read-only + 0.6.1 — DNA-forked `uhC0k2dX` |
+| `feat-integrity-pass-5-owner-role` | `e1a55a5` | **MERGED → main as v2.0.0** (this landing): owner role + reader read-only + 0.6.1 — DNA-forked `uhC0k2dX` |
 | `fix-coordinator-pass4-cleanup` | `0196d23` | pass-4 coordinator cleanup (pass-5 branched off it) |
 | `feat-integrity-pass-4-recipient-witnesses` | `8503b48` | Pass-4 integrity (G-6.2 witnesses) |
 
@@ -130,7 +131,7 @@ coordinator hot-swap staged for the live `@4` cell. v2.0.0 (pass-5, DNA
   survives wasm-opt strip) → new happ sha. Keep crate versions stable to preserve a
   released happ; the release identity is the git tag + DNA hash + happ sha, not the crate version.
 - Bumping the **integrity** crate version risks the integrity wasm sha → DNA hash → chain fork. Leave it frozen.
-- Sweettest needs `LIBCLANG_PATH` (see above); tryorama can't boot on hc 0.6.0.
+- Sweettest needs `LIBCLANG_PATH` (see above); tryorama can't boot on hc 0.6.x.
 - AdminWebsocket 400 → pass `wsClientOptions: { origin: "<anything>" }`.
 - Two agents, one conductor: same `network_seed` → shared DHT → offline cross-agent validation.
 - Reproducibility requires `nix develop` (`wasm-opt`) + `codegen-units = 1`.

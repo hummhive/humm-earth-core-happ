@@ -1,4 +1,4 @@
-<!-- codemap:backend | generated:2026-06-05 | updated:2026-06-22 | scope:full -->
+<!-- codemap:backend | generated:2026-06-05 | updated:2026-06-24 | scope:full -->
 
 # Backend (Zome Externs)
 
@@ -46,8 +46,13 @@ my_pair_shared_secret_exists(PairSharedSecretExistsInput) → bool
 All list/get-many reads above resolve targets through `get_many_encrypted_content`,
 which is **decode-tolerant** (`filter_map(.ok())`, pass-4-query-tolerance): an
 unresolvable / gossip-lagged / tombstoned target is skipped, never poisoning the
-batch. Likewise `list_my_hives` / `get_latest_membership` (+ the group equivalents)
-`.ok().flatten()` a wrong-type Inbox target instead of `?`-propagating a decode error.
+batch. `list_my_hives[_local]` / `get_latest_membership[_local]` (+ the group
+equivalents) discriminate the genesis target by **EntryType** via
+`try_decode_hive_genesis` (`EntryTypes::deserialize_from_type` dispatch, v2.0.0):
+`GroupGenesis` is a strict field-superset of `HiveGenesis`, so the old shape-decode
+(`to_app_option`) silently false-positived every device-set / role-group as a
+"hive"; the EntryType filter returns `None` for a non-`HiveGenesis` target (and
+`warn!`-logs a corrupt recognised-type entry) instead of poisoning the list.
 
 ## Coordinator Externs — Hive
 
@@ -62,6 +67,8 @@ get_latest_membership_local(GetLatestMembershipInput) → Option<HiveMembershipR
   └─ hive/queries.rs → same shape as above, GetStrategy::Local (dormancy-proof)
 list_my_hives(()) → Vec<ListedHive>
   └─ hive/queries.rs → walk own Inbox::HiveInvite links
+list_my_hives_local(()) → Vec<ListedHive>   (pass-4 rescue; dormancy-proof)
+  └─ hive/queries.rs → own source-chain query() (founder, role=None) + Inbox links via GetStrategy::Local (joined); EntryType-filtered
 get_member_hive_role(GetMemberHiveRoleInput) → Option<HiveRole>   (pass-5)
   └─ hive/owner.rs → resolve_current_owner==agent ? Owner : latest non-Owner membership
 list_member_hive_roles(ListMemberHiveRolesInput) → Vec<(AgentPubKey, Option<HiveRole>)>   (pass-5)
@@ -165,7 +172,8 @@ get_messages_since(GetMessagesSinceInput) → Vec<Record>  (source-chain replay;
 Granted `Unrestricted`: all read-only DHT queries + `recv_remote_signal` + the
 pass-5 public-DHT reads (`get_member_hive_role`, `list_member_hive_roles`,
 `get_hive_owner`, `is_ownership_contested`, `content_summary`,
-`list_pending_owner_handoffs`).
+`list_pending_owner_handoffs`) + the pass-4 rescue's `_local` read twins
+(`list_my_hives_local`, `get_latest_membership_local`).
 NOT granted (local-only): all `create_*/update_*/delete_*` + the owner-handoff /
 revoke / redeem mutators, `get_messages_since`, `get_last_probe`,
 `my_pair_shared_secret_exists`, `changes_since`, `send_dm_*`, `mark_migrated*`.
@@ -189,7 +197,7 @@ coordinator/content/src/
     humm_content_id_link.rs       (create_humm_content_id_link)
   hive/
     crud.rs                       (create_hive_genesis, create_hive_membership)
-    queries.rs                    (get_latest_membership, list_my_hives)
+    queries.rs                    (get_latest_membership[_local], list_my_hives[_local], try_decode_hive_genesis EntryType discriminator)
     owner.rs                      (owner handshake, resolve_current_owner, role reads, is_ownership_contested)
   group/
     crud.rs                       (create_group_genesis, create_group_membership, revoke)

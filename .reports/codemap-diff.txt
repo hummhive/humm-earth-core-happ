@@ -129,3 +129,48 @@ Update 2026-06-13 (post pass-4-query-tolerance + v1.0.0 release prep):
 ## 2026-06-22 — pass-5 owner-role + ACL fork
 - Codemaps refreshed: architecture (security model + lineage + pass-5 row), data (3 entries + 3 links + HiveMembership field), backend (owner/invite/read externs + cap-grant policy), dependencies (0.6.1 + iroh sweettest). Additive (<30% each).
 - Pins verified: DNA hash uhC0k2dXMIa1yI-V4ibCWMiTY5G6-p0laq6IOAVQ2F8XXReDHSxyS == hc dna hash; happ 8f284777 == sha256sum; official-versions MANIFEST has the pass-5 row.
+
+## 2026-06-24 — v2.0.0 landing (pass-5 + GroupGenesis filter + rescue _local externs on main)
+- Trigger: Phase F of the v2.0.0 landing. `main` @ `4e28a86` (tag v2.0.0; built at `834335e`) =
+  `feat-integrity-pass-5-owner-role` merged onto main on top of v1.0.1 (`de7abd8`, pass-4-migration-rescue),
+  which sits on v1.0.0 (`db2a264`, pass-4-query-tolerance). Codemaps last refreshed pre-merge at `c4bdda7`
+  (pass-5 only); this pass reconciles the merged surface. Diff vs c4bdda7: SMALL (additive, updated in place).
+
+  ~ architecture.md  — Current line → `main` @ v2.0.0 (DNA uhC0k2dX, happ 42dbf9df, built 834335e, tag 4e28a86);
+                       lineage table +pass-4-migration-rescue (v1.0.1) row + pass-5 row relabeled v2.0.0
+                       (GroupGenesis filter + rescue `_local` externs); security model 4→5-pass + v2.0.0
+                       GroupGenesis-filter line. updated:2026-06-24.
+  ~ backend.md       — +`list_my_hives_local` extern (rescue dormancy twin); decode-tolerance note rewritten:
+                       `list_my_hives[_local]` / `get_latest_membership[_local]` discriminate the genesis
+                       target by EntryType via `try_decode_hive_genesis` (`EntryTypes::deserialize_from_type`,
+                       NOT shape-decode); cap-grant policy +`list_my_hives_local`/`get_latest_membership_local`
+                       (Unrestricted); Key Files hive/queries.rs note. updated:2026-06-24.
+  = data.md          — VERIFIED unchanged vs source: 9-variant EntryTypes (0..=8; +HiveOwnerHandoffOffer,
+                       HiveOwnerHandoffAccept, InviteRedemption) + 18 LinkTypes (0..=17; +AgentToOwnerHandoffs,
+                       HiveToOwnerHandoffs, InviteToRedemptions) match integrity/content/src/lib.rs exactly
+                       (already correct from c4bdda7). Freshness bumped 2026-06-24.
+  ~ dependencies.md  — Official hApp Versions → `main` @ v2.0.0 = pass-5 (DNA uhC0k2dX; integrity wasm
+                       53d867f7 HELD; content 48065345; happ 42dbf9df, 929643 bytes; commit 834335e); the
+                       latent 8f284777 build DELETED; live production cell still pass-4 (uhC0k26b, v1.0.0 +
+                       v1.0.1 hot-swap) pending humm-tauri cutover. Toolchain already 0.6.1. updated:2026-06-24.
+
+  Structural deltas vs the c4bdda7 (pass-5) codemaps:
+    - New externs on main:  `list_my_hives_local`, `get_latest_membership_local` (rescue twins; +cap-grants).
+    - New coordinator helper: `try_decode_hive_genesis` (hive/queries.rs) — infallible EntryType discriminator,
+      exhaustive over the 9-variant EntryTypes; replaces shape-decode at `list_my_hives` sites 1+2 and is
+      called by `list_my_hives_local`.
+    - Coordinator surface: 57 `#[hdk_extern]` (incl. init/post_commit/recv_remote_signal lifecycle).
+    - Entry/link types: UNCHANGED from pass-5 (9 entry / 18 link) — the merge took pass-5 integrity wholesale;
+      DNA hash HELD `uhC0k2dX…` across the merge (integrity wasm sha 53d867f7… unchanged).
+    - New dependencies: none (toolchain bump 0.6.0→0.6.1 already recorded in the 2026-06-22 pass-5 entry).
+
+  Pins verified (against reality, not memory):
+    - DNA hash uhC0k2dXMIa1yI-V4ibCWMiTY5G6-p0laq6IOAVQ2F8XXReDHSxyS == MANIFEST.tsv row 14 + baseline v2.0.0 block.
+    - Integrity wasm 53d867f7…1c04fb2b HELD; content wasm 48065345…ef828ee8; happ 42dbf9df…5034d361 (929643 B).
+    - Tags (git rev-list): v1.0.0→db2a264, v1.0.1→de7abd8, v2.0.0→4e28a86 (MANIFEST/baseline build commit 834335e).
+    - official-versions README row 29 = v2.0.0 pass-5 row (happ 42dbf9df, commit 834335e); exactly ONE pass-5
+      .happ file present; the 8f284777 file is deleted.
+  Staleness fixed: CLAUDE.md "Current" hApp was the deleted 8f284777 → corrected to 42dbf9df (pass-5, v2.0.0).
+  .newTasks/.doneTasks: already reconciled — `recv-remote-signal-externio-fix.md` is in `.doneTasks/` (shipped
+    v1.0.0), `.newTasks/` empty; no other shipped items outstanding per `git log v1.0.0..HEAD`.
+  Staleness warnings: none outstanding (HUMM_TAURI_* / PASS_*_DEPLOY_HANDOFF.md left as historical narrative).
