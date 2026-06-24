@@ -1,6 +1,6 @@
 //! Behavior proof for the pass-4-query-tolerance coordinator fix, on a
-//! real in-process holochain 0.6.0 conductor (Sweettest). In-repo
-//! tryorama cannot boot on the flake's hc 0.6.0 (the quic->webrtc CLI
+//! real in-process holochain 0.6.1 conductor (Sweettest). In-repo
+//! tryorama cannot boot on the flake's hc (the quic->webrtc CLI
 //! rename), so this is the in-tree, drift-free conductor proof — the
 //! same posture the recv-signal-fix bump used (host + BDD), modernised.
 //!
@@ -17,6 +17,7 @@
 use std::path::Path;
 
 use holo_hash::{ActionHash, AgentPubKey};
+use holochain::prelude::DnaFile;
 use holochain::sweettest::{
     await_consistency_s, SweetCell, SweetConductor, SweetConductorBatch, SweetDnaFile,
 };
@@ -28,6 +29,25 @@ use serde::{Deserialize, Serialize};
 fn dna_path() -> std::path::PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../../dnas/humm_earth_core/workdir/humm_earth_core.dna")
+}
+
+/// Expected DNA hash for the pass-5 bundle this suite must run against. See
+/// `coordinator_cleanup.rs::EXPECTED_DNA_HASH` for the rationale (stale
+/// workdir bundles silently mask coordinator behavior; the integrity-bump
+/// hash gates this generation; coordinator-only swaps are a documented blindspot).
+const EXPECTED_DNA_HASH: &str = "uhC0k2dXMIa1yI-V4ibCWMiTY5G6-p0laq6IOAVQ2F8XXReDHSxyS";
+
+async fn load_dna() -> DnaFile {
+    let dna = SweetDnaFile::from_bundle(&dna_path()).await.expect(
+        "load humm_earth_core.dna (build: npm run build:zomes && hc dna pack dnas/humm_earth_core/workdir)",
+    );
+    let actual = dna.dna_hash().to_string();
+    assert_eq!(
+        actual, EXPECTED_DNA_HASH,
+        "Stale workdir/humm_earth_core.dna — loaded DNA hash {actual} but expected pass-5 {EXPECTED_DNA_HASH}. \
+         Rebuild: `nix develop --command bash -c 'npm run build:zomes && hc dna pack dnas/humm_earth_core/workdir'`."
+    );
+    dna
 }
 
 /// `list_my_hives` row (subset of the coordinator's `ListedHive`; serde
@@ -66,9 +86,7 @@ struct CreateHiveMembershipInput {
 async fn get_many_encrypted_content_tolerates_a_missing_target() {
     holochain_trace::test_run();
 
-    let dna = SweetDnaFile::from_bundle(&dna_path())
-        .await
-        .expect("load humm_earth_core.dna (must be built: npm run build:zomes && hc app pack)");
+    let dna = load_dna().await;
 
     let mut conductor = SweetConductor::from_standard_config().await;
     let app = conductor
@@ -103,9 +121,7 @@ async fn get_many_encrypted_content_tolerates_a_missing_target() {
 async fn joiner_lists_hive_without_cross_type_decode_failure() {
     holochain_trace::test_run();
 
-    let dna = SweetDnaFile::from_bundle(&dna_path())
-        .await
-        .expect("load humm_earth_core.dna");
+    let dna = load_dna().await;
 
     // Two conductors over a shared rendezvous so Bob gossips Alice's writes.
     let mut conductors = SweetConductorBatch::from_standard_config_rendezvous(2).await;

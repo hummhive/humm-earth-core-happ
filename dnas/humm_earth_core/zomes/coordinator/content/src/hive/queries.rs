@@ -18,6 +18,50 @@ use hdk::prelude::*;
 
 use crate::hive::crud::HiveMembershipResponse;
 
+/// Discriminate `record` as a `HiveGenesis` using the action's
+/// `EntryType::App` entry type via `EntryTypes::deserialize_from_type`
+/// dispatch, NOT msgpack shape. `GroupGenesis` is a strict field-superset
+/// of `HiveGenesis` (shares `display_id` and `created_at_microseconds`),
+/// so `to_app_option::<HiveGenesis>()` on a `GroupGenesis` entry succeeds
+/// and silently false-positives every device-set / role-group as a "hive".
+/// Returns `None` for any other entry type so callers can fall through to
+/// a sibling-type decode. A deserialize failure on a recognised app type
+/// (entry bytes inconsistent with their declared type — practically
+/// unreachable on validator-gated data) is `warn!`-logged and treated as
+/// `None`, so a single corrupt entry degrades to a skip rather than
+/// failing the whole read (mirrors `lib.rs::signal_entry_deleted`).
+fn try_decode_hive_genesis(record: &Record) -> Option<HiveGenesis> {
+    let Some(EntryType::App(AppEntryDef {
+        zome_index,
+        entry_index,
+        ..
+    })) = record.action().entry_type()
+    else {
+        return None;
+    };
+    let entry = record.entry().as_option()?;
+    match EntryTypes::deserialize_from_type(*zome_index, *entry_index, entry) {
+        Ok(Some(EntryTypes::HiveGenesis(genesis))) => Some(genesis),
+        Ok(Some(
+            EntryTypes::EncryptedContent(_)
+            | EntryTypes::HiveMembership(_)
+            | EntryTypes::DmProbeLog(_)
+            | EntryTypes::GroupGenesis(_)
+            | EntryTypes::GroupMembership(_)
+            | EntryTypes::HiveOwnerHandoffOffer(_)
+            | EntryTypes::HiveOwnerHandoffAccept(_)
+            | EntryTypes::InviteRedemption(_),
+        )) => None,
+        Ok(None) => None,
+        Err(e) => {
+            warn!(
+                "try_decode_hive_genesis: deserialize_from_type failed on entry tagged App(zome_index={zome_index:?}, entry_index={entry_index:?}): {e}; treating as not-a-HiveGenesis (skip)"
+            );
+            None
+        }
+    }
+}
+
 #[derive(Serialize, Deserialize, Debug)]
 pub struct GetLatestMembershipInput {
     pub agent: AgentPubKey,
@@ -153,11 +197,7 @@ pub fn list_my_hives(_: ()) -> ExternResult<Vec<ListedHive>> {
         // arbitrary `role: None` entries (UI confusion / griefing; no
         // privilege escalation since integrity validators still gate
         // every action against the real author identity).
-        // Cross-type tolerant: the Inbox carries BOTH HiveGenesis and
-        // HiveMembership targets, so decoding a membership target as a
-        // genesis fails by design — treat it as None and fall through,
-        // never `?`-propagate (that broke the whole list for any joiner).
-        if let Some(genesis) = record.entry().to_app_option::<HiveGenesis>().ok().flatten() {
+        if let Some(genesis) = try_decode_hive_genesis(&record) {
             if record.action().author() != &my_pubkey {
                 continue;
             }
@@ -189,11 +229,11 @@ pub fn list_my_hives(_: ()) -> ExternResult<Vec<ListedHive>> {
             else {
                 continue;
             };
-            let Some(genesis) = genesis_record
-                .entry()
-                .to_app_option::<HiveGenesis>()
-                .map_err(|e| wasm_error!(e))?
-            else {
+            let Some(genesis) = try_decode_hive_genesis(&genesis_record) else {
+                warn!(
+                    "list_my_hives: hash {} for a valid membership is not a HiveGenesis entry; skipping (DHT corruption or membership grantor authored a foreign type?)",
+                    membership.hive_genesis_hash
+                );
                 continue;
             };
             out.push(ListedHive {
