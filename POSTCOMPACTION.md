@@ -97,6 +97,7 @@ pass-4 coordinator gens; every coordinator change this session was a hot-swap
 |---|---|---|
 | `feat-integrity-pass-4-recipient-witnesses` | `8503b48` | Pass-4 integrity (G-6.2 witnesses) — **DNA-changing** |
 | `feat-migration-d1-group-track` | `aca142b` | D.1 migration tooling |
+| `feat-coordinator-pass4-migration-rescue` | (this session) | pass-4 dormancy rescue: `list_my_hives_local` + `get_latest_membership_local` + `mark_migrated_v2` fail-soft. Coordinator-only, DNA `uhC0k26b…` HELD. |
 | `test-tryorama-integrity-coverage` | `bf9fad8` | Old tryorama-free e2e harness (superseded by crates/sweettest) |
 
 ## Constraints

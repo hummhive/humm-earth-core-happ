@@ -1,4 +1,4 @@
-<!-- codemap:backend | generated:2026-06-05 | updated:2026-06-13 | scope:full -->
+<!-- codemap:backend | generated:2026-06-05 | updated:2026-06-23 | scope:full -->
 
 # Backend (Zome Externs)
 
@@ -54,9 +54,13 @@ create_hive_genesis(CreateHiveGenesisInput) → HiveGenesisResponse
 create_hive_membership(CreateHiveMembershipInput) → HiveMembershipResponse
   └─ hive/crud.rs → create_entry + Inbox::HiveInvite(grantee)
 get_latest_membership(GetLatestMembershipInput) → Option<HiveMembershipResponse>
-  └─ hive/queries.rs → walk Inbox::HiveInvite links, filter by hive + unexpired
+  └─ hive/queries.rs → walk Inbox::HiveInvite links (Network), filter by hive + unexpired
+get_latest_membership_local(GetLatestMembershipInput) → Option<HiveMembershipResponse>
+  └─ hive/queries.rs → same shape as above, GetStrategy::Local (dormancy-proof)
 list_my_hives(()) → Vec<ListedHive>
-  └─ hive/queries.rs → walk own Inbox::HiveInvite links
+  └─ hive/queries.rs → walk own Inbox::HiveInvite links (Network)
+list_my_hives_local(()) → Vec<ListedHive>
+  └─ hive/queries.rs → source-chain query() (founder) + local-store get_links (joiner); dormancy-proof
 ```
 
 ## Coordinator Externs — Group
@@ -113,7 +117,7 @@ with a typed payload directly.
 ```
 mark_migrated(MarkMigratedInput) → EncryptedContentResponse       (V1)
 get_migration_marker(ActionHash) → Option<MigrationMarkerV1>       (V1)
-mark_migrated_v2(MarkMigratedV2Input) → EncryptedContentResponse   (V2)
+mark_migrated_v2(MarkMigratedV2Input) → Option<EncryptedContentResponse>   (V2, fail-soft None on unresolvable original)
 get_migration_marker_v2(ActionHash) → Option<MigrationMarker>      (V2, reads V1+V2)
 ```
 
@@ -152,7 +156,7 @@ coordinator/content/src/
     humm_content_id_link.rs       (create_humm_content_id_link)
   hive/
     crud.rs                       (create_hive_genesis, create_hive_membership)
-    queries.rs                    (get_latest_membership, list_my_hives)
+    queries.rs                    (get_latest_membership[_local], list_my_hives[_local])
   group/
     crud.rs                       (create_group_genesis, create_group_membership, revoke)
     queries.rs                    (get_latest_group_membership, list_group_members, list_my_groups)

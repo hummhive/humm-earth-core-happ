@@ -79,6 +79,19 @@ pub fn set_cap_tokens() -> ExternResult<()> {
     // Rule 1.
     fns.insert((zome.clone(), "get_latest_membership".into()));
     fns.insert((zome.clone(), "list_my_hives".into()));
+    // Dormancy-proof twins (pass-4 migration rescue). Same read
+    // surface as their network counterparts above (the agent's OWN
+    // hive list + own membership), but resolved against the local
+    // source chain (founder) + local DHT store (joiner) only — no
+    // network authority is consulted. Granted on identical security
+    // footing: the inputs scope the read to the caller's own pubkey,
+    // and `list_my_hives_local` returns ONLY the caller's own hives
+    // (founder branch reads the caller's chain; joiner branch filters
+    // `for_agent != caller`). No new data is exposed vs the network
+    // variants. `mark_migrated_v2` stays UNgranted (Rule 1 — it
+    // mutates the source chain via `update_encrypted_content`).
+    fns.insert((zome.clone(), "list_my_hives_local".into()));
+    fns.insert((zome.clone(), "get_latest_membership_local".into()));
 
     // Group-authority read externs (pass-3). Same rationale as the
     // hive read surface above: GroupGenesis and GroupMembership entries

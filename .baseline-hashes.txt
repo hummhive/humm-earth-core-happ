@@ -452,6 +452,62 @@ produced by the same reproducible pipeline (build-zomes.sh + strip-wasms.sh).
 NOT a new release — v1.0.0 tag (db2a264) + distributed happ (2205337c) are
 unchanged; this happ (bdefd0b2) is not distributed.
 
+Pass-4 coordinator follow-up — migration-rescue (local enumeration + mark fail-soft)
+-----------------------------------------------------------------------------------
+Built from: tip of feat-coordinator-pass4-migration-rescue (off main HEAD
+e60ed48). Coordinator-only. Adds list_my_hives_local + get_latest_membership_local
+(dormancy-proof twins using source-chain query() + GetStrategy::Local on the
+local DHT store, both Unrestricted-cap-granted), and softens mark_migrated_v2
+to return Option<EncryptedContentResponse> (Ok(None) with a warn! when the
+original entry is unreadable, e.g. on a peerless post-cutover @4 cell, instead
+of erroring). Integrity zome untouched; DNA hash + integrity wasm sha256 HELD
+byte-identical to pass-4 FINAL. Coordinator hot-swap — no chain fork.
+
+The integrity crate gained one Cargo.toml [lints.clippy] allow line
+(uninlined_format_args) so workspace clippy stays -D warnings clean on a newer
+rustc without source-editing the frozen integrity zome (manifest lint levels
+have zero codegen effect — content_integrity.wasm sha256 verified UNCHANGED).
+
+  DNA hash (HELD):         uhC0k26bYG0qmTCFk4_D996GRCTecEtMdL5pXyvCUu0ACJN12omCV
+  content_integrity.wasm:  06b01fb3527e266a5cb1b5ffbf01b83541d7a572c4b4a252521154c3e0c2cd83 (UNCHANGED)
+  content.wasm:            89444059a7e7cfcd4c85ef81925a8d6c52865ade1e647980fe43869b3a841d3a (NEW — rescue + GroupGenesis filter)
+  hApp bundle sha256:      ca1b422506c489f21cb32618951df304dc9c320596a4ddb6317d5f5ed8a2cbcf (NEW)
+
+GroupGenesis false-positive filter fix applied as a follow-up; the
+e28fc9ae build is superseded and must not be redistributed. Fix detail:
+`try_decode_hive_genesis` discriminates `HiveGenesis` by
+`EntryType::App` entry type via `EntryTypes::deserialize_from_type`
+dispatch (mirrors `lib.rs::get_entry_for_action`), replacing the four
+`to_app_option::<HiveGenesis>` shape-decode sites in `hive/queries.rs`
+that misclassified every `GroupGenesis` (strict field-superset of
+`HiveGenesis`) as a hive — humm-tauri reported 110 "hives" vs 6 real on
+a live `@4` chain. Regression seed added in
+`crates/sweettest/tests/migration_rescue.rs`: founder test seeds a real
+`GroupGenesis("device-set-v1")` anchored to `DevHive` and re-asserts
+`list_my_hives_local` still returns exactly 2 hives (pre-fix would
+return 3).
+
+Verification: host tests 27 coordinator + 69 integrity green; cargo
+clippy --workspace --all-targets -- -D warnings clean (integrity lints
+allowed at the manifest level). Conductor proof: in-tree Sweettest
+(crates/sweettest/tests/migration_rescue.rs, holochain 0.6.0, 3/3 active
+green + 1 documented #[ignore] for the live-iroh dormancy differential
+that the in-process conductor cannot reproduce — covered by humm-tauri's
+tryorama e2e). Six parallel reviewer lanes (rust, silent-failures,
+security, coding-standards, dry, groupgenesis-shape-audit) APPROVED with
+0 MUST changes; 3 SHOULD items folded into the follow-up commit
+(exhaustive `match` over `EntryTypes` instead of wildcard, helper-internal
+warn!+`None` containment on a corrupt-of-recognised-type entry, parity
+`warn!` at the network joiner site). Official prebuilt:
+~/hummhive-official-happ-versions label "pass-4-migration-rescue" (NOT
+mirrored to humm-tauri/.testdata/happs from this side — that path is out
+of scope here; pull from official-versions). NOT a new release — v1.0.0
+tag (db2a264) + distributed happ (2205337c) are unchanged; this happ
+(ca1b4225) is staged for hot-swap onto the live `@4` cell via
+AdminWebsocket.updateCoordinators.
+
+Root cause + rescue mechanics: docs/PASS_4_MIGRATION_RESCUE_HANDOFF.md.
+
 Reproducibility contract (effective pass-4 re-record)
 =====================================================
 
