@@ -1,43 +1,23 @@
 //! Behavior proof for the pass-4 coordinator cleanup fixes on a real
-//! in-process holochain 0.6.0 conductor (Sweettest):
-//!   1. `delete_encrypted_content` now sweeps the entry's discovery links
-//!      (the old `// TODO: delete links` gap). After a self-delete,
-//!      `list_by_hive_link` / `list_by_dynamic_link` / `count_links_by_hive`
-//!      all drop to empty/0 instead of dangling to a tombstoned target
-//!      (the C3 over-count).
-//!   2. `get_messages_since(0)` replays the full local chain — the corrected
-//!      doc contract (the old comment falsely claimed `u32::MAX` wrapped to 0;
-//!      the real full-replay sentinel is `since_seq = 0`).
+//! in-process Holochain 0.6.1 conductor (Sweettest):
+//!   1. `delete_encrypted_content` now sweeps the entry's discovery links.
+//!   2. `get_messages_since(0)` replays the full local chain.
 //!
-//! In-repo tryorama cannot boot on the flake's hc 0.6.0 (the quic->webrtc
-//! CLI rename), so Sweettest is the in-tree conductor path. Loads the
-//! pre-built DNA bundle (carries the fixed coordinator).
+//! Sweettest is the in-tree conductor path for hc 0.6.1/iroh. It loads the
+//! pre-built DNA through shared support so stale integrity generations fail
+//! before coordinator behavior is asserted.
 
-use std::path::Path;
+mod support;
+
 use std::time::Duration;
 
 use holo_hash::ActionHash;
-use holochain::sweettest::{
-    await_consistency_s, SweetCell, SweetConductor, SweetDnaFile, SweetZome,
-};
+use holochain::sweettest::{await_consistency_s, SweetConductor, SweetZome};
 use holochain_types::prelude::{SerializedBytes, UnsafeBytes};
 use serde::de::IgnoredAny;
 use serde::{Deserialize, Serialize};
+use support::{single_conductor_app, single_conductor_cell_app, CreateHiveGenesisInput, GenesisResponse};
 
-fn dna_path() -> std::path::PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../../dnas/humm_earth_core/workdir/humm_earth_core.dna")
-}
-
-#[derive(Debug, Serialize)]
-struct CreateHiveGenesisInput {
-    display_id: String,
-}
-
-#[derive(Debug, Deserialize)]
-struct GenesisResponse {
-    hash: ActionHash,
-}
 
 #[derive(Debug, Serialize)]
 struct Acl {
@@ -103,25 +83,12 @@ struct GetMessagesSinceInput {
     since_seq: u32,
 }
 
-async fn setup() -> (SweetConductor, SweetCell) {
-    let dna = SweetDnaFile::from_bundle(&dna_path()).await.expect(
-        "load humm_earth_core.dna (build: npm run build:zomes && hc app pack workdir --recursive)",
-    );
-    let mut conductor = SweetConductor::from_standard_config().await;
-    let app = conductor
-        .setup_app("test-app", &[("humm_earth_core".into(), dna)])
-        .await
-        .unwrap();
-    let (cell,): (SweetCell,) = app.into_tuple();
-    (conductor, cell)
-}
 
 #[tokio::test(flavor = "multi_thread")]
 async fn delete_encrypted_content_cleans_up_discovery_links() {
     holochain_trace::test_run();
-    let (conductor, cell) = setup().await;
-    let zome = cell.zome("content");
-    let author = cell.agent_pubkey().clone();
+    let (conductor, cell, zome) = single_conductor_cell_app().await;
+    let author = zome.cell_id().agent_pubkey().clone();
 
     // Found a hive so OpenWrite has a real target (the hive's existence is
     // OpenWrite's only validation gate beyond the author-pubkey header match).
@@ -266,8 +233,7 @@ async fn delete_encrypted_content_cleans_up_discovery_links() {
 #[tokio::test(flavor = "multi_thread")]
 async fn get_messages_since_zero_replays_full_chain() {
     holochain_trace::test_run();
-    let (conductor, cell) = setup().await;
-    let zome = cell.zome("content");
+    let (conductor, zome) = single_conductor_app().await;
 
     // Baseline: the chain already holds genesis + init + cap-grant actions,
     // so since_seq=0 (range (1, u32::MAX)) is never empty.

@@ -5,61 +5,16 @@
 //! nodes, the only-owner-grants-Admin hierarchy (integrity ever-owner floor +
 //! coordinator current-owner precheck), and the revoke owner-protect.
 
-use std::path::Path;
+mod support;
 
 use holo_hash::{ActionHash, AgentPubKey};
-use holochain::prelude::DnaFile;
-use holochain::sweettest::{await_consistency_s, SweetCell, SweetConductorBatch, SweetDnaFile};
-use serde::{Deserialize, Serialize};
+use holochain::sweettest::await_consistency_s;
+use serde::Serialize;
+use support::{
+    setup_cells, CreateHiveGenesisInput, CreateHiveMembershipInput, GenesisResponse,
+    MembershipResponse,
+};
 
-fn dna_path() -> std::path::PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../../dnas/humm_earth_core/workdir/humm_earth_core.dna")
-}
-
-/// Expected DNA hash for the pass-5 bundle this suite must run against. See
-/// `coordinator_cleanup.rs::EXPECTED_DNA_HASH` for the rationale (stale
-/// workdir bundles silently mask coordinator behavior; the integrity-bump
-/// hash gates this generation; coordinator-only swaps are a documented blindspot).
-const EXPECTED_DNA_HASH: &str = "uhC0k2dXMIa1yI-V4ibCWMiTY5G6-p0laq6IOAVQ2F8XXReDHSxyS";
-
-async fn load_dna() -> DnaFile {
-    let dna = SweetDnaFile::from_bundle(&dna_path()).await.expect(
-        "load humm_earth_core.dna (build: npm run build:zomes && hc dna pack dnas/humm_earth_core/workdir)",
-    );
-    let actual = dna.dna_hash().to_string();
-    assert_eq!(
-        actual, EXPECTED_DNA_HASH,
-        "Stale workdir/humm_earth_core.dna — loaded DNA hash {actual} but expected pass-5 {EXPECTED_DNA_HASH}. \
-         Rebuild: `nix develop --command bash -c 'npm run build:zomes && hc dna pack dnas/humm_earth_core/workdir'`."
-    );
-    dna
-}
-
-#[derive(Debug, Serialize)]
-struct CreateHiveGenesisInput {
-    display_id: String,
-}
-
-#[derive(Debug, Deserialize)]
-struct GenesisResponse {
-    hash: ActionHash,
-}
-
-#[derive(Debug, Serialize)]
-struct CreateHiveMembershipInput {
-    hive_genesis_hash: ActionHash,
-    for_agent: AgentPubKey,
-    role: String,
-    grantor_membership_hash: Option<ActionHash>,
-    expiry: Option<i64>,
-    grantor_owner_accept_hash: Option<ActionHash>,
-}
-
-#[derive(Debug, Deserialize)]
-struct MembershipResponse {
-    hash: ActionHash,
-}
 
 #[derive(Debug, Serialize)]
 struct InitiateOwnerHandoffInput {
@@ -87,16 +42,6 @@ struct RevokeHiveMembershipInput {
     grantor_owner_accept_hash: Option<ActionHash>,
 }
 
-async fn setup(agents: usize) -> (SweetConductorBatch, Vec<SweetCell>) {
-    let dna = load_dna().await;
-    let mut conductors = SweetConductorBatch::from_standard_config_rendezvous(agents).await;
-    let apps = conductors
-        .setup_app("test-app", &[("humm_earth_core".into(), dna)])
-        .await
-        .unwrap();
-    let cells = apps.cells_flattened();
-    (conductors, cells)
-}
 
 fn founds_membership(
     hive: ActionHash,
@@ -116,7 +61,7 @@ fn founds_membership(
 #[tokio::test(flavor = "multi_thread")]
 async fn owner_handshake_admin_authority_and_owner_reject() {
     holochain_trace::test_run();
-    let (conductors, cells) = setup(3).await;
+    let (conductors, cells) = setup_cells(3).await;
     let (alice, bob, carol) = (&cells[0], &cells[1], &cells[2]);
     let alice_key = alice.agent_pubkey().clone();
     let bob_key = bob.agent_pubkey().clone();
@@ -249,7 +194,7 @@ async fn owner_handshake_admin_authority_and_owner_reject() {
 #[tokio::test(flavor = "multi_thread")]
 async fn two_transfers_resolve_to_same_owner_on_every_node() {
     holochain_trace::test_run();
-    let (conductors, cells) = setup(3).await;
+    let (conductors, cells) = setup_cells(3).await;
     let (alice, bob, carol) = (&cells[0], &cells[1], &cells[2]);
     let bob_key = bob.agent_pubkey().clone();
     let carol_key = carol.agent_pubkey().clone();
@@ -333,7 +278,7 @@ async fn two_transfers_resolve_to_same_owner_on_every_node() {
 #[tokio::test(flavor = "multi_thread")]
 async fn revoke_refuses_the_current_owner_membership() {
     holochain_trace::test_run();
-    let (conductors, cells) = setup(2).await;
+    let (conductors, cells) = setup_cells(2).await;
     let (alice, bob) = (&cells[0], &cells[1]);
     let bob_key = bob.agent_pubkey().clone();
     await_consistency_s(30, [alice, bob]).await.unwrap();
@@ -390,6 +335,67 @@ async fn revoke_refuses_the_current_owner_membership() {
     let rejection = format!("{:?}", revoke.expect_err("owner membership is protected"));
     assert!(
         rejection.contains("refusing to revoke the current hive owner's membership"),
+        "got {rejection}"
+    );
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn expiring_hive_admin_cannot_extend_delegation_window() {
+    holochain_trace::test_run();
+    let (conductors, cells) = setup_cells(3).await;
+    let (alice, bob, carol) = (&cells[0], &cells[1], &cells[2]);
+    let bob_key = bob.agent_pubkey().clone();
+    let carol_key = carol.agent_pubkey().clone();
+    let bob_expiry = 4_000_000_000_000_000_i64;
+    let carol_expiry = bob_expiry + 1_000_000;
+    await_consistency_s(30, [alice, bob, carol]).await.unwrap();
+
+    let hive: GenesisResponse = conductors[0]
+        .call(
+            &alice.zome("content"),
+            "create_hive_genesis",
+            CreateHiveGenesisInput {
+                display_id: "grant-window-hive".into(),
+            },
+        )
+        .await;
+    let bob_admin: MembershipResponse = conductors[0]
+        .call(
+            &alice.zome("content"),
+            "create_hive_membership",
+            CreateHiveMembershipInput {
+                hive_genesis_hash: hive.hash.clone(),
+                for_agent: bob_key,
+                role: "Admin".into(),
+                grantor_membership_hash: None,
+                expiry: Some(bob_expiry),
+                grantor_owner_accept_hash: None,
+            },
+        )
+        .await;
+
+    await_consistency_s(60, [alice, bob, carol]).await.unwrap();
+
+    let extended_grant: Result<MembershipResponse, _> = conductors[1]
+        .call_fallible(
+            &bob.zome("content"),
+            "create_hive_membership",
+            CreateHiveMembershipInput {
+                hive_genesis_hash: hive.hash,
+                for_agent: carol_key,
+                role: "Writer".into(),
+                grantor_membership_hash: Some(bob_admin.hash),
+                expiry: Some(carol_expiry),
+                grantor_owner_accept_hash: None,
+            },
+        )
+        .await;
+    let rejection = format!(
+        "{:?}",
+        extended_grant.expect_err("expiring admin cannot extend grant window")
+    );
+    assert!(
+        rejection.contains("delegation window"),
         "got {rejection}"
     );
 }

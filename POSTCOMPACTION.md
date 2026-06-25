@@ -7,49 +7,29 @@
 
 ## Current state
 
-**Release:** `main` carries **v2.0.0** (tag at `4e28a86`; built at `834335e`) =
-pass-5-owner-role + GroupGenesis filter, merged onto main on top of
-**v1.0.1** (tag at `de7abd8`) = pass-4-migration-rescue, which sits on
-top of **v1.0.0** (tag at `db2a264`) = pass-4-query-tolerance.
+**Branch:** `dry-refactor` off synced `main` (`36e72d0`). `main` still carries
+**v2.0.0** (pass-5 owner role + GroupGenesis filter, DNA `uhC0k2dX…`, happ
+`42dbf9df…`). This branch is a **pass-6 candidate**: structural DRY refactor of
+coordinator/test harness plus integrity module splits.
 
-**DNA FORKED** to
-`uhC0k2dXMIa1yI-V4ibCWMiTY5G6-p0laq6IOAVQ2F8XXReDHSxyS` (pass-5; was
-pass-4 `uhC0k26b...`). Integrity wasm `53d867f72cfa...` HELD against
-pass-5 FINAL across the v2.0.0 merge (the merge brought in pass-5's
-integrity wholesale). New coordinator: content.wasm
-`4806534546c32caf25ceba4ed5707b6bce69f04881f3140b037a5c08ef828ee8`,
-happ `42dbf9df56d88269f629651c1253d31bd2e5a664f3bdf44fe66256345034d361`
-(929643 bytes). Distributed to `~/hummhive-official-happ-versions/` as
-`humm-earth-core-happ_pass-5-owner-role_dna-uhC0k2dX_happ-42dbf9df.happ`
-(MANIFEST row 14 + README row 29 + baseline v2.0.0 block updated; the
-prior latent `8f284777` build is DELETED).
+**DNA FORKED on this branch** to
+`uhC0kOQX5rU8yL6CIEWAfGu1G5TaNsgMcS7yp-D0fV2eG1-2bA7iJ` (pass-6 candidate).
+Integrity wasm `156d3ea2a9d5c6bb484a2beffe7cd05caac7c54a0a5fb8f2759e014854f90dbc`,
+content wasm `0d022f076537a1f772e7b0e32678073093a18e6d0710d73e2a4eb6c1d6238a58`,
+DNA bundle `48642bfc928c382d22b892c8a2829bf737587d86fae5ea109661aef8ace11f9e`,
+happ `3dcb8827d7d45f3fabc68708862c4d379ed52d0b30f609ebed3f3b6dc8524d4e`.
+Not pushed, tagged, distributed, or official.
 
-**v2.0.0 union of three lineages:**
-- **pass-5 integrity + coordinator** — Owner role via offer/accept
-  handshake (single owner, transferable, admin-undemotable), reader
-  read-only deletes, role-grant hardening (Owner not membership-grantable;
-  only the current owner grants Admin), `delete_group_genesis`,
-  `InviteRedemption` soft-cap, humm-tauri read helpers, 0.6.1 toolchain.
-- **pass-4 GroupGenesis filter** (`try_decode_hive_genesis`) — closes the
-  silent-false-positive bug that surfaced 110 "hives" on a 6-hive chain
-  via shape-decode; now uses `EntryTypes::deserialize_from_type`
-  dispatch. Filter is exhaustive over pass-5's 9-variant `EntryTypes`.
-- **pass-4 rescue's `_local` externs** (`list_my_hives_local`,
-  `get_latest_membership_local`, `mark_migrated_v2` fail-soft) — ride
-  along, additive, for dormancy-proof discovery on future cell migrations.
+**Pass-6 change shape:** no EntryTypes/LinkTypes variants were added, removed, or
+reordered; no entry fields or serde tags changed. The DNA hash changes solely
+because integrity source/WASM bytes changed during directory-module splits.
+Migration still uses the existing DNA migration path.
 
-**Pushed to GitHub:** `db2a264` + tag `v1.0.0`. Main is ahead of GitHub
-by the rescue (v1.0.1) AND pass-5+v2.0.0 commits + tags. User
-`git push origin main && git push origin --tags v1.0.1 v2.0.0` pending.
-Assistant never pushes.
-
-**Validation (Phase E gate):** 71 integrity + 27 coordinator host tests
-green; `cargo clippy --workspace --all-targets -- -D warnings` clean;
-**Sweettest 10/10 active green on the merged DNA** including the
-rescue's `founder_lists_own_hives_via_local_path` regression test as the
-cross-cutting Phase-E end-to-end proof (GroupGenesis filter live on
-pass-5's `list_my_hives_local` path). Reproducible rebuild reproduces
-the shas. DNA-hash freshness guard added to all 4 sweettest setups.
+**Validation:** `cargo fmt --all --check` green; `cargo test -p content_integrity --lib`
+= 71/71 green; `cargo test -p content --lib` = 27/27 green; `cargo clippy
+--workspace --all-targets -- -D warnings` green; Sweettest after rebuild = 12/12
+active green + 1 ignored dormancy differential. Reviewer lanes (Rust, security,
+silent-failure, DRY + focused re-review) reported no remaining findings.
 
 **SECURITY — documented, accepted residual:** owner transfer is NOT final
 against a malicious PAST owner — any past owner can fork the lineage to
@@ -92,7 +72,7 @@ coordinator hot-swap staged for the live `@4` cell. v2.0.0 (pass-5, DNA
 - **Toolchain:** holochain/hc 0.6.1, hdi 0.7.1, hdk 0.6.1 (pinned exact), Node 24,
   nix (holonix main-0.6 @ 0.6.1, rustc 1.94). `.baseline-hashes.txt` = repro contract.
 - **Build (reproducible):** `nix develop --command bash -c 'bash scripts/build-zomes.sh && hc dna pack dnas/humm_earth_core/workdir && hc app pack workdir --recursive'`,
-  then `hc dna hash …` MUST print `uhC0k2dX…` (pass-5).
+  then `hc dna hash …` MUST print `uhC0kOQX…` on `dry-refactor`; `main`/v2.0.0 remains `uhC0k2dX…`.
 - **Tests:** host `cargo test -p content --lib` (27) + `-p content_integrity --lib` (71).
   Conductor: `crates/sweettest` (in-process, iroh). **Tryorama CANNOT boot on
   hc 0.6.x** — do not use it.
@@ -105,9 +85,9 @@ coordinator hot-swap staged for the live `@4` cell. v2.0.0 (pass-5, DNA
   devShell provides `openssl` + `pkg-config`; RustCrypto pinned to holochain's RCs.
 - Run: `cd crates/sweettest && nix develop ../.. --command bash -c 'export LIBCLANG_PATH=<nix clang lib dir>; cargo test -- --test-threads=1'`
   (`LIBCLANG_PATH` e.g. `/nix/store/…clang-18.1.8-lib/lib`).
-- **10/10 active green on `main` @ v2.0.0** (coordinator_cleanup 2,
-  coordinator_query_tolerance 2, owner_and_acl 3, migration_rescue 3 active +1
-  ignored). First compile slow (conductor + wasmer + iroh).
+- **12/12 active green on `dry-refactor` pass-6 candidate** (coordinator_cleanup 2,
+  coordinator_query_tolerance 2, owner_and_acl 4, migration_rescue 3 active +1
+  ignored, recipient_witnesses 1). First compile slow (conductor + wasmer + iroh).
 
 ## Other branches (committed; pass-5 + rescue now landed on main)
 

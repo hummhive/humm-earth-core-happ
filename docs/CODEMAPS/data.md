@@ -9,23 +9,26 @@ No external database. Source file: `integrity/content/src/`.
 > or link types in the enums below changes the DNA hash and forks the chain.
 > Append-only at the END of each enum preserves existing variant indices.
 
+Pass-6 dry-refactor changes the DNA hash via integrity source/WASM structure only;
+EntryTypes, LinkTypes, serde tags, and wire fields are unchanged from pass-5.
+
 ## Entry Types (EntryTypes enum — integrity/lib.rs)
 
 | # | Entry | Visibility | Mutability | Source |
 |---|---|---|---|---|
-| 0 | `EncryptedContent` | public | update + delete | `encrypted_content.rs` |
-| 1 | `HiveGenesis` | public | immutable | `hive.rs` |
-| 2 | `HiveMembership` | public | immutable (revoke via expiry) | `hive.rs` |
+| 0 | `EncryptedContent` | public | update + delete | `encrypted_content/` |
+| 1 | `HiveGenesis` | public | immutable | `hive/` |
+| 2 | `HiveMembership` | public | immutable (revoke via expiry) | `hive/` |
 | 3 | `DmProbeLog` | **private** | create-only | `inbox.rs` |
-| 4 | `GroupGenesis` | public | immutable | `group.rs` |
-| 5 | `GroupMembership` | public | immutable (revoke via expiry) | `group.rs` |
-| 6 | `HiveOwnerHandoffOffer` | public | immutable | `hive.rs` |
-| 7 | `HiveOwnerHandoffAccept` | public | immutable | `hive.rs` |
+| 4 | `GroupGenesis` | public | immutable | `group/` |
+| 5 | `GroupMembership` | public | immutable (revoke via expiry) | `group/` |
+| 6 | `HiveOwnerHandoffOffer` | public | immutable | `hive/` |
+| 7 | `HiveOwnerHandoffAccept` | public | immutable | `hive/` |
 | 8 | `InviteRedemption` | public | immutable | `invite.rs` |
 
 ## Entry Schemas
 
-### EncryptedContent (encrypted_content.rs)
+### EncryptedContent (encrypted_content/)
 ```
 { header: EncryptedContentHeader, encrypted_content: SerializedBytes }
 ```
@@ -43,13 +46,13 @@ Public        { hive_genesis_hash, author_membership_hash? }
 OpenWrite     { target_hive_genesis_hash? }
 ```
 
-### HiveGenesis (hive.rs)
+### HiveGenesis (hive/)
 ```
 { display_id: String, created_at_microseconds: i64 }
 ```
 Identity = action hash. Immutable.
 
-### HiveMembership (hive.rs)
+### HiveMembership (hive/)
 ```
 { hive_genesis_hash, for_agent, role: Role, grantor_membership_hash?,
   expiry?, grantor_owner_accept_hash? }
@@ -58,13 +61,13 @@ Role: Owner | Admin | Writer | Reader. Dominance: Owner > Admin > Writer > Reade
 `grantor_owner_accept_hash` (pass-5, `#[serde(default)]`): cited for Admin grants
 to prove the grantor is a lineage owner. Owner is NOT grantable via membership.
 
-### GroupGenesis (group.rs)
+### GroupGenesis (group/)
 ```
 { hive_genesis_hash, display_id, hive_wide_role?, creator_hive_membership_hash?,
   created_at_microseconds }
 ```
 
-### GroupMembership (group.rs)
+### GroupMembership (group/)
 ```
 { group_genesis_hash, for_agent, role: Role, grantor_membership_hash?,
   grantor_hive_membership_hash?, expiry? }
@@ -75,7 +78,7 @@ to prove the grantor is a lineage owner. Owner is NOT grantable via membership.
 { probed_at_microseconds: i64, last_processed_inbox_link_hash?: ActionHash }
 ```
 
-### HiveOwnerHandoffOffer / HiveOwnerHandoffAccept (hive.rs) — pass-5
+### HiveOwnerHandoffOffer / HiveOwnerHandoffAccept (hive/) — pass-5
 ```
 Offer  { hive_genesis_hash, to_agent, offerer_owner_accept_hash?, created_at_microseconds }
 Accept { offer_hash }

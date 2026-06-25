@@ -187,9 +187,9 @@ coordinator/content/src/
     mod.rs                        (wire types: EncryptedContentResponse, CreateInput, UpdateInput)
     crud.rs                       (create/get/update/delete externs)
     queries.rs                    (list_by_*, count, fetch_pair)
-    signals.rs                    (EncryptedContentSignal, DmRemoteSignal, send_dm_* externs, send_encoded_remote_signal funnel)
+    signals/                     (EncryptedContentSignal, DmRemoteSignal, send_dm_* externs, ExternIO funnel)
     get_helpers.rs                (get_eh, get_record, get_latest_typed_from_eh)
-    migration.rs                  (MigrationMarkerV1/V2, mark_migrated*, get_migration_marker*)
+    migration/                   (MigrationMarkerV1/V2, mark_migrated*, get_migration_marker*)
   linking/
     hive_link.rs                  (create_hive_link — hive-shape Hive link)
     dynamic_links.rs              (create_dynamic_links — Dynamic links)

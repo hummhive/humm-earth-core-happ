@@ -1,26 +1,25 @@
 # humm-sweettest — in-tree conductor tests
 
-In-process holochain 0.6.0 (Sweettest) behavior tests for the `content`
-coordinator zome. This is a **separate Cargo workspace** on purpose: the
-`holochain` conductor crate requires `holochain_serialized_bytes =0.0.57`
-while the zome workspace pins `=0.0.56` — sharing a workspace conflicts.
+In-process Holochain 0.6.1 (Sweettest) behavior tests for the `content`
+coordinator zome and must-get-backed integrity paths. This remains a separate
+Cargo workspace because it depends on the full `holochain` conductor crate; the
+zome workspace shares the current `holochain_serialized_bytes =0.0.57` line but
+should not pull conductor-only dependencies into WASM builds.
 
-Why this exists: in-repo **tryorama cannot boot** on the flake's `hc 0.6.0`
-(the `quic`→`webrtc` sandbox-CLI rename — see `.baseline-hashes.txt`).
-Sweettest spawns the conductor in-process (no `hc sandbox` CLI), matches
-the flake conductor exactly (no version drift), and is the official test
-path (Holochain Dev Pulse 154). It loads the pre-built DNA bundle, so the
-coordinator under test is whatever `npm run build:zomes` last produced.
+Why this exists: in-repo tryorama cannot boot on the flake's hc 0.6.x line, while
+Sweettest spawns the conductor in-process and matches the flake conductor without
+sandbox CLI drift. It loads the pre-built DNA bundle, so the code under test is
+whatever `npm run build:zomes` last produced.
 
 ## Prerequisites
 
-- Run inside the repo's `nix develop` shell (provides rust, cmake, C++ for
-  `libdatachannel`, and `clang`).
+- Run inside the repo's `nix develop` shell (provides Rust, cmake, C++ toolchain,
+  OpenSSL/pkg-config, and clang for iroh-era conductor dependencies).
 - Build the DNA first so the bundle exists:
   `npm run build:zomes && hc app pack workdir --recursive`
-- Export `LIBCLANG_PATH` to the nix `clang` lib dir — `datachannel-sys`'s
-  bindgen otherwise falls back to a broken system clang. Find it with:
-  `find /nix/store -maxdepth 3 -name 'libclang.so' | head -1` → use its dir.
+- Export `LIBCLANG_PATH` to the nix `clang` lib dir. Bindgen otherwise may pick a
+  broken system clang. Example known-good path in this WSL environment:
+  `/nix/store/v09fr9r4ma9qxiwv2mfbanha28aiwwc5-clang-18.1.8-lib/lib`.
 
 ## Run
 
@@ -32,22 +31,19 @@ nix develop ../.. --command bash -c '
 '
 ```
 
-First compile is long (~15-40 min cold: full conductor + wasmer +
-libdatachannel). Subsequent runs are fast. Tests use
-`#[tokio::test(flavor = "multi_thread")]` (mandatory — the conductor
-deadlocks single-threaded) and an in-memory keystore (no external lair).
+First compile is long because it builds the conductor stack and Wasmer.
+Subsequent runs are fast. Tests use `#[tokio::test(flavor = "multi_thread")]`
+and an in-memory keystore.
 
-## Tests (`tests/coordinator_query_tolerance.rs`)
+## Active tests
 
-- `get_many_encrypted_content_tolerates_a_missing_target` — pins the
-  all-or-nothing fix: `get_many_encrypted_content([unresolvable_hash])`
-  returns `Ok([])` (the resolvable subset) instead of the pre-fix
-  `"no Record found at given hash"` batch throw that poisoned
-  `list_by_hive_link` / `_dynamic_link` / `_acl_link` / `_author`.
-- `joiner_lists_hive_without_cross_type_decode_failure` — 2-conductor
-  rendezvous: Alice founds a hive + grants Bob a membership; Bob's
-  `list_my_hives` returns the joined hive (and Alice still lists hers,
-  role `None`). Pins the cross-type Inbox decode fix (`.ok().flatten()`
-  instead of `?`-propagating the wrong-type deserialize).
+12 active tests + 1 ignored dormancy differential:
 
-Both verified green (2/2) against the pass-4-query-tolerance coordinator.
+- `coordinator_cleanup.rs`: delete-link sweep and `get_messages_since(0)` replay.
+- `coordinator_query_tolerance.rs`: missing-target tolerance and mixed Inbox decode.
+- `migration_rescue.rs`: local hive enumeration, local joiner enumeration,
+  `mark_migrated_v2` fail-soft, plus one ignored live-network dormancy tripwire.
+- `owner_and_acl.rs`: owner handoff, owner resolution, owner revoke protection,
+  and hive grant-window containment.
+- `recipient_witnesses.rs`: HiveGroup recipient witness accepts a real group
+  membership through a live conductor.

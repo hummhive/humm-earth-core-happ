@@ -55,9 +55,9 @@ Runtime: `npx tsx`. Uses `@holochain/client` (AdminWebsocket + AppWebsocket),
 
 ## Conductor Test Harness (crates/sweettest)
 
-In-process holochain-0.6.1 Sweettest behavior tests for the `content` coordinator.
-A **separate Cargo workspace** (its own `Cargo.lock`): the conductor crate drags a
-large dep tree with no place in the lean wasm zome workspace; both now pin
+In-process holochain-0.6.1 Sweettest behavior tests for the `content` coordinator
+and must-get-backed integrity paths. A **separate Cargo workspace** keeps the
+conductor dep tree out of lean wasm builds; both workspaces now pin
 `holochain_serialized_bytes =0.0.57`. Loads the pre-built DNA bundle, so it tests
 whatever `npm run build:zomes` last produced. Run inside `nix develop` with
 `LIBCLANG_PATH` set; transport is **iroh** (`transport-iroh`; tx5/datachannel
@@ -82,16 +82,15 @@ run-local-services --signal-port`.
 Prebuilt binaries for every DNA generation live at `~/hummhive-official-happ-versions/`
 with `MANIFEST.tsv` mapping label → commit → DNA hash → SHA256 → filename.
 Mirrored in `../humm-tauri/.testdata/happs/` for migration testing.
-`main` carries **v2.0.0 = pass-5-owner-role** (integrity bump, hc 0.6.1):
-DNA `uhC0k2dXMIa1yI-V4ibCWMiTY5G6-p0laq6IOAVQ2F8XXReDHSxyS`, integrity wasm
-`53d867f7…` (HELD), content wasm `48065345…`, happ
-`42dbf9df56d88269f629651c1253d31bd2e5a664f3bdf44fe66256345034d361` (929643 bytes),
-built at commit `834335e` (tag `v2.0.0` at `4e28a86`), distributed as
-`…_pass-5-owner-role_dna-uhC0k2dX_happ-42dbf9df.happ` (the prior latent
-`8f284777` build is DELETED). The current **live** production cell is still
-**pass-4** (DNA uhC0k26b): v1.0.0 (`pass-4-query-tolerance`, hApp 2205337c) +
-the v1.0.1 (`pass-4-migration-rescue`, hApp ca1b4225) coordinator hot-swap;
-humm-tauri bundles the v2.0.0 pass-5 happ on cutover (integrity change → DNA migration).
+`dry-refactor` carries a **pass-6 candidate** (structural integrity refactor, hc
+0.6.1): DNA `uhC0kOQX5rU8yL6CIEWAfGu1G5TaNsgMcS7yp-D0fV2eG1-2bA7iJ`, integrity wasm
+`156d3ea2…`, content wasm `0d022f07…`, happ
+`3dcb8827d7d45f3fabc68708862c4d379ed52d0b30f609ebed3f3b6dc8524d4e`, not released.
+`main` remains **v2.0.0 = pass-5-owner-role**: DNA `uhC0k2dX…`, integrity wasm
+`53d867f7…`, content wasm `48065345…`, happ `42dbf9df…`, built at `834335e` (tag
+`v2.0.0` at `4e28a86`) and distributed as
+`…_pass-5-owner-role_dna-uhC0k2dX_happ-42dbf9df.happ`. The current **live**
+production cell is still **pass-4** (DNA uhC0k26b) until cutover/migration.
 
 ## Build Artifacts
 

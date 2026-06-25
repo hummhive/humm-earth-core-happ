@@ -14,87 +14,21 @@
 //!      HiveMembership) without `?`-propagating the wrong-type
 //!      deserialize — the bug that broke the joiner's list forever.
 
-use std::path::Path;
+mod support;
 
-use holo_hash::{ActionHash, AgentPubKey};
-use holochain::prelude::DnaFile;
-use holochain::sweettest::{
-    await_consistency_s, SweetCell, SweetConductor, SweetConductorBatch, SweetDnaFile,
-};
+use holo_hash::ActionHash;
+use holochain::sweettest::await_consistency_s;
 use serde::de::IgnoredAny;
-use serde::{Deserialize, Serialize};
-
-/// Absolute path to the pre-built DNA (resolved from this crate's manifest
-/// dir → repo root), so the test is cwd-independent.
-fn dna_path() -> std::path::PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../../dnas/humm_earth_core/workdir/humm_earth_core.dna")
-}
-
-/// Expected DNA hash for the pass-5 bundle this suite must run against. See
-/// `coordinator_cleanup.rs::EXPECTED_DNA_HASH` for the rationale (stale
-/// workdir bundles silently mask coordinator behavior; the integrity-bump
-/// hash gates this generation; coordinator-only swaps are a documented blindspot).
-const EXPECTED_DNA_HASH: &str = "uhC0k2dXMIa1yI-V4ibCWMiTY5G6-p0laq6IOAVQ2F8XXReDHSxyS";
-
-async fn load_dna() -> DnaFile {
-    let dna = SweetDnaFile::from_bundle(&dna_path()).await.expect(
-        "load humm_earth_core.dna (build: npm run build:zomes && hc dna pack dnas/humm_earth_core/workdir)",
-    );
-    let actual = dna.dna_hash().to_string();
-    assert_eq!(
-        actual, EXPECTED_DNA_HASH,
-        "Stale workdir/humm_earth_core.dna — loaded DNA hash {actual} but expected pass-5 {EXPECTED_DNA_HASH}. \
-         Rebuild: `nix develop --command bash -c 'npm run build:zomes && hc dna pack dnas/humm_earth_core/workdir'`."
-    );
-    dna
-}
-
-/// `list_my_hives` row (subset of the coordinator's `ListedHive`; serde
-/// ignores the fields we don't assert on).
-#[derive(Debug, Deserialize)]
-struct ListedHive {
-    display_id: String,
-    role: Option<String>,
-}
-
-/// `create_hive_genesis` response (subset — we only need the action hash).
-#[derive(Debug, Deserialize)]
-struct GenesisResponse {
-    hash: ActionHash,
-}
-
-/// `create_hive_genesis` input.
-#[derive(Debug, Serialize)]
-struct CreateHiveGenesisInput {
-    display_id: String,
-}
-
-/// `create_hive_membership` input — mirrors the coordinator extern's
-/// `CreateHiveMembershipInput`. `role` is the bare-variant string the
-/// `Role` enum (de)serializes as ("Reader").
-#[derive(Debug, Serialize)]
-struct CreateHiveMembershipInput {
-    hive_genesis_hash: ActionHash,
-    for_agent: AgentPubKey,
-    role: String,
-    grantor_membership_hash: Option<ActionHash>,
-    expiry: Option<i64>,
-}
+use support::{
+    single_conductor_app, setup_cells, CreateHiveGenesisInput, CreateHiveMembershipInput,
+    GenesisResponse, ListedHive,
+};
 
 #[tokio::test(flavor = "multi_thread")]
 async fn get_many_encrypted_content_tolerates_a_missing_target() {
     holochain_trace::test_run();
 
-    let dna = load_dna().await;
-
-    let mut conductor = SweetConductor::from_standard_config().await;
-    let app = conductor
-        .setup_app("test-app", &[("humm_earth_core".into(), dna)])
-        .await
-        .unwrap();
-    let (cell,): (SweetCell,) = app.into_tuple();
-    let zome = cell.zome("content");
+    let (conductor, zome) = single_conductor_app().await;
 
     // A hash that resolves to no record — the exact gossip-lag / tombstone
     // condition. Pre-fix the all-or-nothing `collect()` propagated the
@@ -121,18 +55,11 @@ async fn get_many_encrypted_content_tolerates_a_missing_target() {
 async fn joiner_lists_hive_without_cross_type_decode_failure() {
     holochain_trace::test_run();
 
-    let dna = load_dna().await;
+    let (conductors, cells) = setup_cells(2).await;
+    let (alice, bob) = (&cells[0], &cells[1]);
+    let bob_agent = bob.agent_pubkey().clone();
 
-    // Two conductors over a shared rendezvous so Bob gossips Alice's writes.
-    let mut conductors = SweetConductorBatch::from_standard_config_rendezvous(2).await;
-    let apps = conductors
-        .setup_app("test-app", &[("humm_earth_core".into(), dna)])
-        .await
-        .unwrap();
-    let ((alice,), (bob,)): ((SweetCell,), (SweetCell,)) = apps.into_tuples();
-    let bob_agent: AgentPubKey = bob.agent_pubkey().clone();
-
-    await_consistency_s(30, [&alice, &bob]).await.unwrap();
+    await_consistency_s(30, [alice, bob]).await.unwrap();
 
     // Alice founds a hive (she is the genesis author → implicit Owner).
     let genesis: GenesisResponse = conductors[0]
@@ -156,11 +83,12 @@ async fn joiner_lists_hive_without_cross_type_decode_failure() {
                 role: "Reader".to_string(),
                 grantor_membership_hash: None,
                 expiry: None,
+                grantor_owner_accept_hash: None,
             },
         )
         .await;
 
-    await_consistency_s(60, [&alice, &bob]).await.unwrap();
+    await_consistency_s(60, [alice, bob]).await.unwrap();
 
     // Bob's Inbox now holds a HiveInvite → HiveMembership target. Pre-fix,
     // list_my_hives decoded it as HiveGenesis FIRST and `?`-propagated the

@@ -174,3 +174,28 @@ Update 2026-06-13 (post pass-4-query-tolerance + v1.0.0 release prep):
   .newTasks/.doneTasks: already reconciled — `recv-remote-signal-externio-fix.md` is in `.doneTasks/` (shipped
     v1.0.0), `.newTasks/` empty; no other shipped items outstanding per `git log v1.0.0..HEAD`.
   Staleness warnings: none outstanding (HUMM_TAURI_* / PASS_*_DEPLOY_HANDOFF.md left as historical narrative).
+
+Update 2026-06-24 (dry-refactor pass-6 candidate):
+  Trigger: dry-refactor branch structural DRY refactor.
+  Diff vs prior scan: SMALL/MEDIUM (module paths changed; extern, EntryTypes,
+  LinkTypes, wire fields, serde tags, and dependencies unchanged).
+
+  ~ architecture.md  — added pass-6 candidate lineage and branch/current-release split.
+  ~ backend.md       — updated coordinator encrypted_content key files: migration/
+                       and signals/ directory modules.
+  ~ data.md          — updated integrity source paths to encrypted_content/,
+                       hive/, group/ and stated no schema/wire changes.
+  ~ dependencies.md  — updated Sweettest scope and pass-6 candidate artifact shas.
+
+  Structural deltas:
+    - Coordinator: migration.rs → migration/{mod,markers,payload,readers,writers,tests};
+                   signals.rs → signals/{mod,content,dm,outbound,tests}.
+    - Integrity: encrypted_content.rs, hive.rs, group.rs split into directory modules;
+                 validation_dispatch routes through entry/link helper modules while
+                 EntryTypes/LinkTypes stay in lib.rs.
+    - Tests: Sweettest support module added; encrypted_content tests split into
+             header/delete/links/direct_message/witnesses; recipient_witnesses test
+             added; owner_and_acl grant-window coverage added.
+    - New DNA candidate: uhC0kOQX5rU8yL6CIEWAfGu1G5TaNsgMcS7yp-D0fV2eG1-2bA7iJ.
+
+  Staleness warnings: none known after manual codemap refresh.

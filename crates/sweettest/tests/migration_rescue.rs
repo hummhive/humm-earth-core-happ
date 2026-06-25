@@ -7,77 +7,17 @@
 //! fail-soft return shape; the dormant-network differential lives in
 //! humm-tauri's tryorama e2e and is captured here by Test B's `#[ignore]`.
 
-use std::path::Path;
+mod support;
 
-use holo_hash::{ActionHash, AgentPubKey};
-use holochain::sweettest::{
-    await_consistency_s, SweetCell, SweetConductor, SweetConductorBatch, SweetDnaFile, SweetZome,
-};
+use holo_hash::ActionHash;
+use holochain::sweettest::{await_consistency_s, SweetConductor, SweetZome};
 use serde::de::IgnoredAny;
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
+use support::{
+    create_hive, grant_hive_membership, setup_cells, single_conductor_app, GenesisResponse,
+    ListedHive,
+};
 
-fn dna_path() -> std::path::PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../../dnas/humm_earth_core/workdir/humm_earth_core.dna")
-}
-
-/// Expected DNA hash for the bundle this suite must run against. See
-/// `coordinator_cleanup.rs::EXPECTED_DNA_HASH` for the rationale (stale
-/// workdir bundles silently mask coordinator behavior; the integrity-bump
-/// hash gates this generation; coordinator-only swaps are a documented blindspot).
-const EXPECTED_DNA_HASH: &str = "uhC0k2dXMIa1yI-V4ibCWMiTY5G6-p0laq6IOAVQ2F8XXReDHSxyS";
-
-async fn load_dna() -> holochain::prelude::DnaFile {
-    let dna = SweetDnaFile::from_bundle(&dna_path()).await.expect(
-        "load humm_earth_core.dna (build: npm run build:zomes && hc dna pack dnas/humm_earth_core/workdir)",
-    );
-    let actual = dna.dna_hash().to_string();
-    assert_eq!(
-        actual, EXPECTED_DNA_HASH,
-        "Stale workdir/humm_earth_core.dna — loaded DNA hash {actual} but expected {EXPECTED_DNA_HASH}. Rebuild: `nix develop --command bash -c 'npm run build:zomes && hc dna pack dnas/humm_earth_core/workdir'`."
-    );
-    dna
-}
-
-async fn single_conductor_app() -> (SweetConductor, SweetZome) {
-    holochain_trace::test_run();
-    let dna = SweetDnaFile::from_bundle(&dna_path())
-        .await
-        .expect("load humm_earth_core.dna (must be built: npm run build:zomes && hc app pack)");
-    let mut conductor = SweetConductor::from_standard_config().await;
-    let app = conductor
-        .setup_app("test-app", &[("humm_earth_core".into(), dna)])
-        .await
-        .unwrap();
-    let (cell,): (SweetCell,) = app.into_tuple();
-    let zome = cell.zome("content");
-    (conductor, zome)
-}
-
-#[derive(Debug, Deserialize)]
-struct ListedHive {
-    display_id: String,
-    role: Option<String>,
-}
-
-#[derive(Debug, Deserialize)]
-struct GenesisResponse {
-    hash: ActionHash,
-}
-
-#[derive(Debug, Serialize)]
-struct CreateHiveGenesisInput {
-    display_id: String,
-}
-
-#[derive(Debug, Serialize)]
-struct CreateHiveMembershipInput {
-    hive_genesis_hash: ActionHash,
-    for_agent: AgentPubKey,
-    role: String,
-    grantor_membership_hash: Option<ActionHash>,
-    expiry: Option<i64>,
-}
 
 #[derive(Debug, Serialize)]
 struct MarkMigratedV2Input {
@@ -110,18 +50,6 @@ fn dummy_v2_marker() -> MigrationMarkerV2 {
     }
 }
 
-async fn create_hive(conductor: &SweetConductor, zome: &SweetZome, display_id: &str) -> ActionHash {
-    let response: GenesisResponse = conductor
-        .call(
-            zome,
-            "create_hive_genesis",
-            CreateHiveGenesisInput {
-                display_id: display_id.to_string(),
-            },
-        )
-        .await;
-    response.hash
-}
 
 #[derive(Debug, Serialize)]
 struct CreateGroupGenesisInput {
@@ -236,46 +164,27 @@ async fn mark_migrated_v2_returns_none_on_unresolvable_original() {
 #[tokio::test(flavor = "multi_thread")]
 async fn joiner_local_lists_granted_membership() {
     holochain_trace::test_run();
-    let dna = load_dna().await;
+    let (conductors, cells) = setup_cells(2).await;
+    let (alice, bob) = (&cells[0], &cells[1]);
+    let bob_agent = bob.agent_pubkey().clone();
 
-    let mut conductors = SweetConductorBatch::from_standard_config_rendezvous(2).await;
-    let apps = conductors
-        .setup_app("test-app", &[("humm_earth_core".into(), dna)])
-        .await
-        .unwrap();
-    let ((alice,), (bob,)): ((SweetCell,), (SweetCell,)) = apps.into_tuples();
-    let bob_agent: AgentPubKey = bob.agent_pubkey().clone();
+    await_consistency_s(30, [alice, bob]).await.unwrap();
 
-    await_consistency_s(30, [&alice, &bob]).await.unwrap();
+    let genesis_hash = create_hive(&conductors[0], &alice.zome("content"), "joiner-local-hive").await;
 
-    let genesis_hash = {
-        let response: GenesisResponse = conductors[0]
-            .call(
-                &alice.zome("content"),
-                "create_hive_genesis",
-                CreateHiveGenesisInput {
-                    display_id: "joiner-local-hive".to_string(),
-                },
-            )
-            .await;
-        response.hash
-    };
+    grant_hive_membership(
+        &conductors[0],
+        &alice.zome("content"),
+        genesis_hash,
+        bob_agent,
+        "Reader",
+        None,
+        None,
+        None,
+    )
+    .await;
 
-    let _membership: IgnoredAny = conductors[0]
-        .call(
-            &alice.zome("content"),
-            "create_hive_membership",
-            CreateHiveMembershipInput {
-                hive_genesis_hash: genesis_hash,
-                for_agent: bob_agent,
-                role: "Reader".to_string(),
-                grantor_membership_hash: None,
-                expiry: None,
-            },
-        )
-        .await;
-
-    await_consistency_s(60, [&alice, &bob]).await.unwrap();
+    await_consistency_s(60, [alice, bob]).await.unwrap();
 
     let bob_hives: Vec<ListedHive> = conductors[1]
         .call(&bob.zome("content"), "list_my_hives_local", ())
