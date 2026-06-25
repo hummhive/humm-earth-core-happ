@@ -31,10 +31,41 @@ pub(super) fn dispatch_create_entry(
     }
 }
 
+fn update_entry_type_verdict(
+    original_entry_type: &EntryType,
+    updated_entry_type: &EntryType,
+) -> ValidateCallbackResult {
+    if original_entry_type == updated_entry_type {
+        return ValidateCallbackResult::Valid;
+    }
+    ValidateCallbackResult::Invalid(
+        "Updates must preserve the original app entry type; create a new entry instead".into(),
+    )
+}
+
+fn validate_update_targets_same_entry_type(
+    action: &Update,
+) -> ExternResult<ValidateCallbackResult> {
+    let original_action = must_get_action(action.original_action_address.clone())?;
+    let Some(original_entry_type) = original_action.action().entry_type() else {
+        return Ok(ValidateCallbackResult::Invalid(
+            "Update original action must be an entry action".into(),
+        ));
+    };
+    Ok(update_entry_type_verdict(
+        original_entry_type,
+        &action.entry_type,
+    ))
+}
+
 pub(super) fn dispatch_update_entry(
     action: Update,
     app_entry: EntryTypes,
 ) -> ExternResult<ValidateCallbackResult> {
+    let type_verdict = validate_update_targets_same_entry_type(&action)?;
+    if let invalid @ ValidateCallbackResult::Invalid(_) = type_verdict {
+        return Ok(invalid);
+    }
     match app_entry {
         EntryTypes::EncryptedContent(encrypted_content) => {
             validate_update_encrypted_content(action, encrypted_content)
@@ -71,7 +102,7 @@ pub(super) fn dispatch_store_record_update_entry(
                 encrypted_content.clone(),
             )?;
             if let ValidateCallbackResult::Valid = create_result {
-                validate_update_encrypted_content(action, encrypted_content)
+                dispatch_update_entry(action, EntryTypes::EncryptedContent(encrypted_content))
             } else {
                 Ok(create_result)
             }
@@ -151,6 +182,53 @@ pub(super) fn dispatch_delete_entry(action: Delete) -> ExternResult<ValidateCall
         }
         EntryTypes::InviteRedemption(redemption) => {
             validate_delete_invite_redemption(action, original_action, redemption)
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::update_entry_type_verdict;
+    use hdi::prelude::*;
+
+    fn app_entry_type(entry_index: u8) -> EntryType {
+        EntryType::App(AppEntryDef {
+            entry_index: entry_index.into(),
+            zome_index: 0.into(),
+            visibility: EntryVisibility::Public,
+        })
+    }
+
+    #[test]
+    fn allows_encrypted_content_to_encrypted_content_update_type_gate() {
+        let encrypted_content = app_entry_type(0);
+        let result = update_entry_type_verdict(&encrypted_content, &encrypted_content);
+        assert!(matches!(result, ValidateCallbackResult::Valid));
+    }
+
+    #[test]
+    fn rejects_hive_genesis_to_encrypted_content_update() {
+        let result = update_entry_type_verdict(&app_entry_type(1), &app_entry_type(0));
+        match result {
+            ValidateCallbackResult::Invalid(msg) => {
+                assert!(msg.contains("preserve the original app entry type"));
+            }
+            other => panic!("expected Invalid, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn rejects_immutable_originals_to_encrypted_content_update() {
+        let encrypted_content = app_entry_type(0);
+        for original_entry_index in [1, 2, 4, 5, 6, 7, 8] {
+            let result = update_entry_type_verdict(
+                &app_entry_type(original_entry_index),
+                &encrypted_content,
+            );
+            assert!(
+                matches!(result, ValidateCallbackResult::Invalid(_)),
+                "entry index {original_entry_index} must not update into EncryptedContent; got {result:?}",
+            );
         }
     }
 }

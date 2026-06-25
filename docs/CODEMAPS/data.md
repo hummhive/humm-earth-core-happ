@@ -9,8 +9,9 @@ No external database. Source file: `integrity/content/src/`.
 > or link types in the enums below changes the DNA hash and forks the chain.
 > Append-only at the END of each enum preserves existing variant indices.
 
-Pass-6 dry-refactor changes the DNA hash via integrity source/WASM structure only;
-EntryTypes, LinkTypes, serde tags, and wire fields are unchanged from pass-5.
+Pass-6 dry-refactor changes the DNA hash via integrity source/WASM structure and
+validation hardening only; EntryTypes, LinkTypes, serde tags, and wire fields are
+unchanged from pass-5.
 
 ## Entry Types (EntryTypes enum — integrity/lib.rs)
 
@@ -97,7 +98,7 @@ authority). Immutable.
 
 | # | Link Type | Base | Target | Tag | Purpose |
 |---|---|---|---|---|---|
-| 0 | OriginalHashPointer | updated AH | original AH | — | update-chain back-pointer |
+| 0 | OriginalHashPointer | current EncryptedContent AH | root EncryptedContent create AH | empty | update-chain back-pointer; validated against native action root |
 | 1 | EncryptedContentUpdates | original AH | updated AH | — | update-chain forward index |
 | 2 | TimePath | path | path | — | declared integrity variant, never created |
 | 3 | TimeItem | path | entry AH | — | declared integrity variant, never created |

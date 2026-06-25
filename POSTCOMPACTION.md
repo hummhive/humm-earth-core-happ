@@ -13,23 +13,24 @@
 coordinator/test harness plus integrity module splits.
 
 **DNA FORKED on this branch** to
-`uhC0kOQX5rU8yL6CIEWAfGu1G5TaNsgMcS7yp-D0fV2eG1-2bA7iJ` (pass-6 candidate).
-Integrity wasm `156d3ea2a9d5c6bb484a2beffe7cd05caac7c54a0a5fb8f2759e014854f90dbc`,
-content wasm `0d022f076537a1f772e7b0e32678073093a18e6d0710d73e2a4eb6c1d6238a58`,
-DNA bundle `48642bfc928c382d22b892c8a2829bf737587d86fae5ea109661aef8ace11f9e`,
-happ `3dcb8827d7d45f3fabc68708862c4d379ed52d0b30f609ebed3f3b6dc8524d4e`.
+`uhC0ksXsJOTlVvhUn3KWB0nN6j-II_9BxlsRiMqR9ajhFhYS7gSMz` (pass-6 candidate).
+Integrity wasm `2656a9100937f7e6d17e2eebd5e744a1ef16e8e36b0efa089dc2f6382a655ae2`,
+content wasm `58b1d85f3d57c2fffeccd39c2a9aab602761ce47519ee626def6ae05384a94af`,
+DNA bundle `0fd059306479e0500a2fb36bd4614c7a5b803576fee3fc7f3cda490d4e1d3600`,
+happ `3062de3851eac81fedd425325b30f3cabaaa2000e1e295ba7db5d4d031dda5d3`.
 Not pushed, tagged, distributed, or official.
 
 **Pass-6 change shape:** no EntryTypes/LinkTypes variants were added, removed, or
-reordered; no entry fields or serde tags changed. The DNA hash changes solely
-because integrity source/WASM bytes changed during directory-module splits.
+reordered; no entry fields or serde tags changed. The DNA hash changes because
+integrity source/WASM bytes changed during directory-module splits plus follow-up
+validation hardening for `OriginalHashPointer` and same-entry-type updates.
 Migration still uses the existing DNA migration path.
 
 **Validation:** `cargo fmt --all --check` green; `cargo test -p content_integrity --lib`
-= 71/71 green; `cargo test -p content --lib` = 27/27 green; `cargo clippy
+= 76/76 green; `cargo test -p content --lib` = 25/25 green; `cargo clippy
 --workspace --all-targets -- -D warnings` green; Sweettest after rebuild = 12/12
-active green + 1 ignored dormancy differential. Reviewer lanes (Rust, security,
-silent-failure, DRY + focused re-review) reported no remaining findings.
+active green + 1 ignored dormancy differential. Follow-up security/Holochain
+BLOCK findings C-BLOCK-1 and C-BLOCK-2 were fixed and re-gated.
 
 **SECURITY — documented, accepted residual:** owner transfer is NOT final
 against a malicious PAST owner — any past owner can fork the lineage to
@@ -71,9 +72,11 @@ coordinator hot-swap staged for the live `@4` cell. v2.0.0 (pass-5, DNA
 - **WSL sync:** `scripts/wsl-pull.sh` / `wsl-push.sh` / `wsl-check.sh`. See `CLAUDE.md`.
 - **Toolchain:** holochain/hc 0.6.1, hdi 0.7.1, hdk 0.6.1 (pinned exact), Node 24,
   nix (holonix main-0.6 @ 0.6.1, rustc 1.94). `.baseline-hashes.txt` = repro contract.
-- **Build (reproducible):** `nix develop --command bash -c 'bash scripts/build-zomes.sh && hc dna pack dnas/humm_earth_core/workdir && hc app pack workdir --recursive'`,
-  then `hc dna hash …` MUST print `uhC0kOQX…` on `dry-refactor`; `main`/v2.0.0 remains `uhC0k2dX…`.
-- **Tests:** host `cargo test -p content --lib` (27) + `-p content_integrity --lib` (71).
+- **Build (reproducible):** `nix develop --command bash scripts/build-zomes.sh`, then
+  `nix develop --command hc dna pack dnas/humm_earth_core/workdir`, then
+  `nix develop --command hc app pack workdir --recursive`; `hc dna hash …` MUST print
+  `uhC0ksXs…` on `dry-refactor`; `main`/v2.0.0 remains `uhC0k2dX…`.
+- **Tests:** host `cargo test -p content --lib` (25) + `-p content_integrity --lib` (76).
   Conductor: `crates/sweettest` (in-process, iroh). **Tryorama CANNOT boot on
   hc 0.6.x** — do not use it.
 

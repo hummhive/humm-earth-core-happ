@@ -13,7 +13,7 @@ use serde::{Deserialize, Serialize};
 /// Stale workdir bundles silently mask coordinator and integrity behavior; this
 /// hash gate keeps conductor tests on the intended DNA generation.
 pub const EXPECTED_DNA_HASH: &str =
-    "uhC0kOQX5rU8yL6CIEWAfGu1G5TaNsgMcS7yp-D0fV2eG1-2bA7iJ";
+    "uhC0ksXsJOTlVvhUn3KWB0nN6j-II_9BxlsRiMqR9ajhFhYS7gSMz";
 
 /// Absolute path to the pre-built DNA, resolved from this crate's manifest dir
 /// so integration tests are cwd-independent.

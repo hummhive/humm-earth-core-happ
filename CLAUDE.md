@@ -44,9 +44,10 @@ main-hc060 → pass-1 → pass-2 → pass-2.5 → pass-3 → pass-4 → pass-5 �
 - `pass-5` is the first integrity bump since pass-4 (hive Owner role via
   offer/accept handshake + reader read-only + role-grant hardening; toolchain
   bumped to holochain 0.6.1 / hdk 0.6.1 / hdi 0.7.1).
-- `dry-refactor` carries a pass-6 candidate structural integrity refactor: no
-  EntryTypes/LinkTypes or wire-shape changes, but integrity source/WASM changed.
-- Current branch: DNA `uhC0kOQX…`, hApp `3dcb8827…` (candidate, not released).
+- `dry-refactor` carries a pass-6 candidate structural integrity refactor plus
+  follow-up validation hardening: no EntryTypes/LinkTypes or wire-shape changes,
+  but integrity source/WASM changed.
+- Current branch: DNA `uhC0ksXs…`, hApp `3062de38…` (candidate, not released).
 - Main/v2.0.0: DNA `uhC0k2dX…`, hApp `42dbf9df…` (pass-5; prior `8f284777…` build was latent-bug + DELETED).
 
 ---

@@ -180,3 +180,54 @@ fn delete_link_encrypted_content_updates_is_invalid() {
         other => panic!("expected Invalid, got {other:?}"),
     }
 }
+
+#[test]
+fn create_link_original_hash_pointer_rejects_non_action_target() {
+    let alice = agent_pubkey(1);
+    let base = AnyLinkableHash::from(action_hash(1));
+    let target = AnyLinkableHash::from(EntryHash::from_raw_36(vec![4u8; 36]));
+    let result = validate_create_link_original_hash_pointer(
+        make_create_link(alice),
+        base,
+        target,
+        LinkTag::new(vec![]),
+    )
+    .expect("malformed target should be classified, not error");
+    match result {
+        ValidateCallbackResult::Invalid(msg) => {
+            assert!(msg.contains("OriginalHashPointer target must be an ActionHash"));
+        }
+        other => panic!("expected Invalid, got {other:?}"),
+    }
+}
+
+#[test]
+fn delete_link_original_hash_pointer_enforces_author_equality() {
+    let alice = agent_pubkey(1);
+    let mallory = agent_pubkey(99);
+    let (base, target, tag) = link_args();
+    let accept = validate_delete_link_original_hash_pointer(
+        make_delete_link(alice.clone()),
+        make_create_link(alice.clone()),
+        base.clone(),
+        target.clone(),
+        tag.clone(),
+    )
+    .expect("validator should not error in test");
+    assert!(matches!(accept, ValidateCallbackResult::Valid));
+    let reject = validate_delete_link_original_hash_pointer(
+        make_delete_link(mallory),
+        make_create_link(alice),
+        base,
+        target,
+        tag,
+    )
+    .expect("validator should not error in test");
+    match reject {
+        ValidateCallbackResult::Invalid(msg) => {
+            assert!(msg.contains("OriginalHashPointer"));
+            assert!(msg.contains("attempted by"));
+        }
+        other => panic!("expected Invalid, got {other:?}"),
+    }
+}

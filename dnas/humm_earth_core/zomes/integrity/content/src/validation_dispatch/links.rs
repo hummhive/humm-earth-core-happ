@@ -45,9 +45,10 @@ pub(super) fn dispatch_create_link(
         LinkTypes::InviteToRedemptions => {
             validate_create_link_invite_to_redemptions(action, base, target, tag)
         }
-        LinkTypes::OriginalHashPointer | LinkTypes::TimePath | LinkTypes::TimeItem => {
-            Ok(ValidateCallbackResult::Valid)
+        LinkTypes::OriginalHashPointer => {
+            validate_create_link_original_hash_pointer(action, base, target, tag)
         }
+        LinkTypes::TimePath | LinkTypes::TimeItem => Ok(ValidateCallbackResult::Valid),
     }
 }
 
@@ -125,9 +126,10 @@ pub(super) fn dispatch_delete_link(
         LinkTypes::InviteToRedemptions => {
             validate_delete_group_link(action, original_action, "InviteToRedemptions")
         }
-        LinkTypes::OriginalHashPointer | LinkTypes::TimePath | LinkTypes::TimeItem => {
-            Ok(ValidateCallbackResult::Valid)
+        LinkTypes::OriginalHashPointer => {
+            validate_delete_link_original_hash_pointer(action, original_action, base, target, tag)
         }
+        LinkTypes::TimePath | LinkTypes::TimeItem => Ok(ValidateCallbackResult::Valid),
     }
 }
 

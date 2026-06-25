@@ -175,12 +175,15 @@ Update 2026-06-13 (post pass-4-query-tolerance + v1.0.0 release prep):
     v1.0.0), `.newTasks/` empty; no other shipped items outstanding per `git log v1.0.0..HEAD`.
   Staleness warnings: none outstanding (HUMM_TAURI_* / PASS_*_DEPLOY_HANDOFF.md left as historical narrative).
 
-Update 2026-06-24 (dry-refactor pass-6 candidate):
-  Trigger: dry-refactor branch structural DRY refactor.
-  Diff vs prior scan: SMALL/MEDIUM (module paths changed; extern, EntryTypes,
-  LinkTypes, wire fields, serde tags, and dependencies unchanged).
+Update 2026-06-24 (dry-refactor pass-6 candidate, follow-up BLOCK fixes):
+  Trigger: dry-refactor branch structural DRY refactor + security/Holochain
+  oracle findings C-BLOCK-1 and C-BLOCK-2.
+  Diff vs prior scan: SMALL/MEDIUM (module paths changed; validation logic
+  hardened; extern, EntryTypes, LinkTypes, wire fields, serde tags, and
+  dependencies unchanged).
 
-  ~ architecture.md  — added pass-6 candidate lineage and branch/current-release split.
+  ~ architecture.md  — updated pass-6 candidate lineage to DNA uhC0ksXs and
+                       noted validation hardening.
   ~ backend.md       — updated coordinator encrypted_content key files: migration/
                        and signals/ directory modules.
   ~ data.md          — updated integrity source paths to encrypted_content/,
@@ -193,9 +196,15 @@ Update 2026-06-24 (dry-refactor pass-6 candidate):
     - Integrity: encrypted_content.rs, hive.rs, group.rs split into directory modules;
                  validation_dispatch routes through entry/link helper modules while
                  EntryTypes/LinkTypes stay in lib.rs.
+    - Follow-up hardening: OriginalHashPointer create/delete validation now binds
+      pointers to EncryptedContent action roots; update dispatch rejects
+      cross-entry-type updates before per-entry validators; coordinator updates
+      derive roots from native action metadata instead of pointer-link [0].
     - Tests: Sweettest support module added; encrypted_content tests split into
              header/delete/links/direct_message/witnesses; recipient_witnesses test
-             added; owner_and_acl grant-window coverage added.
-    - New DNA candidate: uhC0kOQX5rU8yL6CIEWAfGu1G5TaNsgMcS7yp-D0fV2eG1-2bA7iJ.
+             added; owner_and_acl grant-window coverage added; pointer/update type
+             unit tests added.
+    - New DNA candidate: uhC0ksXsJOTlVvhUn3KWB0nN6j-II_9BxlsRiMqR9ajhFhYS7gSMz.
 
-  Staleness warnings: none known after manual codemap refresh.
+  Staleness warnings: WARN-class security/Holochain review items remain cataloged
+  in docs/sec-holo-review/findings-catalog.md; BLOCK items are fixed and re-gated.

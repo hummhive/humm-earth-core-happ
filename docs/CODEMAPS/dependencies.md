@@ -82,10 +82,11 @@ run-local-services --signal-port`.
 Prebuilt binaries for every DNA generation live at `~/hummhive-official-happ-versions/`
 with `MANIFEST.tsv` mapping label → commit → DNA hash → SHA256 → filename.
 Mirrored in `../humm-tauri/.testdata/happs/` for migration testing.
-`dry-refactor` carries a **pass-6 candidate** (structural integrity refactor, hc
-0.6.1): DNA `uhC0kOQX5rU8yL6CIEWAfGu1G5TaNsgMcS7yp-D0fV2eG1-2bA7iJ`, integrity wasm
-`156d3ea2…`, content wasm `0d022f07…`, happ
-`3dcb8827d7d45f3fabc68708862c4d379ed52d0b30f609ebed3f3b6dc8524d4e`, not released.
+`dry-refactor` carries a **pass-6 candidate** (structural integrity refactor +
+validation hardening, hc 0.6.1): DNA
+`uhC0ksXsJOTlVvhUn3KWB0nN6j-II_9BxlsRiMqR9ajhFhYS7gSMz`, integrity wasm
+`2656a910…`, content wasm `58b1d85f…`, happ
+`3062de3851eac81fedd425325b30f3cabaaa2000e1e295ba7db5d4d031dda5d3`, not released.
 `main` remains **v2.0.0 = pass-5-owner-role**: DNA `uhC0k2dX…`, integrity wasm
 `53d867f7…`, content wasm `48065345…`, happ `42dbf9df…`, built at `834335e` (tag
 `v2.0.0` at `4e28a86`) and distributed as

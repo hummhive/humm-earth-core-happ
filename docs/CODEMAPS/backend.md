@@ -15,7 +15,7 @@ get_encrypted_content(ActionHash) → EncryptedContentResponse
 get_many_encrypted_content(Vec<ActionHash>) → Vec<EncryptedContentResponse>
   └─ crud.rs → maps get_encrypted_content
 update_encrypted_content(UpdateEncryptedContentInput) → EncryptedContentResponse
-  └─ crud.rs → update_entry + EncryptedContentUpdates link + OriginalHashPointer link
+  └─ crud.rs → native update-root walk + update_entry + EncryptedContentUpdates link + OriginalHashPointer link
 delete_encrypted_content(ActionHash) → ActionHash
   └─ crud.rs → delete_entry (I-A tombstone) + sweep author's discovery links (self-scoping local-chain CreateLink query)
 ```

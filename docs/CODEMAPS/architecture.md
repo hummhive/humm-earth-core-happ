@@ -102,8 +102,9 @@ for cross-repo integration testing against this hApp.
 
 ## hApp Version Lineage
 
-Current branch: **`dry-refactor` = pass-6 candidate**, DNA `uhC0kOQX` (structural
-integrity refactor; no schema change), happ `3dcb8827`, not released. `main` remains
+Current branch: **`dry-refactor` = pass-6 candidate**, DNA `uhC0ksXs` (structural
+integrity refactor + validation hardening; no schema change), happ `3062de38`, not
+released. `main` remains
 **v2.0.0 = pass-5-owner-role**, DNA `uhC0k2dX`, happ `42dbf9df`, built at `834335e`
 (tag `v2.0.0` @ `4e28a86`). Official released binaries live in
 `~/hummhive-official-happ-versions/`. Conductor behavior is proven in-process via
@@ -121,4 +122,4 @@ integrity refactor; no schema change), happ `3dcb8827`, not released. `main` rem
 | pass-4-query-tolerance (v1.0.0) | uhC0k26bYG0q | no (coordinator) | decode-tolerant queries: `get_many` filter_map + `list_my_hives`/`_groups` `.ok().flatten()` (DNA held) |
 | pass-4-migration-rescue (v1.0.1) | uhC0k26bYG0q | no (coordinator) | dormancy rescue: `_local` read twins (`list_my_hives_local`, `get_latest_membership_local`) + `mark_migrated_v2` fail-soft + EntryType GroupGenesis filter (`try_decode_hive_genesis`); DNA held |
 | pass-5-owner-role (v2.0.0) | uhC0k2dXMIa1 | YES | Hive Owner role (offer/accept handshake) + reader read-only + role-grant hardening + GroupGenesis EntryType filter + pass-4 rescue `_local` externs merged onto main; hc 0.6.1 |
-| pass-6-dry-refactor (candidate) | uhC0kOQX5rU | YES | Structural module split only (`encrypted_content`, `hive`, `group`, `validation_dispatch`; coordinator `migration`/`signals` dirs); no EntryTypes/LinkTypes/wire changes |
+| pass-6-dry-refactor (candidate) | uhC0ksXsJOT | YES | Structural module split (`encrypted_content`, `hive`, `group`, `validation_dispatch`; coordinator `migration`/`signals` dirs) plus `OriginalHashPointer` and cross-entry-update validation hardening; no EntryTypes/LinkTypes/wire changes |
