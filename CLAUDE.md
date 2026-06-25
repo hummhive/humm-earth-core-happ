@@ -47,6 +47,9 @@ main-hc060 → pass-1 → pass-2 → pass-2.5 → pass-3 → pass-4 → pass-5 �
 - `dry-refactor` carries a pass-6 candidate structural integrity refactor plus
   follow-up validation hardening: no EntryTypes/LinkTypes or wire-shape changes,
   but integrity source/WASM changed.
+  It replaces a withdrawn pre-fix pass-6 candidate (`uhC0kOQX5…`, happ
+  `3dcb8827…`) that was never adopted downstream; do not mint pass-7 or add
+  constants for the withdrawn hash unless evidence appears that someone installed it.
 - Current branch: DNA `uhC0ksXs…`, hApp `3062de38…` (candidate, not released).
 - Main/v2.0.0: DNA `uhC0k2dX…`, hApp `42dbf9df…` (pass-5; prior `8f284777…` build was latent-bug + DELETED).
 

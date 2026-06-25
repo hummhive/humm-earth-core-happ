@@ -650,6 +650,29 @@ a coordinator-only stale bundle within the same integrity slips through.
 Durable follow-up = content.wasm sha pin or build-at-test-time fixture
 (deferred to Phase F).
 
+Withdrawn pre-fix pass-6 candidate (BAD — never distribute)
+------------------------------------------------------------
+An earlier local `dry-refactor` pass-6 candidate was announced before the
+follow-up security/Holochain BLOCK fixes. It was not pushed, tagged, copied to
+official versions, or adopted downstream. Because nobody is using that DNA, the
+fixed candidate below REPLACES pass-6 rather than becoming pass-7. Do not add
+or preserve humm-tauri constants, fixtures, manifests, or migration code for
+this withdrawn hash.
+
+  DNA hash (WITHDRAWN):      uhC0kOQX5rU8yL6CIEWAfGu1G5TaNsgMcS7yp-D0fV2eG1-2bA7iJ
+  content_integrity.wasm:    156d3ea2a9d5c6bb484a2beffe7cd05caac7c54a0a5fb8f2759e014854f90dbc
+  content.wasm:              0d022f076537a1f772e7b0e32678073093a18e6d0710d73e2a4eb6c1d6238a58
+  humm_earth_core.dna:       48642bfc928c382d22b892c8a2829bf737587d86fae5ea109661aef8ace11f9e
+  humm-earth-core-happ.happ: 3dcb8827d7d45f3fabc68708862c4d379ed52d0b30f609ebed3f3b6dc8524d4e
+
+Withdrawal reason:
+- `OriginalHashPointer` links were accepted without deterministic integrity
+  validation while coordinator update-root logic trusted pointer-link results.
+- Cross-entry-type app updates could route through the `EncryptedContent`
+  validator and bypass immutable-entry validators.
+- Fixing those findings changed integrity WASM bytes again, so the current
+  replacement candidate has a different DNA hash.
+
 Pass-6 dry-refactor (branch dry-refactor, candidate — structural integrity bump)
 --------------------------------------------------------------------------------
 Built from: local `dry-refactor` working tree after the DRY refactor split,

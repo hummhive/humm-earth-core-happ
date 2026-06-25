@@ -20,6 +20,15 @@ DNA bundle `0fd059306479e0500a2fb36bd4614c7a5b803576fee3fc7f3cda490d4e1d3600`,
 happ `3062de3851eac81fedd425325b30f3cabaaa2000e1e295ba7db5d4d031dda5d3`.
 Not pushed, tagged, distributed, or official.
 
+**Pass-6 numbering:** this candidate REPLACES the earlier pre-fix pass-6
+candidate `uhC0kOQX5rU8yL6CIEWAfGu1G5TaNsgMcS7yp-D0fV2eG1-2bA7iJ`
+(`happ 3dcb8827...`). That candidate is **WITHDRAWN / BAD / never
+distribute** because security/Holochain review found the `OriginalHashPointer`
+trust-boundary bug and cross-entry-type update bypass before it was adopted.
+Because nobody is using that DNA, do not mint pass-7 and do not add downstream
+constants or fixtures for the withdrawn hash.
+
+
 **Pass-6 change shape:** no EntryTypes/LinkTypes variants were added, removed, or
 reordered; no entry fields or serde tags changed. The DNA hash changes because
 integrity source/WASM bytes changed during directory-module splits plus follow-up
