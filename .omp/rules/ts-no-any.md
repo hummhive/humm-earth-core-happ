@@ -1,5 +1,5 @@
 ---
-description: Never `: any` or `as any` in the TS test harness — use unknown, a generic, or the real type
+description: "Never `: any` or `as any` in the TS test harness — use unknown, a generic, or the real type"
 condition:
   - ":\\s*any\\b"
   - "as\\s+any\\b"
