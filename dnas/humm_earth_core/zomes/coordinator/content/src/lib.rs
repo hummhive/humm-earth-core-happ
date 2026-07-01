@@ -3,8 +3,8 @@ pub mod linking;
 
 use content_integrity::*;
 use hdk::prelude::*;
-use std::collections::HashSet;
 pub use linking::*;
+use std::collections::HashSet;
 
 use encrypted_content::signals::{DmRemoteSignal, EncryptedContentSignal};
 
@@ -50,9 +50,9 @@ use encrypted_content::signals::{DmRemoteSignal, EncryptedContentSignal};
 /// - `create_encrypted_content` / `update_encrypted_content` /
 ///   `delete_encrypted_content` mutate this agent's source chain;
 ///   stays ungranted (only the author should write to their own chain).
-/// - `mark_migrated` (pass-1 follow-up) writes a forward-pointer marker
-///   onto this agent's own entries; same reasoning as the CRUD externs.
-///   Local-only by design.
+/// - `mark_migrated` / `mark_migrated_v2` (forward-pointer marker
+///   writers) commit to this agent's own chain; same reasoning as the
+///   CRUD externs. Local-only by design.
 pub fn set_cap_tokens() -> ExternResult<()> {
     let zome = zome_info()?.name;
     let mut fns = HashSet::new();
@@ -60,7 +60,10 @@ pub fn set_cap_tokens() -> ExternResult<()> {
     // CRUD + read externs.
     fns.insert((zome.clone(), "get_encrypted_content".into()));
     fns.insert((zome.clone(), "get_many_encrypted_content".into())); // C5 typo fix
-    fns.insert((zome.clone(), "get_encrypted_content_by_time_and_author".into()));
+    fns.insert((
+        zome.clone(),
+        "get_encrypted_content_by_time_and_author".into(),
+    ));
     fns.insert((zome.clone(), "list_by_dynamic_link".into()));
     fns.insert((zome.clone(), "list_by_hive_link".into()));
     fns.insert((zome.clone(), "get_by_content_id_link".into()));
@@ -73,16 +76,18 @@ pub fn set_cap_tokens() -> ExternResult<()> {
     // C4 — new intersection-fetch extern.
     fns.insert((zome.clone(), "fetch_pair_ss_with_hive_check".into()));
 
-    // Pass-1 follow-up — migration-marker reader. Reads already-public
-    // DHT data (walks an entry's update chain; same data any peer could
-    // fetch via `get_details` directly). Unrestricted matches the
-    // read-side cap pattern. `mark_migrated` (the write side) is
-    // intentionally NOT granted — see the "NOT GRANTED" block in the
-    // doc-comment above. The reader applies its own author-binding
-    // filter (only updates by the original entry's author count as
-    // valid markers; see `get_migration_marker`'s doc-comment), so it
-    // does not rely on the cap surface for forge resistance.
+    // Migration-marker readers (V1 + V2). Read already-public DHT data
+    // (walk an entry's update chain; the same data any peer could fetch
+    // via `get_details` directly). Unrestricted matches the read-side
+    // cap pattern. The write-side externs (`mark_migrated`,
+    // `mark_migrated_v2`) are intentionally NOT granted — see the "NOT
+    // GRANTED" block in the doc-comment above. Both readers apply their
+    // own author-binding filter (only updates by the original entry's
+    // author count as valid markers; see `get_migration_marker`'s
+    // doc-comment), so they do not rely on the cap surface for forge
+    // resistance.
     fns.insert((zome.clone(), "get_migration_marker".into()));
+    fns.insert((zome.clone(), "get_migration_marker_v2".into()));
 
     // `recv_remote_signal` is invoked by the conductor on every agent
     // listed in `send_remote_signal`'s recipient list. The HDK requires
@@ -255,8 +260,7 @@ fn signal_action(action: SignedActionHashed) -> ExternResult<()> {
 }
 
 fn signal_link_created(action: SignedActionHashed, create_link: CreateLink) -> ExternResult<()> {
-    if let Ok(Some(link_type)) =
-        LinkTypes::from_type(create_link.zome_index, create_link.link_type)
+    if let Ok(Some(link_type)) = LinkTypes::from_type(create_link.zome_index, create_link.link_type)
     {
         emit_signal(Signal::LinkCreated { action, link_type })?;
     }
@@ -278,8 +282,7 @@ fn signal_link_deleted(action: SignedActionHashed, delete_link: DeleteLink) -> E
             "Create Link should exist".to_string()
         )));
     };
-    if let Ok(Some(link_type)) =
-        LinkTypes::from_type(create_link.zome_index, create_link.link_type)
+    if let Ok(Some(link_type)) = LinkTypes::from_type(create_link.zome_index, create_link.link_type)
     {
         emit_signal(Signal::LinkDeleted { action, link_type })?;
     }
