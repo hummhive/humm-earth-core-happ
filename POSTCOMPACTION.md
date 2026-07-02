@@ -7,20 +7,28 @@
 
 ## Current state
 
-**Branch:** `dry-refactor` off synced `main` (`36e72d0`). `main` still carries
-**v2.0.0** (pass-5 owner role + GroupGenesis filter, DNA `uhC0k2dX…`, happ
-`42dbf9df…`). This branch is a **pass-6 candidate**: structural DRY refactor of
-coordinator/test harness plus integrity module splits.
+**Branch:** `main` at **v3.0.0** — pass-6 blessed 2026-07-02 and merged
+(`dry-refactor` → merge `2de8923`, tag `v3.0.0` on the merge commit). Pass-6 =
+structural DRY refactor (integrity + coordinator directory-module splits) plus
+security validation hardening. Prior: v2.0.0 (pass-5 owner role + GroupGenesis
+filter, DNA `uhC0k2dX…`, happ `42dbf9df…`) — now the migration SOURCE generation.
 
-**DNA FORKED on this branch** to
-`uhC0ksXsJOTlVvhUn3KWB0nN6j-II_9BxlsRiMqR9ajhFhYS7gSMz` (pass-6 candidate).
+**Pass-6 DNA (the new frozen invariant):**
+`uhC0ksXsJOTlVvhUn3KWB0nN6j-II_9BxlsRiMqR9ajhFhYS7gSMz`.
 Integrity wasm `2656a9100937f7e6d17e2eebd5e744a1ef16e8e36b0efa089dc2f6382a655ae2`,
 content wasm `58b1d85f3d57c2fffeccd39c2a9aab602761ce47519ee626def6ae05384a94af`,
 DNA bundle `0fd059306479e0500a2fb36bd4614c7a5b803576fee3fc7f3cda490d4e1d3600`,
 happ `3062de3851eac81fedd425325b30f3cabaaa2000e1e295ba7db5d4d031dda5d3`.
-Not pushed, tagged, distributed, or official.
+**Published:** `~/hummhive-official-happ-versions/` (MANIFEST row
+`pass-6-dry-refactor`, source commit `a07dc99`) + mirrored to
+`humm-tauri/.testdata/happs/` in BOTH clones — the .testdata MANIFEST row is
+deliberately parked ABOVE `pass-5-owner-role` (their
+`provisionFromManifest.currentGenerationRow()` = last row; flipping it is their
+cutover step 1). Reproduction re-verified at blessing: clean rebuild at
+`a07dc99` reproduced all hashes byte-identically. NOT pushed to GitHub (user
+pushes).
 
-**Pass-6 numbering:** this candidate REPLACES the earlier pre-fix pass-6
+**Pass-6 numbering:** this build REPLACES the earlier pre-fix pass-6
 candidate `uhC0kOQX5rU8yL6CIEWAfGu1G5TaNsgMcS7yp-D0fV2eG1-2bA7iJ`
 (`happ 3dcb8827...`). That candidate is **WITHDRAWN / BAD / never
 distribute** because security/Holochain review found the `OriginalHashPointer`
@@ -40,6 +48,10 @@ Migration still uses the existing DNA migration path.
 --workspace --all-targets -- -D warnings` green; Sweettest after rebuild = 12/12
 active green + 1 ignored dormancy differential. Follow-up security/Holochain
 BLOCK findings C-BLOCK-1 and C-BLOCK-2 were fixed and re-gated.
+Blessing verification (2026-07-02): reject-string contract vs pass-5 checked —
+integrity literals a strict superset (zero removals); coordinator lost only the
+two old pointer-path error strings (unmatched in humm-tauri, grep-verified),
+gained three native update-chain errors.
 
 **SECURITY — documented, accepted residual:** owner transfer is NOT final
 against a malicious PAST owner — any past owner can fork the lineage to
@@ -52,25 +64,27 @@ honest docs.
 **Pass-4 status:** v1.0.0 (pass-4-query-tolerance, DNA `uhC0k26b`, happ
 `2205337c`) remains the prior production release tag. v1.0.1
 (pass-4-migration-rescue, DNA `uhC0k26b`, happ `ca1b4225`) is the
-coordinator hot-swap staged for the live `@4` cell. v2.0.0 (pass-5, DNA
-`uhC0k2dX`, happ `42dbf9df`) is the next bundled release.
+coordinator hot-swap staged for any still-dormant live `@4` cell. v2.0.0 (pass-5,
+DNA `uhC0k2dX`, happ `42dbf9df`) is what humm-tauri currently bundles and runs
+(their `src-tauri/bin` sha `42dbf9df`, live pass-4→5 migration verified
+2026-07-01 on their side). v3.0.0 (pass-6) is the next cutover target.
 
 
 ## Outstanding follow-ups
 
-1. **Phase C done; Phases D–F pending** for the v2.0.0 landing (merge
-   fix-coordinator-pass5-groupgenesis-filter → pass-5, then pass-5 → main
-   as v2.0.0, then docs freshness). Tracked in `local://pass5-main-landing-plan.md`.
-2. **Merge `feat-integrity-pass-5-owner-role`** (user) — eventually as
-   the v2.0.0 main merge per the landing plan. Commit-local; synced
-   WSL→mount via `wsl-push.sh`. Assistant never pushes.
-3. **humm-tauri integration** (their team) — they hold the happ + MANIFEST row +
-   the full cutover contract (`docs/HUMM_TAURI_OWNER_ROLE_AND_ACL_INTEGRATION.md`):
-   repoint the governance owner-gate off `authorMembershipHash===null` to
-   `get_member_hive_role(me)==='Owner'`, the reject-string regexes, reader
-   read-only, migration, the read helpers, the honest owner residual + microcopy.
-4. **pass-4→pass-5 migration** for existing hives — `migrate-dna.ts` now skips
-   Owner grants (lineage-conferred); integration doc §5.
+1. **User pushes to GitHub** — mount `main` + `dry-refactor` + tag `v3.0.0` are
+   local-only (assistant never pushes).
+2. **humm-tauri pass-5→pass-6 cutover** (their team) — full runbook in
+   `docs/PASS_6_DEPLOY_HANDOFF.md`: manifest flip + provision, pass-6 DNA
+   constant in `flows.rs`, bundled-bin literal assertions, `happ_install.rs` v9
+   note, lineage-plumbing generalization (banner/aliases), standard
+   `migrate-dna.ts` @5→@6 migration. No UI/API cutover (wire contract
+   byte-preserved). mbox sent 2026-07-02.
+3. **pass-4→pass-5 migration** for straggler hives — `migrate-dna.ts` skips
+   Owner grants (lineage-conferred); direct 4→6 is unexercised — chain 4→5→6
+   or validate first (deploy handoff §Straggler `@4` hives).
+4. **Review WARN follow-ups** (non-blocking) — `docs/sec-holo-review/findings-catalog.md`
+   C-WARN-1..7 + open decision points.
 
 ---
 
@@ -84,7 +98,7 @@ coordinator hot-swap staged for the live `@4` cell. v2.0.0 (pass-5, DNA
 - **Build (reproducible):** `nix develop --command bash scripts/build-zomes.sh`, then
   `nix develop --command hc dna pack dnas/humm_earth_core/workdir`, then
   `nix develop --command hc app pack workdir --recursive`; `hc dna hash …` MUST print
-  `uhC0ksXs…` on `dry-refactor`; `main`/v2.0.0 remains `uhC0k2dX…`.
+  `uhC0ksXs…` on `main` (v3.0.0/pass-6). Pass-5/v2.0.0 was `uhC0k2dX…`.
 - **Tests:** host `cargo test -p content --lib` (25) + `-p content_integrity --lib` (76).
   Conductor: `crates/sweettest` (in-process, iroh). **Tryorama CANNOT boot on
   hc 0.6.x** — do not use it.
@@ -97,15 +111,17 @@ coordinator hot-swap staged for the live `@4` cell. v2.0.0 (pass-5, DNA
   devShell provides `openssl` + `pkg-config`; RustCrypto pinned to holochain's RCs.
 - Run: `cd crates/sweettest && nix develop ../.. --command bash -c 'export LIBCLANG_PATH=<nix clang lib dir>; cargo test -- --test-threads=1'`
   (`LIBCLANG_PATH` e.g. `/nix/store/…clang-18.1.8-lib/lib`).
-- **12/12 active green on `dry-refactor` pass-6 candidate** (coordinator_cleanup 2,
+- **12/12 active green on the pass-6 build (now `main`/v3.0.0)** (coordinator_cleanup 2,
   coordinator_query_tolerance 2, owner_and_acl 4, migration_rescue 3 active +1
   ignored, recipient_witnesses 1). First compile slow (conductor + wasmer + iroh).
 
-## Other branches (committed; pass-5 + rescue now landed on main)
+## Other branches (committed; pass-6 now landed on main)
 
 | Branch | Tip | What |
 |---|---|---|
-| `feat-integrity-pass-5-owner-role` | `e1a55a5` | **MERGED → main as v2.0.0** (this landing): owner role + reader read-only + 0.6.1 — DNA-forked `uhC0k2dX` |
+| `dry-refactor` | `2bc4740` | **MERGED → main as v3.0.0** (this landing): pass-6 DRY refactor + validation hardening — DNA-forked `uhC0ksXs` |
+| `feat-pass1-coordinator-marker-v2` | `28d7012` | pass-1 coordinator hot-swap fixture (marker-v2) for humm-tauri pass1→2 e2e |
+| `feat-integrity-pass-5-owner-role` | `e1a55a5` | MERGED → main as v2.0.0: owner role + reader read-only + 0.6.1 — DNA-forked `uhC0k2dX` |
 | `fix-coordinator-pass4-cleanup` | `0196d23` | pass-4 coordinator cleanup (pass-5 branched off it) |
 | `feat-integrity-pass-4-recipient-witnesses` | `8503b48` | Pass-4 integrity (G-6.2 witnesses) |
 
@@ -127,14 +143,12 @@ coordinator hot-swap staged for the live `@4` cell. v2.0.0 (pass-5, DNA
 - AdminWebsocket 400 → pass `wsClientOptions: { origin: "<anything>" }`.
 - Two agents, one conductor: same `network_seed` → shared DHT → offline cross-agent validation.
 - Reproducibility requires `nix develop` (`wasm-opt`) + `codegen-units = 1`.
-- **Editing the integrity crate forks the DNA.** Pass-5 did this INTENTIONALLY
-  (new DNA `uhC0k2dX`); the pass-4 "integrity frozen" rule is dead on this branch.
-  Going forward, pass-5's integrity wasm `53d867f7` + DNA `uhC0k2dX` are the new
-  invariant — hold them byte-identical on this branch; coordinator hot-swaps are
-  free (content.wasm may change). `cargo fmt --all` is fine on pass-5 (the fork
-  already moved the integrity wasm). rustc embeds `#[track_caller]` line numbers,
-  so any integrity edit shifts the wasm sha — expected for a sanctioned fork,
-  forbidden once a line is frozen.
+- **Editing the integrity crate forks the DNA.** Pass-6 did this INTENTIONALLY
+  (new DNA `uhC0ksXs`). Going forward, pass-6's integrity wasm `2656a910…` +
+  DNA `uhC0ksXs…` are the frozen invariant on `main` — hold them byte-identical;
+  coordinator hot-swaps are free (content.wasm may change). rustc embeds
+  `#[track_caller]` line numbers, so ANY integrity edit shifts the wasm sha —
+  only allowed for the next sanctioned pass.
 
 ## Key references
 
@@ -142,4 +156,4 @@ coordinator hot-swap staged for the live `@4` cell. v2.0.0 (pass-5, DNA
 - Conductor tests: `crates/sweettest/README.md` · Reproducibility: `.baseline-hashes.txt`
 - Build: `scripts/build-zomes.sh` + `scripts/strip-wasms.sh`
 - Official happ binaries: `~/hummhive-official-happ-versions/` + `MANIFEST.tsv` (mirrored in `humm-tauri/.testdata/happs/`)
-- Handoffs: `docs/PASS_5_DEPLOY_HANDOFF.md` + `docs/HUMM_TAURI_OWNER_ROLE_AND_ACL_INTEGRATION.md` (pass-5 owner role); `docs/PASS_4_DEPLOY_HANDOFF.md`, `docs/HUMM_TAURI_*` (recv-signal / SharedSecrets / content-type+witness / acl_spec-mutation / roadmap)
+- Handoffs: `docs/PASS_6_DEPLOY_HANDOFF.md` (pass-6 cutover runbook) + `docs/PASS_6_DRY_REFACTOR_HANDOFF.md` (pass-6 detail); `docs/PASS_5_DEPLOY_HANDOFF.md` + `docs/HUMM_TAURI_OWNER_ROLE_AND_ACL_INTEGRATION.md` (pass-5 owner role); `docs/PASS_4_DEPLOY_HANDOFF.md`, `docs/HUMM_TAURI_*` (recv-signal / SharedSecrets / content-type+witness / acl_spec-mutation / roadmap)
