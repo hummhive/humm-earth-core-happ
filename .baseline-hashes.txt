@@ -673,8 +673,8 @@ Withdrawal reason:
 - Fixing those findings changed integrity WASM bytes again, so the current
   replacement candidate has a different DNA hash.
 
-Pass-6 dry-refactor (branch dry-refactor, candidate — structural integrity bump)
---------------------------------------------------------------------------------
+Pass-6 dry-refactor (branch dry-refactor, BLESSED 2026-07-02 — structural integrity bump)
+------------------------------------------------------------------------------------------
 Built from: local `dry-refactor` working tree after the DRY refactor split,
 the follow-up security/Holochain BLOCK fixes, and a rebuilt pass-6 candidate.
 The refactor split coordinator `encrypted_content::{migration,signals}` and
@@ -686,7 +686,7 @@ LinkTypes, serde tags, entry fields, and wire shapes are unchanged; the DNA hash
 changes because integrity source/WASM bytes changed. Migration uses the existing
 DNA migration path because the DNA hash changed without schema changes.
 
-  DNA hash (CANDIDATE):      uhC0ksXsJOTlVvhUn3KWB0nN6j-II_9BxlsRiMqR9ajhFhYS7gSMz
+  DNA hash (BLESSED):        uhC0ksXsJOTlVvhUn3KWB0nN6j-II_9BxlsRiMqR9ajhFhYS7gSMz
   content_integrity.wasm:    2656a9100937f7e6d17e2eebd5e744a1ef16e8e36b0efa089dc2f6382a655ae2
   content.wasm:              58b1d85f3d57c2fffeccd39c2a9aab602761ce47519ee626def6ae05384a94af
   humm_earth_core.dna:       0fd059306479e0500a2fb36bd4614c7a5b803576fee3fc7f3cda490d4e1d3600
@@ -703,6 +703,12 @@ Verification captured on `dry-refactor`:
   rebuilding/packing this DNA.
 - `nix develop --command hc dna hash dnas/humm_earth_core/workdir/humm_earth_core.dna`
   printed the candidate hash above.
+- BLESSED 2026-07-02: reproduction re-verified — a clean `nix develop` rebuild
+  at zome-source tip `a07dc99` (later branch commits are docs/config-only)
+  reproduced all four sha256s and the DNA hash above byte-identically.
+  Published to `~/hummhive-official-happ-versions/` (MANIFEST row
+  `pass-6-dry-refactor`) and mirrored to `humm-tauri/.testdata/happs/` (both
+  clones; row parked above pass-5 — see docs/PASS_6_DEPLOY_HANDOFF.md).
 
 Reproducibility contract (effective pass-4 re-record)
 =====================================================
