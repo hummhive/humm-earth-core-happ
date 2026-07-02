@@ -26,10 +26,15 @@ rule). Error strings below are copied verbatim from the validators and
 are wire-stable; treat them as a contract for failure-path assertions.
 
 **DNA under test:**
-`uhC0k2dXMIa1yI-V4ibCWMiTY5G6-p0laq6IOAVQ2F8XXReDHSxyS` (pass-5).
+`uhC0ksXsJOTlVvhUn3KWB0nN6j-II_9BxlsRiMqR9ajhFhYS7gSMz` (pass-6, blessed
+2026-07-02). Pass-6 preserves every pass-5 scenario, wire shape, and reject
+string in this catalogue (verified strict superset — zero removals); it ADDS
+the `OriginalHashPointer` link-validation family and the cross-entry-type
+update rejection (`"Updates must preserve the original app entry type; create
+a new entry instead"`) — see `PASS_6_DEPLOY_HANDOFF.md`.
 
-_Line numbers in `(file:NNN)` refs are approximate after the pass-5 edits — the
-`file::test_name` is the durable, grep-able reference._
+_Line numbers in `(file:NNN)` refs are approximate after the pass-5/pass-6
+edits — the `file::test_name` is the durable, grep-able reference._
 
 ---
 

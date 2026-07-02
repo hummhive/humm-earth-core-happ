@@ -15,7 +15,7 @@ get_encrypted_content(ActionHash) → EncryptedContentResponse
 get_many_encrypted_content(Vec<ActionHash>) → Vec<EncryptedContentResponse>
   └─ crud.rs → maps get_encrypted_content
 update_encrypted_content(UpdateEncryptedContentInput) → EncryptedContentResponse
-  └─ crud.rs → update_entry + EncryptedContentUpdates link + OriginalHashPointer link
+  └─ crud.rs → native update-root walk + update_entry + EncryptedContentUpdates link + OriginalHashPointer link
 delete_encrypted_content(ActionHash) → ActionHash
   └─ crud.rs → delete_entry (I-A tombstone) + sweep author's discovery links (self-scoping local-chain CreateLink query)
 ```
@@ -187,9 +187,9 @@ coordinator/content/src/
     mod.rs                        (wire types: EncryptedContentResponse, CreateInput, UpdateInput)
     crud.rs                       (create/get/update/delete externs)
     queries.rs                    (list_by_*, count, fetch_pair)
-    signals.rs                    (EncryptedContentSignal, DmRemoteSignal, send_dm_* externs, send_encoded_remote_signal funnel)
+    signals/                     (EncryptedContentSignal, DmRemoteSignal, send_dm_* externs, ExternIO funnel)
     get_helpers.rs                (get_eh, get_record, get_latest_typed_from_eh)
-    migration.rs                  (MigrationMarkerV1/V2, mark_migrated*, get_migration_marker*)
+    migration/                   (MigrationMarkerV1/V2, mark_migrated*, get_migration_marker*)
   linking/
     hive_link.rs                  (create_hive_link — hive-shape Hive link)
     dynamic_links.rs              (create_dynamic_links — Dynamic links)

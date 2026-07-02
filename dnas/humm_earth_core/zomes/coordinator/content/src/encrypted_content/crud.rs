@@ -151,48 +151,50 @@ pub fn get_many_encrypted_content(
         .collect())
 }
 
-/// Resolve an `OriginalHashPointer` link target to an `ActionHash`.
+/// Resolve the root `EncryptedContent` action by walking native update metadata.
 ///
-/// The integrity zome validates `OriginalHashPointer` link targets as
-/// unconditionally `Valid` (no target-type or author check), so a non-member
-/// peer can plant a link whose target is an `EntryHash` rather than an
-/// `ActionHash`. Returning an `Err` keeps such a poison link from trapping the
-/// author's update with a `.unwrap()` panic — a cheap griefing vector that
-/// would otherwise abort the victim's update on every retry until the link is
-/// gossiped away. Mirrors the `let Some(ah) = …into_action_hash() else { … }`
-/// guard used in `probe_inbox`.
-fn original_pointer_action_hash(target: AnyLinkableHash) -> ExternResult<ActionHash> {
-    let Some(ah) = target.into_action_hash() else {
-        return Err(wasm_error!(WasmErrorInner::Guest(
-            "OriginalHashPointer target is not an ActionHash".to_string(),
-        )));
-    };
-    Ok(ah)
+/// `OriginalHashPointer` links are still written as an index/compatibility aid,
+/// but update authority must not depend on network-fetched pointer links: a
+/// hostile or stale pointer can race ahead of validation and poison `[0]`
+/// selection. The action chain is the authoritative root.
+fn encrypted_content_root_hash(mut action_hash: ActionHash) -> ExternResult<ActionHash> {
+    loop {
+        let record = get(action_hash.clone(), GetOptions::network())?.ok_or_else(|| {
+            wasm_error!(WasmErrorInner::Guest(
+                "Could not resolve EncryptedContent update-chain action".into(),
+            ))
+        })?;
+        let _: EncryptedContent = record
+            .entry()
+            .to_app_option()
+            .map_err(|e| wasm_error!(e))?
+            .ok_or_else(|| {
+                wasm_error!(WasmErrorInner::Guest(
+                    "Update-chain action does not reference an EncryptedContent".into(),
+                ))
+            })?;
+        match record.action() {
+            Action::Create(_) => return Ok(action_hash),
+            Action::Update(update) => action_hash = update.original_action_address.clone(),
+            _ => {
+                return Err(wasm_error!(WasmErrorInner::Guest(
+                    "EncryptedContent update-chain action must be a Create or Update".into(),
+                )));
+            }
+        }
+    }
 }
 
 #[hdk_extern]
 pub fn update_encrypted_content(
     input: UpdateEncryptedContentInput,
 ) -> ExternResult<EncryptedContentResponse> {
+    let original_content_hash =
+        encrypted_content_root_hash(input.previous_encrypted_content_hash.clone())?;
     let updated_encrypted_content_hash = update_entry(
         input.previous_encrypted_content_hash.clone(),
         &input.updated_encrypted_content,
     )?;
-    let original_hash_link = get_links(
-        LinkQuery::try_new(
-            input.previous_encrypted_content_hash.clone(),
-            LinkTypes::OriginalHashPointer,
-        )?,
-        GetStrategy::Network,
-    )?;
-
-    if original_hash_link.is_empty() {
-        return Err(wasm_error!(WasmErrorInner::Guest(
-            "Could not find the hash of the original EncryptedContent that is trying to be updated"
-                .to_string(),
-        )));
-    }
-    let original_content_hash = original_pointer_action_hash(original_hash_link[0].target.clone())?;
     create_link(
         original_content_hash.clone(),
         updated_encrypted_content_hash.clone(),
@@ -249,30 +251,4 @@ pub fn delete_encrypted_content(
     crate::delete_own_links_targeting(AnyLinkableHash::from(original_encrypted_content_hash))?;
 
     Ok(ah)
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    /// A poison pointer whose target is an `EntryHash` (not an `ActionHash`)
-    /// returns a clean `Err` instead of trapping. The integrity zome validates
-    /// `OriginalHashPointer` targets as unconditionally `Valid`, so a remote
-    /// peer can plant such a link; this is the regression guard for the
-    /// `.unwrap()` griefing vector in `update_encrypted_content`.
-    #[test]
-    fn original_pointer_rejects_non_action_hash_target() {
-        let poison = AnyLinkableHash::from(EntryHash::from_raw_36(vec![2u8; 36]));
-        let err = original_pointer_action_hash(poison).unwrap_err();
-        assert!(format!("{err:?}").contains("not an ActionHash"));
-    }
-
-    /// A pointer whose target is an `ActionHash` resolves to that hash.
-    #[test]
-    fn original_pointer_resolves_action_hash_target() {
-        let ah = ActionHash::from_raw_36(vec![7u8; 36]);
-        let resolved =
-            original_pointer_action_hash(AnyLinkableHash::from(ah.clone())).expect("resolves");
-        assert_eq!(resolved, ah);
-    }
 }

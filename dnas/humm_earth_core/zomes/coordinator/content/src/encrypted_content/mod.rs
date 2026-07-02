@@ -1,28 +1,21 @@
 //! `encrypted_content` — coordinator-side externs and helpers for the
 //! `EncryptedContent` integrity entry.
 //!
-//! Split out of the original monolithic `encrypted_content.rs` (which had
-//! grown past the file/function size cap that the repo enforces) into:
+//! Split out of the original monolithic `encrypted_content.rs` into:
 //!
 //! - `crud.rs` — create / get / get_many / update / delete externs.
 //! - `queries.rs` — every `list_by_*` / `count_links_by_hive` /
 //!   `get_by_content_id_link` / `fetch_pair_ss_with_hive_check` (C4).
-//! - `signals.rs` — `EncryptedContentSignal` + new `DmRemoteSignal`
-//!   (C6 delete-request, C7 WebRTC) + the `send_dm_*` externs and the
-//!   `remote_signal_acl_readers` fan-out helper.
-//! - `get_helpers.rs` — generic DHT-get helpers
-//!   (`get_eh`, `get_record`, `get_latest_typed_from_eh`, `sah_to_ah`).
-//! - `migration.rs` — forward-pointer migration markers
-//!   for the pass-2 DNA-hash change (`mark_migrated` / `mark_migrated_v2`
-//!   write externs + `get_migration_marker` / `get_migration_marker_v2`
-//!   readers; coordinator-only, no DNA-hash impact).
+//! - `signals/` — `EncryptedContentSignal`, `DmRemoteSignal`, `send_dm_*`
+//!   externs, and ACL-reader fan-out.
+//! - `get_helpers.rs` — generic DHT-get helpers.
+//! - `migration/` — forward-pointer migration markers and marker readers/writers.
 //!
 //! Public-API guarantee: every `#[hdk_extern]` and shared struct exposed
 //! by the original file is re-exported from this module so existing
-//! callsites and the conductor's WASM symbol table are unaffected. The
-//! integrity zome is NOT touched by any of this — the DNA hash stays
-//! byte-identical, which is the load-bearing constraint for shipping
-//! this work via the coordinator hot-swap path.
+//! callsites and the conductor's WASM symbol table are unaffected. Coordinator
+//! module splits remain hot-swappable; the sibling pass-6 integrity split is a
+//! sanctioned DNA-changing refactor tracked in the pass lineage docs.
 
 use content_integrity::*;
 use hdk::prelude::*;

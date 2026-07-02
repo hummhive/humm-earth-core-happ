@@ -4,6 +4,24 @@ Quick reference for the local `.claude/` skills, agents, and commands
 available in this repo. Copied/adapted from `~/.claude/` (global ECC install)
 and the humm-tauri toolkit, curated and pruned for Holochain DNA + Rust development.
 
+## HARD RULES (Codex / agents — read first)
+
+Codex loads this file natively (its `CLAUDE.md` counterpart). Under oh-my-pi these
+are also enforced by the `.omp/` TTSR rules + the `repo-standards` sticky context;
+running bare `codex`, this digest is the enforcement. Full rationale: `CLAUDE.md` +
+the `coding-standards` / `rust-patterns` / `rust-testing` skills.
+
+- **Read order:** `POSTCOMPACTION.md` → `README.md` → `CLAUDE.md` → `AGENTS.md`. Map: `docs/CODEMAPS/*`. Terms: `../humm-tauri/GLOSSARY.md`.
+- **Change gravity (LOAD-BEARING):** editing the **integrity** zome (`zomes/integrity/`) changes the DNA hash and **forks the chain** — only for a sanctioned new pass + migration, never a drive-by. The **coordinator** (`zomes/coordinator/`) is hot-swappable. Wire shapes: add fields with `#[serde(default)]`, remove only via migration.
+- **No panics in guest code:** `?` / `ExternResult` over `.unwrap()` / `.expect()` (a panic traps the WASM guest).
+- **No silent-swallow:** never `let _ = call()`, `if let Err(_)`, `.ok();`, or a masking `unwrap_or_default` that drops an `Err`.
+- **Exhaustive matching:** no catch-all `_ =>` arm for business enums.
+- **Iterators over loops.** HDK `debug!` / `warn!` for logs (there is no LoggingService here).
+- **Crypto HARD RULE:** never NIST curves (P-256 / secp256r1 / …). Approved: Curve25519 / Ed25519 / X25519 / XChaCha20-Poly1305 / Argon2id / HKDF-SHA512 / OsRng.
+- **TS tests:** no `any`. **Size:** functions ≤ ~50 lines.
+- **Git:** commit-local only — **never push** without an explicit instruction. Tabs, LF, single trailing newline.
+- **Filesystem:** never read/write outside the two clones; on WSL work in `~/humm-earth-core-happ/...`, never `/mnt/c/Users/...`.
+
 ## Commands
 
 | Command | File | Purpose |

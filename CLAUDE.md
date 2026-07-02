@@ -26,7 +26,7 @@ prebuilt binaries for every generation live at
 `~/hummhive-official-happ-versions/` with `MANIFEST.tsv` mapping
 label → commit → DNA hash → hApp SHA256.
 
-**Current generation: pass-5** (current code matches).
+**Current branch generation: pass-6 candidate** (`dry-refactor`; main/v2.0.0 remains pass-5).
 
 The built `.happ` goes into `../humm-tauri/src-tauri/bin/humm-earth-core-happ.happ`
 for integration with the Tauri app.
@@ -34,7 +34,7 @@ for integration with the Tauri app.
 **Pass lineage:**
 
 ```
-main-hc060 → pass-1 → pass-2 → pass-2.5 → pass-3 → pass-4 → pass-5 (current)
+main-hc060 → pass-1 → pass-2 → pass-2.5 → pass-3 → pass-4 → pass-5 → pass-6 candidate (dry-refactor)
 ```
 
 - `pass-2`, `pass-2.5`, `pass-2.5-cleanup` share the same DNA hash
@@ -44,7 +44,14 @@ main-hc060 → pass-1 → pass-2 → pass-2.5 → pass-3 → pass-4 → pass-5 (
 - `pass-5` is the first integrity bump since pass-4 (hive Owner role via
   offer/accept handshake + reader read-only + role-grant hardening; toolchain
   bumped to holochain 0.6.1 / hdk 0.6.1 / hdi 0.7.1).
-- Current: DNA `uhC0k2dX…`, hApp `42dbf9df…` (pass-5, released as v2.0.0; the prior `8f284777…` build was latent-bug + DELETED)
+- `dry-refactor` carries a pass-6 candidate structural integrity refactor plus
+  follow-up validation hardening: no EntryTypes/LinkTypes or wire-shape changes,
+  but integrity source/WASM changed.
+  It replaces a withdrawn pre-fix pass-6 candidate (`uhC0kOQX5…`, happ
+  `3dcb8827…`) that was never adopted downstream; do not mint pass-7 or add
+  constants for the withdrawn hash unless evidence appears that someone installed it.
+- Current branch: DNA `uhC0ksXs…`, hApp `3062de38…` (candidate, not released).
+- Main/v2.0.0: DNA `uhC0k2dX…`, hApp `42dbf9df…` (pass-5; prior `8f284777…` build was latent-bug + DELETED).
 
 ---
 

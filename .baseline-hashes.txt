@@ -650,6 +650,66 @@ a coordinator-only stale bundle within the same integrity slips through.
 Durable follow-up = content.wasm sha pin or build-at-test-time fixture
 (deferred to Phase F).
 
+Withdrawn pre-fix pass-6 candidate (BAD — never distribute)
+------------------------------------------------------------
+An earlier local `dry-refactor` pass-6 candidate was announced before the
+follow-up security/Holochain BLOCK fixes. It was not pushed, tagged, copied to
+official versions, or adopted downstream. Because nobody is using that DNA, the
+fixed candidate below REPLACES pass-6 rather than becoming pass-7. Do not add
+or preserve humm-tauri constants, fixtures, manifests, or migration code for
+this withdrawn hash.
+
+  DNA hash (WITHDRAWN):      uhC0kOQX5rU8yL6CIEWAfGu1G5TaNsgMcS7yp-D0fV2eG1-2bA7iJ
+  content_integrity.wasm:    156d3ea2a9d5c6bb484a2beffe7cd05caac7c54a0a5fb8f2759e014854f90dbc
+  content.wasm:              0d022f076537a1f772e7b0e32678073093a18e6d0710d73e2a4eb6c1d6238a58
+  humm_earth_core.dna:       48642bfc928c382d22b892c8a2829bf737587d86fae5ea109661aef8ace11f9e
+  humm-earth-core-happ.happ: 3dcb8827d7d45f3fabc68708862c4d379ed52d0b30f609ebed3f3b6dc8524d4e
+
+Withdrawal reason:
+- `OriginalHashPointer` links were accepted without deterministic integrity
+  validation while coordinator update-root logic trusted pointer-link results.
+- Cross-entry-type app updates could route through the `EncryptedContent`
+  validator and bypass immutable-entry validators.
+- Fixing those findings changed integrity WASM bytes again, so the current
+  replacement candidate has a different DNA hash.
+
+Pass-6 dry-refactor (branch dry-refactor, BLESSED 2026-07-02 — structural integrity bump)
+------------------------------------------------------------------------------------------
+Built from: local `dry-refactor` working tree after the DRY refactor split,
+the follow-up security/Holochain BLOCK fixes, and a rebuilt pass-6 candidate.
+The refactor split coordinator `encrypted_content::{migration,signals}` and
+integrity `encrypted_content`, `hive`, `group`, and `validation_dispatch` into
+directory modules. The BLOCK fixes add deterministic `OriginalHashPointer`
+validation, stop coordinator update logic from trusting network pointer links,
+and reject cross-entry-type updates before per-entry validators run. EntryTypes,
+LinkTypes, serde tags, entry fields, and wire shapes are unchanged; the DNA hash
+changes because integrity source/WASM bytes changed. Migration uses the existing
+DNA migration path because the DNA hash changed without schema changes.
+
+  DNA hash (BLESSED):        uhC0ksXsJOTlVvhUn3KWB0nN6j-II_9BxlsRiMqR9ajhFhYS7gSMz
+  content_integrity.wasm:    2656a9100937f7e6d17e2eebd5e744a1ef16e8e36b0efa089dc2f6382a655ae2
+  content.wasm:              58b1d85f3d57c2fffeccd39c2a9aab602761ce47519ee626def6ae05384a94af
+  humm_earth_core.dna:       0fd059306479e0500a2fb36bd4614c7a5b803576fee3fc7f3cda490d4e1d3600
+  humm-earth-core-happ.happ: 3062de3851eac81fedd425325b30f3cabaaa2000e1e295ba7db5d4d031dda5d3
+
+Verification captured on `dry-refactor`:
+- `cargo fmt --all --check`: green.
+- `cargo test -p content_integrity --lib`: 76/76 green.
+- `cargo test -p content --lib`: 25/25 green.
+- `cargo clippy --workspace --all-targets -- -D warnings`: green.
+- `nix develop --command bash scripts/build-zomes.sh`, `hc dna pack`, and
+  `hc app pack workdir --recursive`: green.
+- `crates/sweettest`: 12/12 active green + 1 ignored dormancy differential after
+  rebuilding/packing this DNA.
+- `nix develop --command hc dna hash dnas/humm_earth_core/workdir/humm_earth_core.dna`
+  printed the candidate hash above.
+- BLESSED 2026-07-02: reproduction re-verified — a clean `nix develop` rebuild
+  at zome-source tip `a07dc99` (later branch commits are docs/config-only)
+  reproduced all four sha256s and the DNA hash above byte-identically.
+  Published to `~/hummhive-official-happ-versions/` (MANIFEST row
+  `pass-6-dry-refactor`) and mirrored to `humm-tauri/.testdata/happs/` (both
+  clones; row parked above pass-5 — see docs/PASS_6_DEPLOY_HANDOFF.md).
+
 Reproducibility contract (effective pass-4 re-record)
 =====================================================
 

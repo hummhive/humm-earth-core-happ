@@ -1,0 +1,56 @@
+# Codex CLI — project configuration (Claude <-> Codex bridge) — humm-earth-core-happ
+#
+# Mirrors the Claude-app-native `.claude/` surface for a native Codex CLI session.
+# The oh-my-pi TTSR rules in `.omp/` already apply to BOTH backends when run under
+# omp; THIS file covers what a native Codex session needs that omp does not supply:
+# the SessionStart context hook (`.codex/hooks.json`), the reviewer subagents
+# (`.codex/agents/*.toml`), and harness defaults. AGENTS.md carries the standing
+# HARD RULES (Codex reads it natively as CLAUDE.md's counterpart) — Rust/HDK + the
+# integrity-zome change-gravity rule.
+#
+# Reference: https://developers.openai.com/codex/config-reference/
+# Bridge map + deployment: see .codex/README.md
+
+# Required for the SessionStart context-injection hook in .codex/hooks.json.
+[features]
+codex_hooks = true
+
+# Sandbox + approval defaults for a bare `codex` session. Read-only reviewer
+# subagents pin `sandbox_mode = "read-only"` in their own role files; the build /
+# doc agents inherit this workspace-write default. Model is left UNSET so every
+# agent inherits the session model (whatever omp / `codex --model` selects).
+sandbox_mode = "workspace-write"
+approval_policy = "on-request"
+
+# Global subagent settings — mirrors the parallel read-only reviewer-lane fan-out
+# the `standard-workflow` skill drives on the Claude side.
+[agents]
+max_threads = 6
+max_depth = 1
+
+# --- Reviewer + build/doc lanes (mirror of .claude/agents/*.md) --------------
+# Each role file is a thin adapter pointing at the canonical .claude/agents/<name>.md.
+
+[agents.code_reviewer]
+description = "Read-only general code-review lane — correctness, quality, maintainability, AI-generated-code smells over a git diff. Ties the specialist lanes together; defers Rust idiom to rust_reviewer, security to security_reviewer, swallowed faults to silent_failure_hunter."
+config_file = "agents/code-reviewer.toml"
+
+[agents.rust_reviewer]
+description = "Expert Rust code reviewer specializing in ownership, lifetimes, error handling, unsafe usage, and idiomatic HDK/HDI patterns. Use for all Rust/zome changes. MUST BE USED for Rust projects."
+config_file = "agents/rust-reviewer.toml"
+
+[agents.security_reviewer]
+description = "Read-only security reviewer for the Holochain DNA — validator authority, identity/spoofing, capability-grant scope, unsafe, and secret handling. Gating lane on any zome change. Applies the security-review skill."
+config_file = "agents/security-reviewer.toml"
+
+[agents.silent_failure_hunter]
+description = "Read-only reviewer that hunts silently-swallowed failures — errors caught and dropped, fallbacks that mask faults, results discarded without propagation. Gating lane after a change lands."
+config_file = "agents/silent-failure-hunter.toml"
+
+[agents.rust_build_resolver]
+description = "Rust build, compilation, and dependency error resolution specialist. Fixes cargo build errors, borrow-checker issues, and Cargo.toml problems with minimal changes. Use when Rust builds fail."
+config_file = "agents/rust-build-resolver.toml"
+
+[agents.doc_updater]
+description = "Documentation and codemap specialist. Use PROACTIVELY for updating codemaps and docs. Runs /update-codemaps, generates docs/CODEMAPS/*, updates READMEs and guides."
+config_file = "agents/doc-updater.toml"
