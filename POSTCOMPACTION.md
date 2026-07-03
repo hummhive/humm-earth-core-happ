@@ -75,11 +75,14 @@ DNA `uhC0k2dX`, happ `42dbf9df`) is what humm-tauri currently bundles and runs
 1. **User pushes to GitHub** — mount `main` + `dry-refactor` + tag `v3.0.0` are
    local-only (assistant never pushes).
 2. **humm-tauri pass-5→pass-6 cutover** (their team) — full runbook in
-   `docs/PASS_6_DEPLOY_HANDOFF.md`: manifest flip + provision, pass-6 DNA
-   constant in `flows.rs`, bundled-bin literal assertions, `happ_install.rs` v9
-   note, lineage-plumbing generalization (banner/aliases), standard
-   `migrate-dna.ts` @5→@6 migration. No UI/API cutover (wire contract
-   byte-preserved). mbox sent 2026-07-02.
+   `docs/PASS_6_DEPLOY_HANDOFF.md`. mbox sent 2026-07-02; marker-extern /
+   EntryTypes / no-rescue confirmations replied with artifact evidence.
+   **2026-07-03: live validation COMPLETE on the v3.0.0 canary** (GUI + 2
+   relays, cache-off): DM 2×2, invite loop on `@6`, all 4 upload scopes,
+   byte-exact media; ZERO DNA-side issues; remaining findings app-side
+   (their `.newTasks/…/13_HeadlessMigrationFindings.md` @ `0af39311`).
+   Pass-7 consideration captured: stable cross-generation content identity
+   (`docs/HUMM_TAURI_PASS_ROADMAP.md` §Pass-7 candidate considerations).
 3. **pass-4→pass-5 migration** for straggler hives — `migrate-dna.ts` skips
    Owner grants (lineage-conferred); direct 4→6 is unexercised — chain 4→5→6
    or validate first (deploy handoff §Straggler `@4` hives).

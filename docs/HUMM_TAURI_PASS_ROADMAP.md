@@ -368,6 +368,47 @@ earth-core bump to the 0.6.1 line should preserve the DNA hash (verify on rebuil
 stay a hot-swap.
 
 ---
+## Pass-5 (owner role, v2.0.0) + Pass-6 (validation hardening, v3.0.0) — short form
+
+Both passes carry full per-pass deploy handoffs; this roadmap keeps only the
+lineage line. Detail lives there:
+
+- **Pass-5 / v2.0.0** — ✅ shipped + adopted. DNA `uhC0k2dX…`, happ `42dbf9df…`.
+  Hive Owner role (offer/accept handshake) + reader read-only + role-grant
+  hardening + GroupGenesis EntryType filter. Cutover contract:
+  [`PASS_5_DEPLOY_HANDOFF.md`](./PASS_5_DEPLOY_HANDOFF.md) +
+  [`HUMM_TAURI_OWNER_ROLE_AND_ACL_INTEGRATION.md`](./HUMM_TAURI_OWNER_ROLE_AND_ACL_INTEGRATION.md).
+- **Pass-6 / v3.0.0** — ✅ shipped, blessed 2026-07-02. DNA `uhC0ksXs…`, happ
+  `3062de38…`. Integrity module refactor + `OriginalHashPointer` link
+  validation (native update-chain root) + cross-entry-type update gate; wire
+  contract byte-preserved from pass-5. Runbook:
+  [`PASS_6_DEPLOY_HANDOFF.md`](./PASS_6_DEPLOY_HANDOFF.md).
+  **2026-07-03: humm-tauri live validation COMPLETE on the v3.0.0 canary**
+  (GUI + 2 relays, cache-off): DM 2×2, invite loop on `@6`, uploads all 4
+  scopes, byte-exact media links; zero DNA-side issues. Remaining findings
+  were app-side (their `.newTasks/…/13_HeadlessMigrationFindings.md` @
+  `0af39311`).
+
+## Pass-7 candidate considerations (unscheduled)
+
+Collected from downstream field reports; NOT commitments.
+
+1. **Stable cross-generation content identity** (humm-tauri, 2026-07-03
+   validation report). Migration re-authors every entry under new action
+   hashes, so any app-side processed-set keyed by content id resurfaces
+   after each pass-N→N+1 (e.g. accepted invite-redemptions re-prompted;
+   they fixed it semantically — already-a-member ⇒ suppressed). A durable
+   content identity that survives re-authoring (e.g. a first-generation
+   origin id carried through migration imports) would erase this failure
+   class wholesale. Wire-shape impact: additive field(s) with
+   `#[serde(default)]` — still a DNA fork by definition (integrity change).
+2. Review WARN follow-ups from the pass-6 sec-holo review remain candidates
+   for any next integrity fork: discovery-link reindex-on-update,
+   `public_key_acl` bounds (`sec-holo-review/findings-catalog.md`
+   C-WARN-2/3 + open decision points).
+
+---
+
 
 ## How to add a new pass section
 
