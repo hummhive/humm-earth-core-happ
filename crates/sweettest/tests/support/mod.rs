@@ -5,7 +5,9 @@ use std::time::Duration;
 
 use holo_hash::{ActionHash, AgentPubKey};
 use holochain::prelude::DnaFile;
-use holochain::sweettest::{SweetCell, SweetConductor, SweetConductorBatch, SweetDnaFile, SweetZome};
+use holochain::sweettest::{
+    SweetCell, SweetConductor, SweetConductorBatch, SweetDnaFile, SweetZome,
+};
 use holochain_types::prelude::{SerializedBytes, UnsafeBytes};
 use serde::{Deserialize, Serialize};
 
@@ -14,8 +16,7 @@ use serde::{Deserialize, Serialize};
 ///
 /// Stale workdir bundles silently mask coordinator and integrity behavior; this
 /// hash gate keeps conductor tests on the intended DNA generation.
-pub const EXPECTED_DNA_HASH: &str =
-    "uhC0ksXsJOTlVvhUn3KWB0nN6j-II_9BxlsRiMqR9ajhFhYS7gSMz";
+pub const EXPECTED_DNA_HASH: &str = "uhC0ksXsJOTlVvhUn3KWB0nN6j-II_9BxlsRiMqR9ajhFhYS7gSMz";
 
 /// Absolute path to the pre-built DNA, resolved from this crate's manifest dir
 /// so integration tests are cwd-independent.

@@ -14,10 +14,10 @@ use holochain_types::prelude::{Signal, UnsafeBytes};
 use holochain_zome_types::prelude::ExternIO;
 use support::{
     create_hive, create_open_write_content, setup_cells, single_conductor_cell_app,
-    wait_for_count_links_by_hive_to, AclSpec, AuthorLinkPageInput, BlobPinHint,
-    BlobPinSignal, BoundedLinkPage, ContentRecord, DynamicLinkPageInput, EncryptedContent,
-    EncryptedContentHeader, HiveLinkPageInput, ListByHiveInput, MyContentByIdInput,
-    OwnContentRecords, SendBlobPinSignalInput, UpdateEncryptedContentInput,
+    wait_for_count_links_by_hive_to, AclSpec, AuthorLinkPageInput, BlobPinHint, BlobPinSignal,
+    BoundedLinkPage, ContentRecord, DynamicLinkPageInput, EncryptedContent, EncryptedContentHeader,
+    HiveLinkPageInput, ListByHiveInput, MyContentByIdInput, OwnContentRecords,
+    SendBlobPinSignalInput, UpdateEncryptedContentInput,
 };
 
 const BLOB_PROVIDER_CONTENT_TYPE: &str = "hummhive-core-blob-provider-v1";
@@ -146,8 +146,13 @@ async fn hive_page_walks_multiple_pages_without_dupes_or_skips() {
     assert_eq!(walked, expected, "walk must cover exactly the 7 entries");
 }
 
+/// A genuine position-without-record row is not constructible via public
+/// externs (the delete sweep removes the source link with the entry;
+/// only gossip lag produces it live) — so this pins the reachable half
+/// of the poison-row contract: a deleted entry drops from BOTH records
+/// and source positions, and the page stays a terminal, cursorable page.
 #[tokio::test(flavor = "multi_thread")]
-async fn page_source_positions_survive_unresolvable_targets() {
+async fn deleted_entry_drops_from_page_records_and_positions() {
     let (conductor, cell, zome) = single_conductor_cell_app().await;
     let hive = create_hive(&conductor, &zome, "poison-row-hive").await;
     let content_type = "pinned-hosts-poison-type";
@@ -171,22 +176,19 @@ async fn page_source_positions_survive_unresolvable_targets() {
 
     let middle = ActionHash::try_from(created[1].as_str()).expect("hash parses");
     let _deleted: ActionHash = conductor
-        .call(&zome, "delete_encrypted_content", middle)
+        .call(&zome, "delete_encrypted_content", middle.clone())
         .await;
     await_consistency_s(30, [&cell]).await.unwrap();
+    wait_for_count_links_by_hive_to(&conductor, &zome, &hive, content_type, 2).await;
+    wait_until_tombstoned(&conductor, &zome, middle).await;
 
-    let page = hive_page(
-        &conductor,
-        &zome,
-        hive,
-        content_type,
-        None,
-        Some(10),
-        None,
-    )
-    .await;
+    let page = hive_page(&conductor, &zome, hive, content_type, None, Some(10), None).await;
     assert_page_invariants(&page);
     assert!(!page.truncated, "single page must be terminal");
+    assert_eq!(
+        page.source_count, 2,
+        "swept link must leave exactly two source rows"
+    );
     let surviving: Vec<&String> = page.records.iter().map(|record| &record.hash).collect();
     assert!(
         !surviving.contains(&&created[1]),
@@ -194,8 +196,27 @@ async fn page_source_positions_survive_unresolvable_targets() {
     );
     assert!(
         surviving.contains(&&created[0]) && surviving.contains(&&created[2]),
-        "live entries must survive the poison row"
+        "live entries must survive the deleted row"
     );
+}
+
+async fn wait_until_tombstoned(conductor: &SweetConductor, zome: &SweetZome, hash: ActionHash) {
+    let deadline = std::time::Instant::now() + Duration::from_secs(30);
+    while std::time::Instant::now() < deadline {
+        let resolved: Result<ContentRecord, _> = conductor
+            .call_fallible(zome, "get_encrypted_content", hash.clone())
+            .await;
+        if let Err(err) = resolved {
+            let message = format!("{err:?}");
+            assert!(
+                message.contains("Could not find the EncryptedContent"),
+                "unexpected error class while waiting for tombstone: {message}"
+            );
+            return;
+        }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    panic!("entry {hash} still resolves 30s after delete");
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -282,30 +303,45 @@ async fn exact_own_lookup_excludes_foreign_collisions_and_scopes_by_hive() {
     let hive_h2 = create_hive(&conductors[0], &alice_zome, "own-hive-h2").await;
     await_consistency_s(60, [alice, bob]).await.unwrap();
 
-    let alice_h_first =
-        create_open_write_content(&conductors[0], &alice_zome, hive_h.clone(), content_type, "blob-x", None)
-            .await;
-    let alice_h_second =
-        create_open_write_content(&conductors[0], &alice_zome, hive_h.clone(), content_type, "blob-x", None)
-            .await;
-    let alice_h2_only =
-        create_open_write_content(&conductors[0], &alice_zome, hive_h2.clone(), content_type, "blob-x", None)
-            .await;
-    let bob_h_only =
-        create_open_write_content(&conductors[1], &bob_zome, hive_h.clone(), content_type, "blob-x", None)
-            .await;
+    let alice_h_first = create_open_write_content(
+        &conductors[0],
+        &alice_zome,
+        hive_h.clone(),
+        content_type,
+        "blob-x",
+        None,
+    )
+    .await;
+    let alice_h_second = create_open_write_content(
+        &conductors[0],
+        &alice_zome,
+        hive_h.clone(),
+        content_type,
+        "blob-x",
+        None,
+    )
+    .await;
+    let alice_h2_only = create_open_write_content(
+        &conductors[0],
+        &alice_zome,
+        hive_h2.clone(),
+        content_type,
+        "blob-x",
+        None,
+    )
+    .await;
+    let bob_h_only = create_open_write_content(
+        &conductors[1],
+        &bob_zome,
+        hive_h.clone(),
+        content_type,
+        "blob-x",
+        None,
+    )
+    .await;
     await_consistency_s(60, [alice, bob]).await.unwrap();
 
-    let alice_own: OwnContentRecords = conductors[0]
-        .call(
-            &alice_zome,
-            "get_my_content_by_id_link",
-            MyContentByIdInput {
-                hive_genesis_hash: hive_h.clone(),
-                content_id: "blob-x".to_string(),
-            },
-        )
-        .await;
+    let alice_own = my_content(&conductors[0], &alice_zome, hive_h.clone(), "blob-x").await;
     assert!(!alice_own.truncated);
     let mut alice_hashes: Vec<String> = alice_own
         .records
@@ -321,32 +357,35 @@ async fn exact_own_lookup_excludes_foreign_collisions_and_scopes_by_hive() {
     );
     assert!(!alice_hashes.contains(&alice_h2_only));
 
-    let bob_own: OwnContentRecords = conductors[1]
-        .call(
-            &bob_zome,
-            "get_my_content_by_id_link",
-            MyContentByIdInput {
-                hive_genesis_hash: hive_h.clone(),
-                content_id: "blob-x".to_string(),
-            },
-        )
-        .await;
+    let bob_own = my_content(&conductors[1], &bob_zome, hive_h.clone(), "blob-x").await;
     assert!(!bob_own.truncated);
     let bob_hashes: Vec<&String> = bob_own.records.iter().map(|record| &record.hash).collect();
     assert_eq!(bob_hashes, vec![&bob_h_only], "Bob sees exactly his one");
 
-    let empty: OwnContentRecords = conductors[0]
+    let empty = my_content(&conductors[0], &alice_zome, hive_h, "blob-y").await;
+    assert!(
+        empty.records.is_empty(),
+        "no-match is an empty result, not an error"
+    );
+    assert!(!empty.truncated);
+}
+
+async fn my_content(
+    conductor: &SweetConductor,
+    zome: &SweetZome,
+    hive_genesis_hash: ActionHash,
+    content_id: &str,
+) -> OwnContentRecords {
+    conductor
         .call(
-            &alice_zome,
+            zome,
             "get_my_content_by_id_link",
             MyContentByIdInput {
-                hive_genesis_hash: hive_h,
-                content_id: "blob-y".to_string(),
+                hive_genesis_hash,
+                content_id: content_id.to_string(),
             },
         )
-        .await;
-    assert!(empty.records.is_empty(), "no-match is an empty result, not an error");
-    assert!(!empty.truncated);
+        .await
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -457,7 +496,7 @@ fn sample_hint(hive: ActionHash, provider_record: ActionHash) -> BlobPinHint {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn blob_pin_signal_dispatch_stamps_provenance() {
+async fn blob_pin_signal_dispatch_accepts_family_and_rejects_junk() {
     let (conductor, _cell, zome) = single_conductor_cell_app().await;
     let hive = create_hive(&conductor, &zome, "signal-hive").await;
 
@@ -467,7 +506,7 @@ async fn blob_pin_signal_dispatch_stamps_provenance() {
         .call(&zome, "recv_remote_signal", pre_encoded)
         .await;
 
-    let junk = ExternIO::encode(&"garbage").expect("encode");
+    let junk = ExternIO::encode("garbage").expect("encode");
     let rejected: Result<(), _> = conductor
         .call_fallible(&zome, "recv_remote_signal", junk)
         .await;
@@ -487,15 +526,21 @@ async fn blob_pin_signal_round_trips_between_agents() {
     let bob_key = bob.agent_pubkey().clone();
     await_consistency_s(60, [alice, bob]).await.unwrap();
 
-    let mut alice_signals = conductors[0].raw_handle().subscribe_to_app_signals("test-app".to_string());
+    let mut alice_signals = conductors[0]
+        .raw_handle()
+        .subscribe_to_app_signals("test-app".to_string());
 
     let hive = create_hive(&conductors[1], &bob.zome("content"), "signal-fanout-hive").await;
+    // Forged sender claim: the recipient must see conductor-attested bob,
+    // proving sender-side clear + receiver-side stamp against a live forgery.
+    let mut forged_hint = sample_hint(hive.clone(), hive.clone());
+    forged_hint.from_agent = Some(alice_key.clone());
     let _: () = conductors[1]
         .call(
             &bob.zome("content"),
             "send_blob_pin_signal",
             SendBlobPinSignalInput {
-                signal: BlobPinSignal::TakeNow(sample_hint(hive.clone(), hive.clone())),
+                signal: BlobPinSignal::TakeNow(forged_hint),
                 recipients: vec![alice_key],
             },
         )
@@ -507,7 +552,10 @@ async fn blob_pin_signal_round_trips_between_agents() {
                 .recv()
                 .await
                 .expect("signal channel stays open");
-            let Signal::App { signal: app_signal, .. } = signal else {
+            let Signal::App {
+                signal: app_signal, ..
+            } = signal
+            else {
                 continue;
             };
             if let Ok(pin) = app_signal.into_inner().decode::<BlobPinSignal>() {
@@ -556,43 +604,41 @@ async fn author_page_scopes_to_author_and_pages() {
             .await,
         );
     }
-    let bob_created =
-        create_open_write_content(&conductors[1], &bob_zome, hive, content_type, "author-b", None)
-            .await;
+    let bob_created = create_open_write_content(
+        &conductors[1],
+        &bob_zome,
+        hive,
+        content_type,
+        "author-b",
+        None,
+    )
+    .await;
     await_consistency_s(60, [alice, bob]).await.unwrap();
 
     let author = alice.agent_pubkey().to_string();
-    let page1: BoundedLinkPage = conductors[0]
-        .call(
-            &alice_zome,
-            "list_by_author_page",
-            AuthorLinkPageInput {
-                author: author.clone(),
-                content_type: content_type.to_string(),
-                since_ts: None,
-                limit: Some(2),
-                source_after_action_hash: None,
-            },
-        )
-        .await;
+    let page1 = author_page(
+        &conductors[0],
+        &alice_zome,
+        &author,
+        content_type,
+        None,
+        None,
+    )
+    .await;
     assert_page_invariants(&page1);
     assert_eq!(page1.records.len(), 2);
     assert!(page1.truncated);
 
     let (since2, after2) = cursor_of(&page1);
-    let page2: BoundedLinkPage = conductors[0]
-        .call(
-            &alice_zome,
-            "list_by_author_page",
-            AuthorLinkPageInput {
-                author,
-                content_type: content_type.to_string(),
-                since_ts: since2,
-                limit: Some(2),
-                source_after_action_hash: after2,
-            },
-        )
-        .await;
+    let page2 = author_page(
+        &conductors[0],
+        &alice_zome,
+        &author,
+        content_type,
+        since2,
+        after2,
+    )
+    .await;
     assert_page_invariants(&page2);
     assert_eq!(page2.records.len(), 1);
     assert!(!page2.truncated);
@@ -605,8 +651,37 @@ async fn author_page_scopes_to_author_and_pages() {
         .collect();
     walked.sort();
     alice_created.sort();
-    assert_eq!(walked, alice_created, "author pages cover exactly Alice's 3");
-    assert!(!walked.contains(&bob_created), "Bob's entry must never appear");
+    assert_eq!(
+        walked, alice_created,
+        "author pages cover exactly Alice's 3"
+    );
+    assert!(
+        !walked.contains(&bob_created),
+        "Bob's entry must never appear"
+    );
+}
+
+async fn author_page(
+    conductor: &SweetConductor,
+    zome: &SweetZome,
+    author: &str,
+    content_type: &str,
+    since_ts: Option<i64>,
+    source_after_action_hash: Option<String>,
+) -> BoundedLinkPage {
+    conductor
+        .call(
+            zome,
+            "list_by_author_page",
+            AuthorLinkPageInput {
+                author: author.to_string(),
+                content_type: content_type.to_string(),
+                since_ts,
+                limit: Some(2),
+                source_after_action_hash,
+            },
+        )
+        .await
 }
 
 #[tokio::test(flavor = "multi_thread")]

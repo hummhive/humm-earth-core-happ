@@ -37,7 +37,7 @@ and an in-memory keystore.
 
 ## Active tests
 
-20 active tests + 1 ignored dormancy differential:
+21 active tests + 1 ignored dormancy differential:
 
 - `coordinator_cleanup.rs`: delete-link sweep and `get_messages_since(0)` replay.
 - `coordinator_query_tolerance.rs`: missing-target tolerance and mixed Inbox decode.

@@ -17,9 +17,9 @@ use std::collections::HashSet;
 use super::crud::get_encrypted_content;
 use super::EncryptedContentResponse;
 
-pub(crate) const LINK_PAGE_DEFAULT_LIMIT: usize = 100;
-pub(crate) const LINK_PAGE_HARD_LIMIT: usize = 256;
-pub(crate) const MY_CONTENT_HARD_LIMIT: usize = 4096;
+const LINK_PAGE_DEFAULT_LIMIT: usize = 100;
+const LINK_PAGE_HARD_LIMIT: usize = 256;
+const MY_CONTENT_HARD_LIMIT: usize = 4096;
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub struct SourcePosition {
@@ -232,7 +232,7 @@ fn decode_cursor_hash(encoded: &str) -> ExternResult<ActionHash> {
 /// Pure cursor core: sort by `(timestamp, create_link_hash)` (raw-byte
 /// hash order is THE deterministic tie-break), apply the cursor filter,
 /// then truncate to `limit`. Returns `(selected page, truncated)`.
-pub(crate) fn page_links(
+fn page_links(
     mut links: Vec<Link>,
     since_ts: Option<Timestamp>,
     after_hash: Option<ActionHash>,
@@ -266,7 +266,9 @@ fn cursor_admits(
 }
 
 fn sort_by_source_position(links: &mut [Link]) {
-    links.sort_by(|a, b| (a.timestamp, &a.create_link_hash).cmp(&(b.timestamp, &b.create_link_hash)));
+    links.sort_by(|a, b| {
+        (a.timestamp, &a.create_link_hash).cmp(&(b.timestamp, &b.create_link_hash))
+    });
 }
 
 fn dedupe_by_target(links: Vec<Link>) -> Vec<Link> {
@@ -325,7 +327,12 @@ mod tests {
 
     #[test]
     fn page_links_orders_by_timestamp_then_create_link_hash() {
-        let shuffled = vec![link_at(200, 5), link_at(100, 3), link_at(100, 1), link_at(100, 2)];
+        let shuffled = vec![
+            link_at(200, 5),
+            link_at(100, 3),
+            link_at(100, 1),
+            link_at(100, 2),
+        ];
         let (page, truncated) = page_links(shuffled, None, None, 10);
         assert!(!truncated);
         assert_eq!(indices(&page), vec![1, 2, 3, 5]);
@@ -374,7 +381,7 @@ mod tests {
         assert!(err.to_string().contains("limit must be >= 1"));
 
         assert_eq!(
-            resolve_page_limit(Some(4096)).expect("clamp"),
+            resolve_page_limit(Some(LINK_PAGE_HARD_LIMIT + 1)).expect("clamp"),
             LINK_PAGE_HARD_LIMIT
         );
         assert_eq!(
@@ -382,7 +389,9 @@ mod tests {
             LINK_PAGE_DEFAULT_LIMIT
         );
 
-        let many: Vec<Link> = (0..300).map(|i| link_at(100, i)).collect();
+        let many: Vec<Link> = (0..(LINK_PAGE_HARD_LIMIT + 44) as u16)
+            .map(|i| link_at(100, i))
+            .collect();
         let (page, truncated) = page_links(many, None, None, LINK_PAGE_HARD_LIMIT);
         assert!(truncated);
         assert_eq!(page.len(), LINK_PAGE_HARD_LIMIT);
@@ -390,12 +399,18 @@ mod tests {
 
     #[test]
     fn saturation_flags_truncated_at_hard_limit() {
-        let mut links: Vec<Link> = (0..4097).map(|i| link_at(100, i)).collect();
+        let mut links: Vec<Link> = (0..(MY_CONTENT_HARD_LIMIT + 1) as u16)
+            .map(|i| link_at(100, i))
+            .collect();
         links.push(link_at(100, 0));
 
         sort_by_source_position(&mut links);
         let deduped = dedupe_by_target(links);
-        assert_eq!(deduped.len(), 4097, "duplicate target must collapse");
+        assert_eq!(
+            deduped.len(),
+            MY_CONTENT_HARD_LIMIT + 1,
+            "duplicate target must collapse"
+        );
 
         let (page, truncated) = page_links(deduped, None, None, MY_CONTENT_HARD_LIMIT);
         assert!(truncated);
