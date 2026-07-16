@@ -37,7 +37,7 @@ and an in-memory keystore.
 
 ## Active tests
 
-12 active tests + 1 ignored dormancy differential:
+20 active tests + 1 ignored dormancy differential:
 
 - `coordinator_cleanup.rs`: delete-link sweep and `get_messages_since(0)` replay.
 - `coordinator_query_tolerance.rs`: missing-target tolerance and mixed Inbox decode.
@@ -47,3 +47,11 @@ and an in-memory keystore.
   and hive grant-window containment.
 - `recipient_witnesses.rs`: HiveGroup recipient witness accepts a real group
   membership through a live conductor.
+- `pinned_hosts.rs`: bounded source-cursor paging (hive/dynamic/author walks
+  without dupes or skips), exact-own content-id lookup (foreign-collision and
+  hive scoping), `latest_action_micros` recency (None on create, advances on
+  update), BlobPinSignal dispatch + provenance stamping (direct extern call,
+  junk-payload rejection, cross-agent delivery), and the legacy
+  `list_by_hive_link` `since_ts`/`limit` watermark sweep proof.
+
+Shared wire mirrors and conductor helpers live in `tests/support/mod.rs`.

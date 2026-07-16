@@ -2,9 +2,13 @@ mod support;
 
 use holo_hash::{ActionHash, AgentPubKey};
 use holochain::sweettest::await_consistency_s;
-use holochain_types::prelude::{SerializedBytes, UnsafeBytes};
-use serde::{Deserialize, Serialize};
-use support::{create_hive, setup_cells, GenesisResponse, MembershipResponse};
+use holochain_types::prelude::UnsafeBytes;
+use serde::Serialize;
+use support::{
+    create_hive, setup_cells, Acl, AclBucket, AclByGroupGenesis, AclSpec,
+    CreateEncryptedContentInput, CreateResponse, GenesisResponse, MembershipResponse,
+    RecipientWitness,
+};
 
 #[derive(Debug, Serialize)]
 struct CreateGroupGenesisInput {
@@ -22,62 +26,6 @@ struct CreateGroupMembershipInput {
     grantor_membership_hash: Option<ActionHash>,
     grantor_hive_membership_hash: Option<ActionHash>,
     expiry: Option<i64>,
-}
-
-#[derive(Debug, Serialize)]
-struct Acl {
-    owner: String,
-    admin: Vec<String>,
-    writer: Vec<String>,
-    reader: Vec<String>,
-}
-
-#[derive(Debug, Serialize)]
-struct AclByGroupGenesis {
-    owner: ActionHash,
-    admin: Vec<ActionHash>,
-    writer: Vec<ActionHash>,
-    reader: Vec<ActionHash>,
-}
-
-#[derive(Debug, Serialize)]
-enum AclBucket {
-    Reader,
-}
-
-#[derive(Debug, Serialize)]
-struct RecipientWitness {
-    pubkey: AgentPubKey,
-    bucket: AclBucket,
-    membership_hash: ActionHash,
-}
-
-#[derive(Debug, Serialize)]
-enum AclSpec {
-    HiveGroup {
-        hive_genesis_hash: ActionHash,
-        author_membership_hash: Option<ActionHash>,
-        group_acl: AclByGroupGenesis,
-        author_group_membership_hash: Option<ActionHash>,
-        recipient_witnesses: Vec<RecipientWitness>,
-    },
-}
-
-#[derive(Debug, Serialize)]
-struct CreateEncryptedContentInput {
-    id: String,
-    display_hive_id: String,
-    content_type: String,
-    revision_author_signing_public_key: String,
-    bytes: SerializedBytes,
-    acl_spec: AclSpec,
-    public_key_acl: Acl,
-    dynamic_links: Option<Vec<String>>,
-}
-
-#[derive(Debug, Deserialize)]
-struct CreateResponse {
-    hash: String,
 }
 
 #[tokio::test(flavor = "multi_thread")]

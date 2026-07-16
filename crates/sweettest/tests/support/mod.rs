@@ -1,10 +1,12 @@
 #![allow(dead_code)]
 
 use std::path::Path;
+use std::time::Duration;
 
 use holo_hash::{ActionHash, AgentPubKey};
 use holochain::prelude::DnaFile;
 use holochain::sweettest::{SweetCell, SweetConductor, SweetConductorBatch, SweetDnaFile, SweetZome};
+use holochain_types::prelude::{SerializedBytes, UnsafeBytes};
 use serde::{Deserialize, Serialize};
 
 /// Expected DNA hash for the pass-6 dry-refactor bundle this suite must run
@@ -139,4 +141,278 @@ pub async fn grant_hive_membership(
         )
         .await;
     response.hash
+}
+
+// --- Encrypted-content wire mirrors (shared by conductor tests) --------------
+
+#[derive(Debug, Serialize)]
+pub struct Acl {
+    pub owner: String,
+    pub admin: Vec<String>,
+    pub writer: Vec<String>,
+    pub reader: Vec<String>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct AclByGroupGenesis {
+    pub owner: ActionHash,
+    pub admin: Vec<ActionHash>,
+    pub writer: Vec<ActionHash>,
+    pub reader: Vec<ActionHash>,
+}
+
+#[derive(Debug, Serialize)]
+pub enum AclBucket {
+    Reader,
+}
+
+#[derive(Debug, Serialize)]
+pub struct RecipientWitness {
+    pub pubkey: AgentPubKey,
+    pub bucket: AclBucket,
+    pub membership_hash: ActionHash,
+}
+
+/// Mirror of the coordinator `AclSpec`, externally tagged like the
+/// coordinator enum's default serde shape. `OpenWrite` needs no hive
+/// membership (just a real target hive) yet still creates the full
+/// hive-scoped link bundle; `HiveGroup` carries the witness contract.
+#[derive(Debug, Serialize)]
+pub enum AclSpec {
+    HiveGroup {
+        hive_genesis_hash: ActionHash,
+        author_membership_hash: Option<ActionHash>,
+        group_acl: AclByGroupGenesis,
+        author_group_membership_hash: Option<ActionHash>,
+        recipient_witnesses: Vec<RecipientWitness>,
+    },
+    OpenWrite {
+        target_hive_genesis_hash: Option<ActionHash>,
+    },
+}
+
+#[derive(Debug, Serialize)]
+pub struct EncryptedContentHeader {
+    pub id: String,
+    pub display_hive_id: String,
+    pub content_type: String,
+    pub revision_author_signing_public_key: String,
+    pub acl_spec: AclSpec,
+    pub public_key_acl: Acl,
+}
+
+#[derive(Debug, Serialize)]
+pub struct EncryptedContent {
+    pub header: EncryptedContentHeader,
+    pub bytes: SerializedBytes,
+}
+
+#[derive(Debug, Serialize)]
+pub struct CreateEncryptedContentInput {
+    pub id: String,
+    pub display_hive_id: String,
+    pub content_type: String,
+    pub revision_author_signing_public_key: String,
+    pub bytes: SerializedBytes,
+    pub acl_spec: AclSpec,
+    pub public_key_acl: Acl,
+    pub dynamic_links: Option<Vec<String>>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct UpdateEncryptedContentInput {
+    pub previous_encrypted_content_hash: ActionHash,
+    pub updated_encrypted_content: EncryptedContent,
+}
+
+/// `EncryptedContentResponse` subset; serde ignores unasserted fields.
+#[derive(Debug, Deserialize)]
+pub struct CreateResponse {
+    pub hash: String,
+    #[serde(default)]
+    pub latest_action_micros: Option<i64>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct ListByHiveInput {
+    pub hive_genesis_hash: ActionHash,
+    pub content_type: String,
+    pub since_ts: Option<i64>,
+    pub limit: Option<usize>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct CountByHiveInput {
+    pub hive_genesis_hash: ActionHash,
+    pub content_type: String,
+    pub since_ts: Option<i64>,
+}
+
+// --- pass-6-pinned-hosts wire mirrors -----------------------------------------
+
+#[derive(Debug, Serialize)]
+pub struct HiveLinkPageInput {
+    pub hive_genesis_hash: ActionHash,
+    pub content_type: String,
+    pub since_ts: Option<i64>,
+    pub limit: Option<usize>,
+    pub source_after_action_hash: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct DynamicLinkPageInput {
+    pub hive_genesis_hash: ActionHash,
+    pub content_type: String,
+    pub dynamic_link: String,
+    pub since_ts: Option<i64>,
+    pub limit: Option<usize>,
+    pub source_after_action_hash: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct AuthorLinkPageInput {
+    pub author: String,
+    pub content_type: String,
+    pub since_ts: Option<i64>,
+    pub limit: Option<usize>,
+    pub source_after_action_hash: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct SourcePosition {
+    pub timestamp_micros: i64,
+    pub action_hash: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ContentRecord {
+    pub hash: String,
+    pub original_hash: String,
+    #[serde(default)]
+    pub latest_action_micros: Option<i64>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct BoundedLinkPage {
+    pub records: Vec<ContentRecord>,
+    pub source_count: usize,
+    pub source_positions: Vec<SourcePosition>,
+    pub truncated: bool,
+}
+
+#[derive(Debug, Serialize)]
+pub struct MyContentByIdInput {
+    pub hive_genesis_hash: ActionHash,
+    pub content_id: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct OwnContentRecords {
+    pub records: Vec<ContentRecord>,
+    pub truncated: bool,
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+pub struct BlobPinHint {
+    pub hive_genesis_hash: ActionHash,
+    pub blake3: String,
+    pub byte_variant: String,
+    pub provider_record_hash: ActionHash,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub expires_at_micros: Option<i64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub from_agent: Option<AgentPubKey>,
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+#[serde(tag = "pin")]
+pub enum BlobPinSignal {
+    Available(BlobPinHint),
+    TakeNow(BlobPinHint),
+}
+
+#[derive(Debug, Serialize)]
+pub struct SendBlobPinSignalInput {
+    pub signal: BlobPinSignal,
+    pub recipients: Vec<AgentPubKey>,
+}
+
+// --- Shared conductor helpers --------------------------------------------------
+
+pub fn owner_only_acl(owner: &str) -> Acl {
+    Acl {
+        owner: owner.to_string(),
+        admin: vec![],
+        writer: vec![],
+        reader: vec![],
+    }
+}
+
+/// Commit one OpenWrite entry targeting `hive_genesis_hash` and return the
+/// create-action hash (b64 string form, as the coordinator responds).
+pub async fn create_open_write_content(
+    conductor: &SweetConductor,
+    zome: &SweetZome,
+    hive_genesis_hash: ActionHash,
+    content_type: &str,
+    id: &str,
+    dynamic_links: Option<Vec<String>>,
+) -> String {
+    let author = zome.cell_id().agent_pubkey().clone();
+    let response: CreateResponse = conductor
+        .call(
+            zome,
+            "create_encrypted_content",
+            CreateEncryptedContentInput {
+                id: id.to_string(),
+                display_hive_id: "sweettest-hive".to_string(),
+                content_type: content_type.to_string(),
+                revision_author_signing_public_key: author.to_string(),
+                bytes: UnsafeBytes::from(vec![0u8]).into(),
+                acl_spec: AclSpec::OpenWrite {
+                    target_hive_genesis_hash: Some(hive_genesis_hash),
+                },
+                public_key_acl: owner_only_acl(&author.to_string()),
+                dynamic_links,
+            },
+        )
+        .await;
+    response.hash
+}
+
+/// Poll `count_links_by_hive` every 50 ms until it returns `expected`, or
+/// fail the test after 30 s. Holochain 0.6.1's cascade integrates
+/// self-authored link ops on its own cadence after `await_consistency_s`
+/// returns (the barrier only waits for ops already in the DHT-op table),
+/// so a bare post-commit count assert flakes. Mirrors the
+/// `wait_for_link_count` idiom holochain's own count_links tests use.
+pub async fn wait_for_count_links_by_hive_to(
+    conductor: &SweetConductor,
+    zome: &SweetZome,
+    hive_genesis_hash: &ActionHash,
+    content_type: &str,
+    expected: usize,
+) {
+    let deadline = std::time::Instant::now() + Duration::from_secs(30);
+    let mut latest: usize = usize::MAX;
+    while std::time::Instant::now() < deadline {
+        latest = conductor
+            .call(
+                zome,
+                "count_links_by_hive",
+                CountByHiveInput {
+                    hive_genesis_hash: hive_genesis_hash.clone(),
+                    content_type: content_type.to_string(),
+                    since_ts: None,
+                },
+            )
+            .await;
+        if latest == expected {
+            return;
+        }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    panic!(
+        "count_links_by_hive did not reach {expected} within 30s of polling (last value {latest})"
+    );
 }
