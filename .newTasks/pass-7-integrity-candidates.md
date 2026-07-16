@@ -96,9 +96,10 @@ Shipped surface with zero adoption at `725ed49a` (only `latest_action_micros` is
 
 ## D. Earth-core repo/infra (zero DNA impact; not part of any generation)
 
-### D1. Tag-triggered GitHub Release workflow + CI-callable verify script — BLOCKS their release track
-- Their production `DEFAULT_HAPP_SOURCE` is hard-pinned to `https://github.com/hummhive/humm-earth-core-happ/releases/latest/download/` (`app_config/schema.rs:56-61`) — **that URL 404s today** (no release workflow exists; `.github/workflows/test.yaml` only runs tests, and still pins stale Nix 2.12.0). Blocks their `04/03` ReproducibleHappBuildCi Phases 2–3 and `14/15` HostedHappRegistry.
-- Build: `scripts/verify-happ-dna-hash.sh <commit> <expected-dna-hash>` (wraps the existing reproducible pipeline) + a tag-triggered release job publishing `.happ` + MANIFEST row + SHA256SUMS as GitHub Release assets. Also bump the CI Nix pin.
+### D1. Tag-triggered GitHub Release workflow + CI-callable verify script — DEFERRED (owner, 2026-07-16)
+- **Deferral:** owner call — release-automation work batches with the other RC-window release tasks close to the initial RC; not now. Mitigation in the meantime: humm-tauri dev mode treats the repo-local `.testdata/happs/` mirror AS the versioned endpoint, so nothing is blocked until a downloadable-RC build is actually cut. Tracked in `.newTasks/github-release-automation-happ-registry.md`.
+- Their production `DEFAULT_HAPP_SOURCE` is hard-pinned to `https://github.com/hummhive/humm-earth-core-happ/releases/latest/download/` (`app_config/schema.rs:56-61`) — **that URL 404s today** (no release workflow exists; `.github/workflows/test.yaml` only runs tests, and still pins stale Nix 2.12.0). Blocks their `04/03` ReproducibleHappBuildCi Phases 2–3 and `14/15` HostedHappRegistry once the RC window opens.
+- Build (when un-deferred): `scripts/verify-happ-dna-hash.sh <commit> <expected-dna-hash>` (wraps the existing reproducible pipeline) + a tag-triggered release job publishing `.happ` + MANIFEST row + SHA256SUMS as GitHub Release assets. Also bump the CI Nix pin.
 
 ### D2. Handoff-doc refresh: `docs/HUMM_TAURI_DM_MESSAGING_INTEGRATION.md` still specifies an in-bytes Ed25519 signature for `humm-dm-keybinding-v1`; live client code relies solely on the shipped author-binding validator ("no in-bytes signature on the DHT path"). Refresh so nobody re-implements a redundant check.
 
@@ -108,7 +109,8 @@ Shipped surface with zero adoption at `725ed49a` (only `latest_action_micros` is
 
 ## F. Validated negatives (do NOT wishlist — fleet-confirmed 2026-07-16)
 
-- Capacity/transfer governor, public-web media serving (F2), S3-style API (F3), referral/growth, payments pipeline: all app-side; no DNA surface implied. (Payments' "countersigned transfer receipts in our DNA" is one of four undecided options, Tier-4 post-fundraise — not scope.)
+- Capacity/transfer governor, public-web media serving (F2), S3-style API (F3), referral/growth: all app-side; no DNA surface implied.
+- **Payments countersigned receipts — posture change (owner, 2026-07-16): leaning YES**, likely involving Unyt. Holochain countersigning so service logs exist only when provider AND customer both sign the served-transfer record. No countersigning-session primitive exists in this DNA today → genuine INTEGRITY candidate when scoped; promote to §A at pass-7 scoping if the Unyt/rails decision lands by then. Further out: a hardware-validator attestation path (results signed by us, CPU-Z-style "post validated results" flow) — needs a trust story for running + validating output before any DNA surface is designable; parked as research, no design implied yet.
 - Presence: reuses the existing remote-signal pattern; never committed to chain/DHT.
 - T12 Holochain content-delivery cell: explicitly dead (iroh-blobs supersedes).
 - Endpoint-binding entry type for edge hosting: existing author-binding already gives the needed guarantee — an integrity entry type would be over-scoped fork spend.
