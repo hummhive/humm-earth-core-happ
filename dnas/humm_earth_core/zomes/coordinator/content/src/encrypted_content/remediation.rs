@@ -100,11 +100,17 @@ pub(crate) fn check_items_bound(len: usize) -> ExternResult<()> {
 }
 
 /// Batch recreate+tombstone of hiveless originals, max 64 items. One
-/// outcome per input item in input order; a bad item NEVER aborts the
-/// batch. Idempotent: a re-run finds the corrected entry on its
-/// content-id path and reports `skipped_already_remediated`, retrying
-/// the original's tombstone if the first run's delete failed.
-/// Create/delete emit their normal signals. NOT cap-granted (mutator).
+/// outcome per input item in input order; business conditions
+/// (unresolvable / foreign / already-correct / already-remediated /
+/// hiveless-corrected) NEVER abort the batch. A create failure DOES
+/// abort the whole call: catching it would commit a partial scratch
+/// (entry on the content-id path without its Dynamic links) that the
+/// re-run probe would mistake for a completed remediation — whole-call
+/// Err rolls every write back atomically. Idempotent: a re-run finds
+/// the corrected entry on its content-id path and reports
+/// `skipped_already_remediated`, retrying the original's tombstone if
+/// the first run's delete failed. Create/delete emit their normal
+/// signals. NOT cap-granted (mutator).
 #[hdk_extern]
 pub fn remediate_hiveless_content(
     input: RemediateHivelessInput,
@@ -164,12 +170,7 @@ fn remediate_item(
         });
     }
 
-    let created = match create_encrypted_content(item.corrected) {
-        Ok(response) => response,
-        Err(err) => {
-            return Ok(failed(original_hash, format!("create failed: {err:?}")));
-        }
-    };
+    let created = create_encrypted_content(item.corrected)?;
     let detail = match delete_encrypted_content(item.original_action_hash) {
         Ok(_) => None,
         Err(err) => Some(format!("original delete failed (re-run remediates): {err:?}")),

@@ -136,9 +136,11 @@ pub fn find_or_create_group_genesis(
     let mut candidates: Vec<GroupGenesisResponse> = Vec::new();
     for link in links {
         let Some(target_ah) = link.target.into_action_hash() else {
+            debug!("find_or_create_group_genesis: skipping non-action-hash HiveToGroups target");
             continue;
         };
         let Some(record) = get(target_ah.clone(), GetOptions::network())? else {
+            debug!("find_or_create_group_genesis: skipping unresolvable HiveToGroups target {target_ah}");
             continue;
         };
         let Some(genesis) = record
