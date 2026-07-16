@@ -292,13 +292,17 @@ pub struct FetchPairWithHiveCheckInput {
     /// the action.author (post-pass-2: AND the link integrity validator
     /// confirmed `link.author == target.action.author`).
     pub author: String,
-    /// The active hive the caller trusts, as the `HiveGenesis` action
-    /// hash. The zome only returns entries also reachable from
-    /// `[active_hive_genesis_hash_b64, content_type, group_id]` →
-    /// `Dynamic` — a path a Writer+ member of THIS hive MUST have
-    /// authored (post-pass-2: enforced by the link integrity validator,
-    /// not just convention).
-    pub active_hive_genesis_hash: ActionHash,
+    /// `Some(hive)` — the active hive the caller trusts, as the
+    /// `HiveGenesis` action hash; only entries also reachable from
+    /// `[hive_b64, content_type, group_id]` → `Dynamic` are returned
+    /// (a path only a Writer+ member of THIS hive can have authored).
+    /// `None` (pass-6-idempotent-writes) — bounded union of that same
+    /// intersection across every hive the CALLEE belongs to
+    /// (`list_my_hives`). A `None` sent to an older coordinator fails
+    /// its required-field decode — desired hard-fail over silent
+    /// misbehavior.
+    #[serde(default)]
+    pub active_hive_genesis_hash: Option<ActionHash>,
     pub content_type: String,
     /// The pair/group identifier used as the third component of the
     /// dynamic path. Opaque to the zome.
@@ -352,6 +356,9 @@ pub struct FetchPairWithHiveCheckInput {
 /// in the link space are now structurally impossible (the link itself
 /// would fail validation), but the best-effort behaviour remains
 /// useful for the transient-gap case.
+/// Privacy of the `None` branch: the callee's hive set derives from its
+/// own Inbox links — public DHT data any peer can already walk — so the
+/// remote cap grant is unchanged.
 #[hdk_extern]
 pub fn fetch_pair_ss_with_hive_check(
     input: FetchPairWithHiveCheckInput,
@@ -370,36 +377,32 @@ pub fn fetch_pair_ss_with_hive_check(
         .collect();
 
     // Short-circuit: if the author has no entries on this content_type,
-    // skip the second DHT round-trip.
+    // skip every dynamic-path round-trip.
     if author_hashes.is_empty() {
         return Ok(vec![]);
     }
 
-    let hive_path = Path::from(vec![
-        Component::from(input.active_hive_genesis_hash.to_string()),
-        Component::from(input.content_type),
-        Component::from(input.group_id),
-    ]);
-    let hive_links = get_links(
-        LinkQuery::try_new(hive_path.path_entry_hash()?, LinkTypes::Dynamic)?,
-        GetStrategy::Network,
-    )?;
-    let hive_hashes: HashSet<ActionHash> = hive_links
-        .into_iter()
-        .filter_map(|link| link.target.into_action_hash())
-        .collect();
-
-    // Intersection driven by the SMALLER side (one HashSet::contains
-    // per smaller-side element). Authors typically have many entries
-    // across many groups; a single active group's dynamic path is much
-    // narrower — but we don't know a priori which is smaller, so pick
-    // at runtime.
-    let (small, large) = if author_hashes.len() <= hive_hashes.len() {
-        (author_hashes, &hive_hashes)
-    } else {
-        (hive_hashes, &author_hashes)
+    let hive_genesis_hashes: Vec<ActionHash> = match input.active_hive_genesis_hash {
+        Some(hive) => vec![hive],
+        None => {
+            let mut seen: HashSet<ActionHash> = HashSet::new();
+            crate::hive::queries::list_my_hives(())?
+                .into_iter()
+                .map(|hive| hive.hive_genesis_hash)
+                .filter(|hash| seen.insert(hash.clone()))
+                .collect()
+        }
     };
-    let intersection: Vec<ActionHash> = small.into_iter().filter(|h| large.contains(h)).collect();
+
+    let mut intersection: HashSet<ActionHash> = HashSet::new();
+    for hive in &hive_genesis_hashes {
+        intersection.extend(pair_intersection(
+            &author_hashes,
+            hive,
+            &input.content_type,
+            &input.group_id,
+        )?);
+    }
     if intersection.is_empty() {
         return Ok(vec![]);
     }
@@ -420,6 +423,41 @@ pub fn fetch_pair_ss_with_hive_check(
     Ok(out)
 }
 
+/// One author-path ∩ dynamic-path intersection for a single hive,
+/// driven by the smaller side (one `HashSet::contains` per element of
+/// whichever set is smaller — unknowable a priori, so picked at
+/// runtime).
+fn pair_intersection(
+    author_hashes: &HashSet<ActionHash>,
+    hive_genesis_hash: &ActionHash,
+    content_type: &str,
+    group_id: &str,
+) -> ExternResult<Vec<ActionHash>> {
+    let hive_path = Path::from(vec![
+        Component::from(hive_genesis_hash.to_string()),
+        Component::from(content_type),
+        Component::from(group_id),
+    ]);
+    let hive_links = get_links(
+        LinkQuery::try_new(hive_path.path_entry_hash()?, LinkTypes::Dynamic)?,
+        GetStrategy::Network,
+    )?;
+    let hive_hashes: HashSet<ActionHash> = hive_links
+        .into_iter()
+        .filter_map(|link| link.target.into_action_hash())
+        .collect();
+    let (small, large) = if author_hashes.len() <= hive_hashes.len() {
+        (author_hashes, &hive_hashes)
+    } else {
+        (&hive_hashes, author_hashes)
+    };
+    Ok(small
+        .iter()
+        .filter(|hash| large.contains(*hash))
+        .cloned()
+        .collect())
+}
+
 #[derive(Serialize, Deserialize, Debug)]
 pub struct ContentSummaryInput {
     pub hive_genesis_hash: ActionHash,
@@ -436,6 +474,10 @@ pub struct ContentTypeSummary {
 
 #[hdk_extern]
 pub fn content_summary(input: ContentSummaryInput) -> ExternResult<Vec<ContentTypeSummary>> {
+    summarize(input)
+}
+
+fn summarize(input: ContentSummaryInput) -> ExternResult<Vec<ContentTypeSummary>> {
     let mut summaries = Vec::with_capacity(input.content_types.len());
     for content_type in input.content_types {
         let path = Path::from(vec![
@@ -463,6 +505,42 @@ pub fn content_summary(input: ContentSummaryInput) -> ExternResult<Vec<ContentTy
         });
     }
     Ok(summaries)
+}
+
+pub(crate) const CONTENT_SUMMARY_MANY_MAX_HIVES: usize = 32;
+
+pub(crate) fn check_summary_many_bound(len: usize) -> ExternResult<()> {
+    if len > CONTENT_SUMMARY_MANY_MAX_HIVES {
+        return Err(wasm_error!(WasmErrorInner::Guest(String::from(
+            "content_summary_many: at most 32 hives per call"
+        ))));
+    }
+    Ok(())
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct HiveContentSummary {
+    pub hive_genesis_hash: ActionHash,
+    pub summaries: Vec<ContentTypeSummary>,
+}
+
+/// Batch [`content_summary`] over up to 32 hives, order-preserving.
+/// Cap-granted: same public-link-space read class as `content_summary`.
+#[hdk_extern]
+pub fn content_summary_many(
+    inputs: Vec<ContentSummaryInput>,
+) -> ExternResult<Vec<HiveContentSummary>> {
+    check_summary_many_bound(inputs.len())?;
+    inputs
+        .into_iter()
+        .map(|input| {
+            let hive_genesis_hash = input.hive_genesis_hash.clone();
+            Ok(HiveContentSummary {
+                hive_genesis_hash,
+                summaries: summarize(input)?,
+            })
+        })
+        .collect()
 }
 
 #[derive(Serialize, Deserialize, Debug)]

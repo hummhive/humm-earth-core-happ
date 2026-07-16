@@ -25,6 +25,7 @@ pub mod get_helpers;
 pub mod migration;
 pub mod paging;
 pub mod queries;
+pub mod remediation;
 pub mod signals;
 
 // --- Shared wire-shape types -------------------------------------------------
@@ -84,8 +85,9 @@ pub struct UpdateEncryptedContentInput {
 // --- Re-exports for external (lib.rs / tests / older import paths) consumers -
 
 pub use crud::{
-    create_encrypted_content, delete_encrypted_content, get_encrypted_content,
-    get_many_encrypted_content, update_encrypted_content,
+    create_encrypted_content, delete_encrypted_content, find_or_create_encrypted_content,
+    get_encrypted_content, get_many_encrypted_content, update_encrypted_content,
+    FindOrCreateContentResponse,
 };
 pub use migration::{
     build_marker_payload, build_marker_v2_payload, get_migration_marker, get_migration_marker_v2,
@@ -103,6 +105,10 @@ pub use queries::{
     list_by_author, list_by_dynamic_link, list_by_hive_link, CountByHiveInput,
     FetchPairWithHiveCheckInput, ListByAclInput, ListByAuthorInput, ListByContentIdInput,
     ListByDynamicLinkInput, ListByHiveInput,
+};
+pub use remediation::{
+    list_my_hiveless_content, remediate_hiveless_content, RemediateHivelessInput,
+    RemediateHivelessItem, RemediationOutcome, RemediationStatus,
 };
 pub use signals::{
     remote_signal_acl_readers, send_blob_pin_signal, send_dm_call_init_accept,

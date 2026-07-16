@@ -20,6 +20,7 @@ use crate::{
 };
 
 use super::get_helpers::{get_eh, get_latest_typed_from_eh};
+use super::paging::{canonical_lowest_hash, content_id_records_by_author};
 use super::signals::{
     remote_signal_acl_readers, EncryptedContentSignal, EncryptedContentSignalType,
 };
@@ -30,15 +31,8 @@ pub fn create_encrypted_content(
     input: CreateEncryptedContentInput,
 ) -> ExternResult<EncryptedContentResponse> {
     let encrypted_content = EncryptedContent {
-        header: EncryptedContentHeader {
-            id: input.id,
-            display_hive_id: input.display_hive_id,
-            content_type: input.content_type.clone(),
-            revision_author_signing_public_key: input.revision_author_signing_public_key,
-            acl_spec: input.acl_spec,
-            public_key_acl: input.public_key_acl,
-        },
-        bytes: input.bytes,
+        header: header_from_input(&input),
+        bytes: input.bytes.clone(),
     };
     let action_hash = create_entry(&EntryTypes::EncryptedContent(encrypted_content.clone()))?;
     let response = EncryptedContentResponse {
@@ -114,6 +108,66 @@ pub fn create_encrypted_content(
     }
 
     Ok(response)
+}
+
+/// Assemble the integrity [`EncryptedContentHeader`] from a create
+/// input. Single source of truth shared by [`create_encrypted_content`],
+/// [`find_or_create_encrypted_content`], and the hiveless remediation
+/// extern — the header decides `hive_context()` and therefore which
+/// discovery links a write earns.
+pub(crate) fn header_from_input(input: &CreateEncryptedContentInput) -> EncryptedContentHeader {
+    EncryptedContentHeader {
+        id: input.id.clone(),
+        display_hive_id: input.display_hive_id.clone(),
+        content_type: input.content_type.clone(),
+        revision_author_signing_public_key: input.revision_author_signing_public_key.clone(),
+        acl_spec: input.acl_spec.clone(),
+        public_key_acl: input.public_key_acl.clone(),
+    }
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct FindOrCreateContentResponse {
+    pub response: EncryptedContentResponse,
+    pub was_created: bool,
+}
+
+/// Idempotent create keyed on `(hive_genesis_hash, input.id)`,
+/// caller-authored only. If the caller already wrote an entry on that
+/// content-id path, return it (`was_created: false`) — NO write, NO
+/// signal, and content differences between `input` and the found entry
+/// are ignored by design (find wins: crash-resume semantics).
+/// Otherwise delegate to [`create_encrypted_content`].
+///
+/// Canonical pick when multiple caller-authored candidates exist:
+/// lowest-b64 hash, matching humm-tauri's `selectCanonicalByHash.ts`.
+/// Cross-agent duplicate prevention is NOT provided here (author-scoped
+/// find); that is the pass-7 A11 uniqueness-validator work.
+/// NOT cap-granted: mutator — a remote grant would let peers write to
+/// the callee's chain.
+#[hdk_extern]
+pub fn find_or_create_encrypted_content(
+    input: CreateEncryptedContentInput,
+) -> ExternResult<FindOrCreateContentResponse> {
+    let header = header_from_input(&input);
+    let Some(hive) = header.hive_context() else {
+        return Err(wasm_error!(WasmErrorInner::Guest(String::from(
+            "find_or_create_encrypted_content requires a hive-scoped acl_spec (HiveGroup or OpenWrite with target)"
+        ))));
+    };
+    let me = agent_info()?.agent_initial_pubkey;
+    let (records, _truncated) = content_id_records_by_author(hive, &input.id, &me)?;
+    if let Some(existing) = canonical_lowest_hash(records) {
+        return Ok(FindOrCreateContentResponse {
+            response: existing,
+            was_created: false,
+        });
+    }
+    let response = create_encrypted_content(input)?;
+    Ok(FindOrCreateContentResponse {
+        response,
+        was_created: true,
+    })
 }
 
 #[hdk_extern]

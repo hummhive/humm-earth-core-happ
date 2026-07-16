@@ -3,7 +3,7 @@ use hdk::prelude::*;
 
 use super::markers::{MigrationMarkerV1, MigrationMarkerV2, MIGRATION_MARKER_CONTENT_TYPE_PREFIX};
 
-fn marker_content_type(original_content_type: &str) -> String {
+pub(crate) fn marker_content_type(original_content_type: &str) -> String {
     if original_content_type.starts_with(MIGRATION_MARKER_CONTENT_TYPE_PREFIX) {
         original_content_type.to_string()
     } else {

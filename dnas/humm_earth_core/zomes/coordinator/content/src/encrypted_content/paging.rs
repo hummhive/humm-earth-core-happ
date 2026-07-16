@@ -151,23 +151,47 @@ pub struct OwnContentRecords {
 #[hdk_extern]
 pub fn get_my_content_by_id_link(input: MyContentByIdInput) -> ExternResult<OwnContentRecords> {
     let me = agent_info()?.agent_initial_pubkey;
+    let (records, truncated) =
+        content_id_records_by_author(&input.hive_genesis_hash, &input.content_id, &me)?;
+    Ok(OwnContentRecords { records, truncated })
+}
+
+/// Author-scoped walk of the `HummContentId` path
+/// `[hive_genesis_hash_b64, content_id]`: only links AUTHORED BY
+/// `author` are considered, so foreign fixed-id collisions are excluded
+/// at the link layer before any target fetch. Shared probe behind
+/// [`get_my_content_by_id_link`], the find-or-create family, hiveless
+/// remediation, and the HiveGenesis migration marker.
+pub(crate) fn content_id_records_by_author(
+    hive_genesis_hash: &ActionHash,
+    content_id: &str,
+    author: &AgentPubKey,
+) -> ExternResult<(Vec<EncryptedContentResponse>, bool)> {
     let path = Path::from(vec![
-        Component::from(input.hive_genesis_hash.to_string()),
-        Component::from(input.content_id),
+        Component::from(hive_genesis_hash.to_string()),
+        Component::from(content_id),
     ]);
-    let query =
-        LinkQuery::try_new(path.path_entry_hash()?, LinkTypes::HummContentId)?.author(me.clone());
+    let query = LinkQuery::try_new(path.path_entry_hash()?, LinkTypes::HummContentId)?
+        .author(author.clone());
     let mut links = get_links(query, GetStrategy::Network)?;
     // Defensive post-filter: the author scoping is load-bearing for
     // exclusion of foreign collisions, so never trust the query filter alone.
-    links.retain(|link| link.author == me);
+    links.retain(|link| link.author == *author);
     sort_by_source_position(&mut links);
     let deduped = dedupe_by_target(links);
     let (selected, truncated) = page_links(deduped, None, None, MY_CONTENT_HARD_LIMIT);
-    Ok(OwnContentRecords {
-        records: resolve_targets(selected),
-        truncated,
-    })
+    Ok((resolve_targets(selected), truncated))
+}
+
+/// Canonical pick when multiple candidates share a content-id path:
+/// lowest hash wins — byte-for-byte the same rule as humm-tauri's
+/// `utils/selectCanonicalByHash.ts` (for equal-length hashes, base64
+/// lexicographic order coincides with raw-byte order, so the b64
+/// strings compare directly).
+pub(crate) fn canonical_lowest_hash(
+    records: Vec<EncryptedContentResponse>,
+) -> Option<EncryptedContentResponse> {
+    records.into_iter().min_by(|a, b| a.hash.cmp(&b.hash))
 }
 
 /// Shared page engine behind the three `*_page` externs.

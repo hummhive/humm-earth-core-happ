@@ -101,6 +101,13 @@ fn send_dm_remote_signal(signal: DmRemoteSignal, recipient: AgentPubKey) -> Exte
     send_encoded_remote_signal(signal, vec![recipient])
 }
 
+/// DEPRECATED (pass-6-idempotent-writes): redundant since pass-5 —
+/// `validate_delete_encrypted_content` authorizes any
+/// `public_key_acl.reader` (either DM party) to author a durable native
+/// Delete; prefer `delete_encrypted_content`. This ephemeral
+/// best-effort family remains wire-live for old callers and is a
+/// removal candidate for a future generation after humm-tauri confirms
+/// no adoption.
 #[hdk_extern]
 pub fn send_dm_delete_request(input: SendDmDeleteRequestInput) -> ExternResult<()> {
     let signal = DmRemoteSignal::DmDeleteRequest(DmDeleteRequestSignal {

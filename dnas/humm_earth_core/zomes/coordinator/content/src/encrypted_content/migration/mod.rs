@@ -6,7 +6,8 @@ mod readers;
 mod writers;
 
 pub use markers::{
-    MigrationMarker, MigrationMarkerV1, MigrationMarkerV2, MIGRATION_MARKER_CONTENT_TYPE_PREFIX,
+    MigrationMarker, MigrationMarkerV1, MigrationMarkerV2, HIVE_GENESIS_MARKER_ORIGINAL_TYPE,
+    HIVE_MIGRATION_MARKER_CONTENT_ID, MIGRATION_MARKER_CONTENT_TYPE_PREFIX,
     MIGRATION_MARKER_SCHEMA_TAG,
 };
 pub use payload::{build_marker_payload, build_marker_v2_payload};

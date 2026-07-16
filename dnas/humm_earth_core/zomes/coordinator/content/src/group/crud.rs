@@ -20,6 +20,8 @@
 use content_integrity::*;
 use hdk::prelude::*;
 
+use super::queries::{get_latest_group_membership, GetLatestGroupMembershipInput};
+
 // `hdk::prelude::*` exports a `Role` symbol from
 // `holochain_integrity_types` (capability-token role-based access) that
 // shadows our `content_integrity::Role` membership-role enum at the
@@ -99,6 +101,80 @@ pub fn create_group_genesis(input: CreateGroupGenesisInput) -> ExternResult<Grou
     Ok(GroupGenesisResponse { genesis, hash })
 }
 
+#[derive(Serialize, Deserialize, Debug)]
+pub struct FindOrCreateGroupGenesisResponse {
+    pub response: GroupGenesisResponse,
+    pub was_created: bool,
+}
+
+/// Idempotent [`create_group_genesis`]: returns the caller's existing
+/// group in `hive_genesis_hash` when one matches, else creates.
+///
+/// Match key — system role groups (`hive_wide_role: Some`) are hive
+/// singletons matched on role alone (display drift tolerated); custom
+/// groups (`None`) match on `display_id`. Author-scoped: only
+/// caller-authored geneses count (crash-resume semantics; cross-agent
+/// duplicate prevention stays client-side canonical-pick until the
+/// pass-7 A11 uniqueness validators). Found ⇒ no write, no signal;
+/// multiple candidates ⇒ lowest-hash wins (selectCanonicalByHash rule).
+/// NOT cap-granted (mutator).
+#[hdk_extern]
+pub fn find_or_create_group_genesis(
+    input: CreateGroupGenesisInput,
+) -> ExternResult<FindOrCreateGroupGenesisResponse> {
+    let me = agent_info()?.agent_initial_pubkey;
+    let query = LinkQuery::try_new(
+        AnyLinkableHash::from(input.hive_genesis_hash.clone()),
+        LinkTypes::HiveToGroups,
+    )?
+    .author(me.clone());
+    let mut links = get_links(query, GetStrategy::Network)?;
+    links.retain(|link| link.author == me);
+
+    let mut candidates: Vec<GroupGenesisResponse> = Vec::new();
+    for link in links {
+        let Some(target_ah) = link.target.into_action_hash() else {
+            continue;
+        };
+        let Some(record) = get(target_ah.clone(), GetOptions::network())? else {
+            continue;
+        };
+        let Some(genesis) = record
+            .entry()
+            .to_app_option::<GroupGenesis>()
+            .ok()
+            .flatten()
+        else {
+            debug!("find_or_create_group_genesis: skipping undecodable HiveToGroups target {target_ah}");
+            continue;
+        };
+        if genesis.hive_genesis_hash != input.hive_genesis_hash {
+            continue;
+        }
+        let role_matches = genesis.hive_wide_role == input.hive_wide_role;
+        let display_matches =
+            input.hive_wide_role.is_some() || genesis.display_id == input.display_id;
+        if role_matches && display_matches {
+            candidates.push(GroupGenesisResponse {
+                genesis,
+                hash: target_ah,
+            });
+        }
+    }
+
+    if let Some(existing) = candidates.into_iter().min_by(|a, b| a.hash.cmp(&b.hash)) {
+        return Ok(FindOrCreateGroupGenesisResponse {
+            response: existing,
+            was_created: false,
+        });
+    }
+    let response = create_group_genesis(input)?;
+    Ok(FindOrCreateGroupGenesisResponse {
+        response,
+        was_created: true,
+    })
+}
+
 // =============================================================================
 // create_group_membership
 // =============================================================================
@@ -176,6 +252,41 @@ pub fn create_group_membership(
     )?;
 
     Ok(GroupMembershipResponse { membership, hash })
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct FindOrCreateMembershipResponse {
+    pub response: GroupMembershipResponse,
+    pub was_created: bool,
+}
+
+/// Idempotent [`create_group_membership`]: returns the grantee's latest
+/// unexpired membership when its role equals `input.role`, else creates.
+/// A different role, an expired grant, or no grant falls through to
+/// create — a role change is a legitimate new grant, and validator
+/// errors (self-grant, authority) propagate unchanged. Found ⇒ no
+/// write, no signal. NOT cap-granted (mutator).
+#[hdk_extern]
+pub fn find_or_create_group_membership(
+    input: CreateGroupMembershipInput,
+) -> ExternResult<FindOrCreateMembershipResponse> {
+    let existing = get_latest_group_membership(GetLatestGroupMembershipInput {
+        agent: input.for_agent.clone(),
+        group_genesis_hash: input.group_genesis_hash.clone(),
+    })?;
+    if let Some(found) = existing {
+        if found.membership.role == input.role {
+            return Ok(FindOrCreateMembershipResponse {
+                response: found,
+                was_created: false,
+            });
+        }
+    }
+    let response = create_group_membership(input)?;
+    Ok(FindOrCreateMembershipResponse {
+        response,
+        was_created: true,
+    })
 }
 
 // =============================================================================

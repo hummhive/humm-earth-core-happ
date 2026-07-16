@@ -140,6 +140,14 @@ pub fn set_cap_tokens() -> ExternResult<()> {
     // `get_last_probe`: a remote cap-call would leak local source-chain state).
     fns.insert((zome.clone(), "get_hive_owner".into()));
     fns.insert((zome.clone(), "content_summary".into()));
+    // pass-6-idempotent-writes: `content_summary_many` shares
+    // `content_summary`'s public-link-space read class. This
+    // generation's other externs stay UNgranted: the three
+    // `find_or_create_*` externs and `remediate_hiveless_content` are
+    // mutators (Rule 1 — a remote grant would let peers write to the
+    // callee's chain), and `list_my_hiveless_content` is own-content
+    // enumeration (same treatment as `get_my_content_by_id_link`).
+    fns.insert((zome.clone(), "content_summary_many".into()));
     fns.insert((zome.clone(), "is_ownership_contested".into()));
 
     // Group-authority read externs (pass-3). Same rationale as the
