@@ -23,6 +23,7 @@ use hdk::prelude::*;
 pub mod crud;
 pub mod get_helpers;
 pub mod migration;
+pub mod paging;
 pub mod queries;
 pub mod signals;
 
@@ -36,6 +37,13 @@ pub struct EncryptedContentResponse {
     pub encrypted_content: EncryptedContent,
     pub hash: String,
     pub original_hash: String,
+    /// Micros timestamp of the SELECTED action — the create for a
+    /// never-updated entry, the latest update otherwise. `None` on the
+    /// create-extern response (no Record fetch happens there; consumers
+    /// must not fabricate a time). Additive pass-6-pinned-hosts field:
+    /// old consumers deserialize it away, absent decodes to `None`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub latest_action_micros: Option<i64>,
 }
 
 #[hdk_entry_helper]
@@ -91,9 +99,15 @@ pub use queries::{
     FetchPairWithHiveCheckInput, ListByAclInput, ListByAuthorInput, ListByContentIdInput,
     ListByDynamicLinkInput, ListByHiveInput,
 };
+pub use paging::{
+    get_my_content_by_id_link, list_by_author_page, list_by_dynamic_link_page,
+    list_by_hive_link_page, AuthorLinkPageInput, BoundedLinkPage, DynamicLinkPageInput,
+    HiveLinkPageInput, MyContentByIdInput, OwnContentRecords, SourcePosition,
+};
 pub use signals::{
-    remote_signal_acl_readers, send_dm_call_init_accept, send_dm_call_init_request,
-    send_dm_call_sdp_data, send_dm_delete_request, DmCallSignal, DmDeleteRequestSignal,
-    DmRemoteSignal, EncryptedContentSignal, EncryptedContentSignalType, SendDmCallInitAcceptInput,
+    remote_signal_acl_readers, send_blob_pin_signal, send_dm_call_init_accept,
+    send_dm_call_init_request, send_dm_call_sdp_data, send_dm_delete_request, BlobPinHint,
+    BlobPinSignal, DmCallSignal, DmDeleteRequestSignal, DmRemoteSignal, EncryptedContentSignal,
+    EncryptedContentSignalType, SendBlobPinSignalInput, SendDmCallInitAcceptInput,
     SendDmCallInitRequestInput, SendDmCallSdpDataInput, SendDmDeleteRequestInput,
 };

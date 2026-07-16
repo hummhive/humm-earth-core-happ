@@ -37,6 +37,7 @@ fn sample_response() -> EncryptedContentResponse {
         },
         hash: "h".into(),
         original_hash: "h".into(),
+        latest_action_micros: None,
     }
 }
 
@@ -325,5 +326,127 @@ fn dm_remote_signal_round_trips_through_send_path() {
                 DmRemoteSignal::DmDeleteRequest(_)
             ) | (DmRemoteSignal::DmCall(_), DmRemoteSignal::DmCall(_))
         ));
+    }
+}
+
+fn sample_blob_pin_hint() -> BlobPinHint {
+    BlobPinHint {
+        hive_genesis_hash: ActionHash::from_raw_36(vec![7u8; 36]),
+        blake3: "b3-hex".into(),
+        byte_variant: "enc".into(),
+        provider_record_hash: sample_target_hash(),
+        expires_at_micros: Some(1_234_567),
+        from_agent: None,
+    }
+}
+
+/// BlobPinSignal round-trips through ExternIO for both variants.
+#[test]
+fn blob_pin_signal_roundtrip() {
+    for sig in [
+        BlobPinSignal::Available(sample_blob_pin_hint()),
+        BlobPinSignal::TakeNow(sample_blob_pin_hint()),
+    ] {
+        let io = ExternIO::encode(&sig).expect("encode");
+        let back: BlobPinSignal = io.decode().expect("decode");
+        assert_eq!(back, sig);
+    }
+}
+
+/// Dispatcher disambiguation invariant, blob-pin → legacy direction: a
+/// serialized BlobPinSignal MUST NOT decode as either earlier-tried
+/// family, or every blob-pin hint would be misrouted.
+#[test]
+fn blob_pin_signal_does_not_decode_as_encrypted_content_or_dm() {
+    for sig in [
+        BlobPinSignal::Available(sample_blob_pin_hint()),
+        BlobPinSignal::TakeNow(sample_blob_pin_hint()),
+    ] {
+        let io = ExternIO::encode(&sig).expect("encode");
+        let ecs: Result<EncryptedContentSignal, _> = io.decode();
+        assert!(
+            ecs.is_err(),
+            "BlobPinSignal variant {sig:?} MUST NOT decode as EncryptedContentSignal"
+        );
+        let dm: Result<DmRemoteSignal, _> = io.decode();
+        assert!(
+            dm.is_err(),
+            "BlobPinSignal variant {sig:?} MUST NOT decode as DmRemoteSignal"
+        );
+    }
+}
+
+/// Dispatcher disambiguation invariant, legacy → blob-pin direction:
+/// neither established family may decode as BlobPinSignal, or the new
+/// arm could shadow-capture legacy payloads after a reorder.
+#[test]
+fn encrypted_content_and_dm_do_not_decode_as_blob_pin() {
+    let ecs = EncryptedContentSignal {
+        action_type: EncryptedContentSignalType::Create,
+        data: sample_response(),
+        from_agent: None,
+    };
+    let io = ExternIO::encode(&ecs).expect("encode");
+    let pin: Result<BlobPinSignal, _> = io.decode();
+    assert!(
+        pin.is_err(),
+        "EncryptedContentSignal MUST NOT decode as BlobPinSignal"
+    );
+
+    for dm in [
+        DmRemoteSignal::DmDeleteRequest(DmDeleteRequestSignal {
+            thread_id: "t".into(),
+            target_action_hash: sample_target_hash(),
+            from_agent: None,
+        }),
+        DmRemoteSignal::DmCall(DmCallSignal::InitRequest {
+            call_id: "c".into(),
+            from_agent: None,
+        }),
+    ] {
+        let io = ExternIO::encode(&dm).expect("encode");
+        let pin: Result<BlobPinSignal, _> = io.decode();
+        assert!(
+            pin.is_err(),
+            "DmRemoteSignal variant {dm:?} MUST NOT decode as BlobPinSignal"
+        );
+    }
+}
+
+/// The blob-pin family must survive the same receiver double-decode
+/// chain the other families do — every signal funnels through
+/// `remote_signal_payload` + HDK's own `ExternIO::encode`.
+#[test]
+fn blob_pin_signal_round_trips_through_send_path() {
+    let typed = BlobPinSignal::TakeNow(sample_blob_pin_hint());
+    let payload = remote_signal_payload(&typed).expect("payload");
+    let on_wire = ExternIO::encode(&payload).expect("hdk send encode");
+    let param: ExternIO = on_wire
+        .decode()
+        .expect("recv_remote_signal ExternIO param must decode");
+    let back: BlobPinSignal = param
+        .decode()
+        .expect("dispatcher must recover the typed signal");
+    assert_eq!(back, typed);
+}
+
+/// Receiver-attested provenance wins over any sender claim, on both
+/// variants.
+#[test]
+fn blob_pin_stamp_from_agent_overwrites_both_variants() {
+    let fake_caller = AgentPubKey::from_raw_39(
+        vec![0x84u8, 0x20, 0x24]
+            .into_iter()
+            .chain(std::iter::repeat_n(0xBBu8, 36))
+            .collect(),
+    );
+
+    for mut sig in [
+        BlobPinSignal::Available(sample_blob_pin_hint()),
+        BlobPinSignal::TakeNow(sample_blob_pin_hint()),
+    ] {
+        sig.stamp_from_agent(fake_caller.clone());
+        let (BlobPinSignal::Available(hint) | BlobPinSignal::TakeNow(hint)) = &sig;
+        assert_eq!(hint.from_agent.as_ref(), Some(&fake_caller));
     }
 }

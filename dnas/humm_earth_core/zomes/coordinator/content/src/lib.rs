@@ -10,7 +10,7 @@ use hdk::prelude::*;
 pub use linking::*;
 use std::collections::HashSet;
 
-use encrypted_content::signals::{DmRemoteSignal, EncryptedContentSignal};
+use encrypted_content::signals::{BlobPinSignal, DmRemoteSignal, EncryptedContentSignal};
 
 /// Fetch + decode a DHT entry, tolerating absence AND an undecodable/wrong-type
 /// target as `None`. Intentional resilience: owner-resolution and inbox scans
@@ -57,13 +57,14 @@ pub(crate) fn delete_own_links_targeting(target: AnyLinkableHash) -> ExternResul
 ///    enumerate or leak chain-private contents (action hashes,
 ///    `DmProbeLog` cursors). Local UI only.
 ///
-/// The sender-side ephemeral signal externs (`send_dm_delete_request`
-/// and the three `send_dm_call_*` variants) are excluded for a third
-/// reason: each issues `send_remote_signal` to a caller-chosen
-/// recipient. Granting them remotely would let any peer use the local
-/// agent as a signal reflector to a third party — both an
-/// amplification DoS and a spoof-by-proxy vector that subverts the
-/// `from_agent` provenance guarantee enforced by `recv_remote_signal`.
+/// The sender-side ephemeral signal externs (`send_dm_delete_request`,
+/// the three `send_dm_call_*` variants, and `send_blob_pin_signal`)
+/// are excluded for a third reason: each issues `send_remote_signal`
+/// to a caller-chosen recipient. Granting them remotely would let any
+/// peer use the local agent as a signal reflector to a third party —
+/// both an amplification DoS and a spoof-by-proxy vector that subverts
+/// the `from_agent` provenance guarantee enforced by
+/// `recv_remote_signal`.
 ///
 /// `recv_remote_signal` itself MUST stay granted — the conductor
 /// invokes it on every recipient of a `send_remote_signal` and the cap
@@ -83,6 +84,16 @@ pub fn set_cap_tokens() -> ExternResult<()> {
     fns.insert((zome.clone(), "list_by_author".into()));
     fns.insert((zome.clone(), "count_links_by_hive".into()));
     fns.insert((zome.clone(), "fetch_pair_ss_with_hive_check".into()));
+
+    // Bounded source-cursor page externs (pass-6-pinned-hosts): read-only
+    // queries over public DHT link space, same grant class as their
+    // legacy twins above. `get_my_content_by_id_link` is intentionally
+    // NOT granted — "my" is provenance-derived, and a remote grant would
+    // let any peer enumerate the callee's own records (same treatment as
+    // `get_messages_since`).
+    fns.insert((zome.clone(), "list_by_hive_link_page".into()));
+    fns.insert((zome.clone(), "list_by_dynamic_link_page".into()));
+    fns.insert((zome.clone(), "list_by_author_page".into()));
 
     // Migration-marker readers (V1 + V2). Read already-public DHT data
     // (walks an entry's update chain; same data any peer could fetch
@@ -187,7 +198,8 @@ pub fn init(_: ()) -> ExternResult<InitCallbackResult> {
 /// **Ordering matters.** `EncryptedContentSignal` is tried FIRST because
 /// it is the established, shipped payload — every running humm-tauri
 /// today emits and expects this shape. `DmRemoteSignal` (the C6/C7
-/// envelope) is tried second.
+/// envelope) is tried second; `BlobPinSignal` (pass-6-pinned-hosts
+/// blob-pin hints) is tried last — new families always append.
 ///
 /// **Why the try-decode is safe (vs. structural ambiguity).**
 /// - `EncryptedContentSignal` requires `action_type` (a small enum tag)
@@ -196,12 +208,15 @@ pub fn init(_: ()) -> ExternResult<InitCallbackResult> {
 ///   `DmDeleteRequest { thread_id, target_action_hash, … }` and
 ///   `DmCall(DmCallSignal)`. Each variant requires the `kind`
 ///   discriminator plus its own variant fields.
-/// - The two shapes share no required field name (the
-///   `action_type` / `kind` discriminators differ, and the inner
-///   payload shapes are structurally disjoint), so neither can
-///   structurally decode as the other under msgpack. The host-side
-///   serde round-trip unit tests in
-///   `encrypted_content::signals::tests` empirically pin this property.
+/// - `BlobPinSignal` is `#[serde(tag = "pin")]` — a third distinct
+///   discriminator key with hint fields (`blake3`,
+///   `provider_record_hash`) required by no other family.
+/// - The shapes share no required field name (the `action_type` /
+///   `kind` / `pin` discriminators differ, and the inner payload
+///   shapes are structurally disjoint), so none can structurally
+///   decode as another under msgpack. The host-side serde round-trip
+///   unit tests in `encrypted_content::signals::tests` empirically pin
+///   this property.
 ///
 /// **Anti-spoof guarantee** (preserved from the original single-signal
 /// path). Whatever
@@ -264,12 +279,26 @@ pub fn recv_remote_signal(signal: ExternIO) -> ExternResult<()> {
         return emit_signal(payload);
     }
 
-    // 3. Unknown payload shape — explicitly error so misrouted or
+    // 3. Try the pass-6-pinned-hosts blob-pin hint family.
+    if let Ok(mut payload) = signal.decode::<BlobPinSignal>() {
+        info!(
+            "recv_remote_signal[BlobPinSignal]: variant={} from_agent={}",
+            match &payload {
+                BlobPinSignal::Available(_) => "Available",
+                BlobPinSignal::TakeNow(_) => "TakeNow",
+            },
+            caller_agent,
+        );
+        payload.stamp_from_agent(caller_agent);
+        return emit_signal(payload);
+    }
+
+    // 4. Unknown payload shape — explicitly error so misrouted or
     //    malformed signals are visible in conductor logs rather than
     //    silently dropped. The cap grant is open so a misbehaving peer
     //    can absolutely send garbage; this is the audit trail.
     Err(wasm_error!(WasmErrorInner::Guest(
-        "recv_remote_signal: payload did not decode as EncryptedContentSignal or DmRemoteSignal"
+        "recv_remote_signal: payload did not decode as EncryptedContentSignal, DmRemoteSignal, or BlobPinSignal"
             .into()
     )))
 }

@@ -2,6 +2,7 @@ use base64::Engine;
 use content_integrity::Acl;
 use hdk::prelude::*;
 
+use super::blob_pin::{BlobPinSignal, BLOB_PIN_SIGNAL_MAX_RECIPIENTS};
 use super::content::EncryptedContentSignal;
 use super::dm::{DmCallSignal, DmDeleteRequestSignal, DmRemoteSignal};
 
@@ -136,4 +137,32 @@ pub fn send_dm_call_sdp_data(input: SendDmCallSdpDataInput) -> ExternResult<()> 
         from_agent: None,
     });
     send_dm_remote_signal(signal, input.recipient)
+}
+
+/// Input for `send_blob_pin_signal`: one hint fanned out to an explicit
+/// recipient list (bounded — see `BLOB_PIN_SIGNAL_MAX_RECIPIENTS`).
+#[derive(Serialize, Deserialize, Debug)]
+pub struct SendBlobPinSignalInput {
+    pub signal: BlobPinSignal,
+    pub recipients: Vec<AgentPubKey>,
+}
+
+/// Local-only sender (NOT cap-granted — a remote grant would make the
+/// agent a signal reflector). `from_agent` is forced to `None` before
+/// send; the receiver's dispatcher stamps conductor-attested provenance.
+#[hdk_extern]
+pub fn send_blob_pin_signal(input: SendBlobPinSignalInput) -> ExternResult<()> {
+    if input.recipients.is_empty() {
+        return Err(wasm_error!(WasmErrorInner::Guest(
+            "send_blob_pin_signal: recipients must be non-empty".into()
+        )));
+    }
+    if input.recipients.len() > BLOB_PIN_SIGNAL_MAX_RECIPIENTS {
+        return Err(wasm_error!(WasmErrorInner::Guest(format!(
+            "send_blob_pin_signal: at most {BLOB_PIN_SIGNAL_MAX_RECIPIENTS} recipients per call"
+        ))));
+    }
+    let mut signal = input.signal;
+    signal.clear_from_agent();
+    send_encoded_remote_signal(signal, input.recipients)
 }

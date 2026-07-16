@@ -32,7 +32,7 @@ pub fn get_record(dh: AnyDhtHash) -> ExternResult<Record> {
     Ok(record)
 }
 
-pub type TypedEntryAndHash<T> = (T, ActionHash, EntryHash);
+pub type TypedEntryAndHash<T> = (T, ActionHash, EntryHash, Timestamp);
 pub type OptionTypedEntryAndHash<T> = Option<TypedEntryAndHash<T>>;
 
 /// Resolve an `EntryHash` to the latest live update of its typed entry.
@@ -40,8 +40,10 @@ pub type OptionTypedEntryAndHash<T> = Option<TypedEntryAndHash<T>>;
 /// Walks the entry's update chain, picks the latest (highest-timestamp)
 /// update action, fetches that record, and returns the typed entry along
 /// with the ORIGINAL action hash (so callers can reference the original
-/// entry rather than the updated one). Returns `Ok(None)` if the entry
-/// is dead (deleted) or not present locally.
+/// entry rather than the updated one) plus the SELECTED action's
+/// timestamp (create's for a never-updated entry, the latest update's
+/// otherwise — the fetched record IS the selected action). Returns
+/// `Ok(None)` if the entry is dead (deleted) or not present locally.
 pub fn get_latest_typed_from_eh<T: TryFrom<SerializedBytes, Error = SerializedBytesError>>(
     entry_hash: EntryHash,
 ) -> ExternResult<OptionTypedEntryAndHash<T>> {
@@ -82,8 +84,12 @@ pub fn get_latest_typed_from_eh<T: TryFrom<SerializedBytes, Error = SerializedBy
         Action::Create(_) => record.action_address().clone(),
         _ => unreachable!("Can't have returned a action for a nonexistent entry"),
     };
-    let eh = record.action().entry_hash().unwrap().to_owned();
-    Ok(Some((typed_entry, ah, eh)))
+    let Some(eh) = record.action().entry_hash() else {
+        return Ok(None);
+    };
+    let eh = eh.to_owned();
+    let ts = record.action().timestamp();
+    Ok(Some((typed_entry, ah, eh, ts)))
 }
 
 /// Extract the action hash from a `SignedActionHashed`.
