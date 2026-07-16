@@ -569,3 +569,16 @@ pub fn my_pair_shared_secret_exists(input: PairSharedSecretExistsInput) -> Exter
     }
     Ok(false)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn content_summary_many_bounds_literal() {
+        assert!(check_summary_many_bound(CONTENT_SUMMARY_MANY_MAX_HIVES).is_ok());
+        let err = check_summary_many_bound(CONTENT_SUMMARY_MANY_MAX_HIVES + 1)
+            .expect_err("over-cap must reject");
+        assert!(format!("{err:?}").contains("at most 32 hives per call"));
+    }
+}

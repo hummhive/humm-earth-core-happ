@@ -116,7 +116,9 @@ pub struct FindOrCreateGroupGenesisResponse {
 /// caller-authored geneses count (crash-resume semantics; cross-agent
 /// duplicate prevention stays client-side canonical-pick until the
 /// pass-7 A11 uniqueness validators). Found ⇒ no write, no signal;
-/// multiple candidates ⇒ lowest-hash wins (selectCanonicalByHash rule).
+/// multiple candidates ⇒ lexicographically-lowest base64 hash STRING
+/// wins (the exact selectCanonicalByHash comparison; b64 string order
+/// differs from raw-byte `ActionHash` order).
 /// NOT cap-granted (mutator).
 #[hdk_extern]
 pub fn find_or_create_group_genesis(
@@ -162,7 +164,7 @@ pub fn find_or_create_group_genesis(
         }
     }
 
-    if let Some(existing) = candidates.into_iter().min_by(|a, b| a.hash.cmp(&b.hash)) {
+    if let Some(existing) = candidates.into_iter().min_by_key(|c| c.hash.to_string()) {
         return Ok(FindOrCreateGroupGenesisResponse {
             response: existing,
             was_created: false,

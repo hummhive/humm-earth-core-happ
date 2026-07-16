@@ -184,10 +184,11 @@ pub(crate) fn content_id_records_by_author(
 }
 
 /// Canonical pick when multiple candidates share a content-id path:
-/// lowest hash wins — byte-for-byte the same rule as humm-tauri's
-/// `utils/selectCanonicalByHash.ts` (for equal-length hashes, base64
-/// lexicographic order coincides with raw-byte order, so the b64
-/// strings compare directly).
+/// lexicographically-lowest base64 `hash` STRING wins — the identical
+/// comparison humm-tauri's `utils/selectCanonicalByHash.ts` performs in
+/// JS, so both sides always elect the same record. (Base64url string
+/// order deliberately differs from raw-byte order; the STRING is the
+/// contract.)
 pub(crate) fn canonical_lowest_hash(
     records: Vec<EncryptedContentResponse>,
 ) -> Option<EncryptedContentResponse> {
@@ -318,6 +319,49 @@ fn resolve_targets(links: Vec<Link>) -> Vec<EncryptedContentResponse> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn response_with_hash(hash: &str) -> EncryptedContentResponse {
+        EncryptedContentResponse {
+            encrypted_content: EncryptedContent {
+                header: EncryptedContentHeader {
+                    id: "id".into(),
+                    display_hive_id: String::new(),
+                    content_type: "t".into(),
+                    revision_author_signing_public_key: String::new(),
+                    acl_spec: AclSpec::OpenWrite {
+                        target_hive_genesis_hash: None,
+                    },
+                    public_key_acl: Acl {
+                        owner: String::new(),
+                        admin: vec![],
+                        writer: vec![],
+                        reader: vec![],
+                    },
+                },
+                bytes: UnsafeBytes::from(vec![1u8]).into(),
+            },
+            hash: hash.to_string(),
+            original_hash: hash.to_string(),
+            latest_action_micros: None,
+        }
+    }
+
+    #[test]
+    fn canonical_lowest_hash_picks_lexicographically_smallest_b64_string() {
+        let hashes: Vec<String> = [[9u8; 36], [3u8; 36], [7u8; 36]]
+            .into_iter()
+            .map(|raw| ActionHash::from_raw_36(raw.to_vec()).to_string())
+            .collect();
+        let expected = hashes.iter().min().expect("non-empty").clone();
+
+        let picked = canonical_lowest_hash(
+            hashes.iter().map(|hash| response_with_hash(hash)).collect(),
+        )
+        .expect("candidates non-empty");
+        assert_eq!(picked.hash, expected);
+
+        assert!(canonical_lowest_hash(Vec::new()).is_none());
+    }
 
     fn hash_bytes(index: u16) -> Vec<u8> {
         let mut bytes = vec![0u8; 36];

@@ -114,14 +114,13 @@ pub fn mark_migrated_v2(
         );
         return Ok(None);
     };
-    if let Some(genesis) = record
-        .entry()
-        .to_app_option::<HiveGenesis>()
-        .ok()
-        .flatten()
-    {
+    // Entry-def-index discrimination, NOT msgpack shape: GroupGenesis is
+    // a field-superset of HiveGenesis and would false-positive here.
+    if let Some(genesis) = crate::hive::queries::try_decode_hive_genesis(&record) {
         return mark_hive_genesis_migrated(input, &genesis, record.action().author());
     }
+    // No superset hazard for this shape probe: no other entry type
+    // carries EncryptedContent's nested `header` + `bytes` fields.
     if record
         .entry()
         .to_app_option::<EncryptedContent>()

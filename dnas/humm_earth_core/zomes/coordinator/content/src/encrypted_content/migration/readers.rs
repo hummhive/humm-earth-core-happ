@@ -1,4 +1,4 @@
-use content_integrity::{EncryptedContent, HiveGenesis};
+use content_integrity::EncryptedContent;
 use hdk::prelude::*;
 
 use super::markers::{
@@ -145,13 +145,9 @@ pub fn get_migration_marker(action_hash: ActionHash) -> ExternResult<Option<Migr
 #[hdk_extern]
 pub fn get_migration_marker_v2(action_hash: ActionHash) -> ExternResult<Option<MigrationMarker>> {
     if let Some(record) = get(AnyDhtHash::from(action_hash.clone()), GetOptions::network())? {
-        if record
-            .entry()
-            .to_app_option::<HiveGenesis>()
-            .ok()
-            .flatten()
-            .is_some()
-        {
+        // Entry-def-index discrimination, NOT msgpack shape: GroupGenesis
+        // is a field-superset of HiveGenesis and would false-positive here.
+        if crate::hive::queries::try_decode_hive_genesis(&record).is_some() {
             return hive_genesis_marker(&action_hash, record.action().author());
         }
     }

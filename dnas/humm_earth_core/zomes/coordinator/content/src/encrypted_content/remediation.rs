@@ -222,3 +222,37 @@ fn failed(original_hash: String, detail: impl Into<String>) -> RemediationOutcom
         detail: Some(detail.into()),
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// humm-tauri decodes these exact strings; a variant rename is a
+    /// wire break.
+    #[test]
+    fn remediation_status_serde_snake_case() {
+        for (status, expected) in [
+            (RemediationStatus::Recreated, "recreated"),
+            (
+                RemediationStatus::SkippedAlreadyCorrect,
+                "skipped_already_correct",
+            ),
+            (
+                RemediationStatus::SkippedAlreadyRemediated,
+                "skipped_already_remediated",
+            ),
+            (RemediationStatus::Failed, "failed"),
+        ] {
+            let io = ExternIO::encode(&status).expect("encode status");
+            let decoded: String = io.decode().expect("decode as plain string");
+            assert_eq!(decoded, expected);
+        }
+    }
+
+    #[test]
+    fn remediate_bounds_error_literal() {
+        assert!(check_items_bound(REMEDIATE_MAX_ITEMS).is_ok());
+        let err = check_items_bound(REMEDIATE_MAX_ITEMS + 1).expect_err("over-cap must reject");
+        assert!(format!("{err:?}").contains("at most 64 items per call"));
+    }
+}

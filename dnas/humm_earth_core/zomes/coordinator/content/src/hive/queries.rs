@@ -30,7 +30,7 @@ use crate::hive::crud::HiveMembershipResponse;
 /// unreachable on validator-gated data) is `warn!`-logged and treated as
 /// `None`, so a single corrupt entry degrades to a skip rather than
 /// failing the whole read (mirrors `lib.rs::signal_entry_deleted`).
-fn try_decode_hive_genesis(record: &Record) -> Option<HiveGenesis> {
+pub(crate) fn try_decode_hive_genesis(record: &Record) -> Option<HiveGenesis> {
     let Some(EntryType::App(AppEntryDef {
         zome_index,
         entry_index,
