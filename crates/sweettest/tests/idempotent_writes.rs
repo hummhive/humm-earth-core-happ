@@ -15,9 +15,8 @@ use serde::de::IgnoredAny;
 use serde::{Deserialize, Serialize};
 use support::{
     create_hive, create_open_write_content, owner_only_acl, setup_cells,
-    single_conductor_cell_app, wait_for_count_links_by_hive_to, AclSpec,
-    CreateEncryptedContentInput, CreateResponse, GenesisResponse, MembershipResponse,
-    MyContentByIdInput, OwnContentRecords,
+    single_conductor_cell_app, wait_for_count_links_by_hive_to, wait_for_own_content_id_count,
+    AclSpec, CreateEncryptedContentInput, CreateResponse, GenesisResponse, MembershipResponse,
 };
 
 const SS_CONTENT_TYPE: &str = "hummhive-elemental-secrets-v1";
@@ -186,36 +185,6 @@ fn content_input(
         public_key_acl: owner_only_acl(&author.to_string()),
         dynamic_links,
     }
-}
-
-/// Poll until the caller's own content-id path shows `expected` records.
-/// Self-authored link ops integrate on the cascade's cadence, so the
-/// find-side of every idempotency assertion must wait for link
-/// visibility before the second call.
-async fn wait_for_own_content_id_count(
-    conductor: &SweetConductor,
-    zome: &SweetZome,
-    hive_genesis_hash: ActionHash,
-    content_id: &str,
-    expected: usize,
-) -> OwnContentRecords {
-    for _ in 0..POLL_ATTEMPTS {
-        let own: OwnContentRecords = conductor
-            .call(
-                zome,
-                "get_my_content_by_id_link",
-                MyContentByIdInput {
-                    hive_genesis_hash: hive_genesis_hash.clone(),
-                    content_id: content_id.to_string(),
-                },
-            )
-            .await;
-        if own.records.len() == expected {
-            return own;
-        }
-        tokio::time::sleep(POLL_INTERVAL).await;
-    }
-    panic!("content-id path never reached {expected} records for {content_id}");
 }
 
 async fn fetch_pair(

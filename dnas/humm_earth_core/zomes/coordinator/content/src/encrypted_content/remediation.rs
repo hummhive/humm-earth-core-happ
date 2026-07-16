@@ -16,6 +16,7 @@ use content_integrity::*;
 use hdk::prelude::*;
 
 use super::crud::{create_encrypted_content, delete_encrypted_content, header_from_input};
+use super::get_helpers::decode_encrypted_content;
 use super::paging::{canonical_lowest_hash, content_id_records_by_author};
 use super::queries::{list_by_author, ListByAuthorInput};
 use super::{CreateEncryptedContentInput, EncryptedContentResponse};
@@ -195,10 +196,6 @@ fn retry_original_tombstone(
         Ok(_) => String::from("original tombstoned on retry"),
         Err(err) => format!("original delete retry failed: {err:?}"),
     }))
-}
-
-fn decode_encrypted_content(record: &Record) -> Option<EncryptedContent> {
-    record.entry().to_app_option::<EncryptedContent>().ok().flatten()
 }
 
 fn failed(original_hash: String, detail: impl Into<String>) -> RemediationOutcome {

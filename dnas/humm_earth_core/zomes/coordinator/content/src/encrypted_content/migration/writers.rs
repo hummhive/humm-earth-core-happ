@@ -9,6 +9,7 @@ use super::payload::{build_marker_payload, build_marker_v2_payload, marker_conte
 use crate::encrypted_content::crud::{
     create_encrypted_content, get_encrypted_content, header_from_input, update_encrypted_content,
 };
+use crate::encrypted_content::get_helpers::decode_encrypted_content;
 use crate::encrypted_content::paging::{canonical_lowest_hash, content_id_records_by_author};
 use crate::encrypted_content::{
     CreateEncryptedContentInput, EncryptedContentResponse, UpdateEncryptedContentInput,
@@ -121,13 +122,7 @@ pub fn mark_migrated_v2(
     }
     // No superset hazard for this shape probe: no other entry type
     // carries EncryptedContent's nested `header` + `bytes` fields.
-    if record
-        .entry()
-        .to_app_option::<EncryptedContent>()
-        .ok()
-        .flatten()
-        .is_none()
-    {
+    if decode_encrypted_content(&record).is_none() {
         return Err(wasm_error!(WasmErrorInner::Guest(String::from(
             "mark_migrated_v2: original must be an EncryptedContent or HiveGenesis entry"
         ))));

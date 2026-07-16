@@ -13,10 +13,10 @@ use holochain::sweettest::{await_consistency_s, SweetConductor, SweetZome};
 use holochain_types::prelude::{Signal, UnsafeBytes};
 use holochain_zome_types::prelude::ExternIO;
 use support::{
-    create_hive, create_open_write_content, setup_cells, single_conductor_cell_app,
-    wait_for_count_links_by_hive_to, AclSpec, AuthorLinkPageInput, BlobPinHint, BlobPinSignal,
-    BoundedLinkPage, ContentRecord, DynamicLinkPageInput, EncryptedContent, EncryptedContentHeader,
-    HiveLinkPageInput, ListByHiveInput, MyContentByIdInput, OwnContentRecords,
+    create_hive, create_open_write_content, my_content, setup_cells, single_conductor_cell_app,
+    wait_for_count_links_by_hive_to, wait_for_own_content_id_count, AclSpec, AuthorLinkPageInput,
+    BlobPinHint, BlobPinSignal, BoundedLinkPage, ContentRecord, DynamicLinkPageInput,
+    EncryptedContent, EncryptedContentHeader, HiveLinkPageInput, ListByHiveInput,
     SendBlobPinSignalInput, UpdateEncryptedContentInput,
 };
 
@@ -346,7 +346,8 @@ async fn exact_own_lookup_excludes_foreign_collisions_and_scopes_by_hive() {
     await_consistency_s(60, [alice, bob]).await.unwrap();
 
     let alice_own =
-        wait_for_own_count(&conductors[0], &alice_zome, hive_h.clone(), "blob-x", 2).await;
+        wait_for_own_content_id_count(&conductors[0], &alice_zome, hive_h.clone(), "blob-x", 2)
+            .await;
     assert!(!alice_own.truncated);
     let mut alice_hashes: Vec<String> = alice_own
         .records
@@ -362,7 +363,8 @@ async fn exact_own_lookup_excludes_foreign_collisions_and_scopes_by_hive() {
     );
     assert!(!alice_hashes.contains(&alice_h2_only));
 
-    let bob_own = wait_for_own_count(&conductors[1], &bob_zome, hive_h.clone(), "blob-x", 1).await;
+    let bob_own =
+        wait_for_own_content_id_count(&conductors[1], &bob_zome, hive_h.clone(), "blob-x", 1).await;
     assert!(!bob_own.truncated);
     let bob_hashes: Vec<&String> = bob_own.records.iter().map(|record| &record.hash).collect();
     assert_eq!(bob_hashes, vec![&bob_h_only], "Bob sees exactly his one");
@@ -375,47 +377,6 @@ async fn exact_own_lookup_excludes_foreign_collisions_and_scopes_by_hive() {
     assert!(!empty.truncated);
 }
 
-async fn my_content(
-    conductor: &SweetConductor,
-    zome: &SweetZome,
-    hive_genesis_hash: ActionHash,
-    content_id: &str,
-) -> OwnContentRecords {
-    conductor
-        .call(
-            zome,
-            "get_my_content_by_id_link",
-            MyContentByIdInput {
-                hive_genesis_hash,
-                content_id: content_id.to_string(),
-            },
-        )
-        .await
-}
-
-/// Poll until the own-lookup sees `expected` records — self-authored link
-/// ops integrate on the cascade's own cadence after `await_consistency_s`
-/// (same idiom as `wait_for_count_links_by_hive_to`).
-async fn wait_for_own_count(
-    conductor: &SweetConductor,
-    zome: &SweetZome,
-    hive_genesis_hash: ActionHash,
-    content_id: &str,
-    expected: usize,
-) -> OwnContentRecords {
-    let deadline = std::time::Instant::now() + Duration::from_secs(30);
-    let mut latest = my_content(conductor, zome, hive_genesis_hash.clone(), content_id).await;
-    while latest.records.len() != expected && std::time::Instant::now() < deadline {
-        tokio::time::sleep(Duration::from_millis(50)).await;
-        latest = my_content(conductor, zome, hive_genesis_hash.clone(), content_id).await;
-    }
-    assert_eq!(
-        latest.records.len(),
-        expected,
-        "own-lookup did not reach {expected} records within 30s"
-    );
-    latest
-}
 
 #[tokio::test(flavor = "multi_thread")]
 async fn latest_action_micros_populated_on_get_none_on_create() {

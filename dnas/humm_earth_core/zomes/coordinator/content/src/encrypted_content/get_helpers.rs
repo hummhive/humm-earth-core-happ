@@ -6,6 +6,7 @@
 //! These are not zome externs; they are local helpers used by `crud.rs`
 //! and `queries.rs` to resolve action hashes → entries / entry hashes.
 
+use content_integrity::EncryptedContent;
 use hdk::prelude::*;
 
 /// Resolve an `ActionHash` to its `EntryHash` via a DHT get on the
@@ -95,4 +96,15 @@ pub fn get_latest_typed_from_eh<T: TryFrom<SerializedBytes, Error = SerializedBy
 /// Extract the action hash from a `SignedActionHashed`.
 pub fn sah_to_ah(sah: SignedActionHashed) -> ActionHash {
     sah.as_hash().to_owned()
+}
+
+/// Tolerant `EncryptedContent` shape probe on a resolved record: `None`
+/// for wrong-shape or absent entries instead of an error. Shape-safe:
+/// no other entry type carries the nested `header` + `bytes` fields.
+pub(crate) fn decode_encrypted_content(record: &Record) -> Option<EncryptedContent> {
+    record
+        .entry()
+        .to_app_option::<EncryptedContent>()
+        .ok()
+        .flatten()
 }
