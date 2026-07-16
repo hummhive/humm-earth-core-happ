@@ -1,6 +1,9 @@
 # Handoff-doc refresh — DM keybinding trust model (stale in-bytes signature spec)
 
-- **Status:** OPEN — small; fold into the next coordinator-generation docs pass.
+- **Status:** DONE — v3.2.0 (pass-6-idempotent-writes) docs pass: keybinding
+  section rewritten to the author-binding-only model (in-bytes Ed25519 recipe
+  marked historical), handshake/BDD/observability flows reconciled, DNA pin
+  refreshed to pass-6.
 - **Origin:** 2026-07-16 humm-tauri fleet audit (IdentityPlatformData lane).
 - **Class:** docs only — zero code, zero wasm/DNA impact.
 

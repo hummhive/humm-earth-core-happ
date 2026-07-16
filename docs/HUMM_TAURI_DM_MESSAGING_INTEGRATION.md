@@ -1,9 +1,10 @@
 # Direct Messaging (in-hive + cross-hive) — humm-tauri integration handoff
 
 **Status:** spec + wire-shape + link + BDD + observability + security.
-**Core happ change:** NONE. DMs run on the **existing pass-4 DNA**
-(`uhC0k26bYG0qmTCFk4_D996GRCTecEtMdL5pXyvCUu0ACJN12omCV`). The only DM
-adaptations are **client-side wire-shape conformance** to the pass-3/4
+**Core happ change:** NONE. DMs run on the **current pass-6 DNA**
+(`uhC0ksXsJOTlVvhUn3KWB0nN6j-II_9BxlsRiMqR9ajhFhYS7gSMz`); nothing
+DM-specific changed at the happ layer since pass-4. The only DM
+adaptations are **client-side wire-shape conformance** to the
 `validate_directmessage_acl` rules (humm-tauri has applied them).
 **Audience:** humm-tauri engineers wiring 1:1 / small-group DMs and the
 `humm://` DM deep link.
@@ -217,32 +218,35 @@ message:
 1. [sender]    DO NOT send real content yet. Commit a REQUEST STUB:
                AclSpec::DirectMessage { recipients:[me, recipient] },
                content_type: "humm-sidecar-dm-request-v1",
-               bytes = sender's SIGNED key-binding (AgentPubKey || X25519,
-                       signed by sender) + optional NON-secret greeting.
-               (authenticated by Holochain authorship: action.author == sender;
+               bytes = sender's X25519 pubkey (the author-bound
+                       key-binding) + optional NON-secret greeting.
+               (authenticated by Holochain authorship: action.author == sender
+                AND the pass-6 C-1 validator pins
+                revision_author_signing_public_key == action.author;
                 a low-order/forged enc leaks only a content-free handshake)
 2. [recipient] UI shows "unknown sender wants to connect" → [Accept]/[Block]
    - Block  → receiver-side filter (+ optional local block record); sender not notified.
-   - Accept → publish/confirm the recipient's OWN signed key-binding
+   - Accept → publish/confirm the recipient's OWN author-bound key-binding
               (content_type "humm-dm-keybinding-v1", DM-L1 item 7).
-3. [sender]    observe acceptance, fetch + verify the recipient's signed
-               key-binding, THEN seal the real first message under the
-               VERIFIED X25519 (not the raw link enc) and send it.
+3. [sender]    observe acceptance, fetch the recipient's key-binding and
+               confirm its action.author == recipient (authorship IS the
+               binding), THEN seal the real first message under that
+               AUTHOR-BOUND X25519 (not the raw link enc) and send it.
 ```
 
 **Why it's worth doing (security delta).**
 
 | Under a forged/low-order/stale `enc` | Current (msg sent with request) | Stub-first |
 |---|---|---|
-| What lands on the DHT before verification | the **real** first message, mis-sealed | a **content-free** signed handshake |
+| What lands on the DHT before verification | the **real** first message, mis-sealed | a **content-free** author-bound handshake |
 | DM-L1 / F-1 blast radius for msg #1 | full message content | ~nothing |
-| When real content is sealed | before any Accept / key check | after Accept + **verified** key-binding |
-| Key used for real content | unverified link `enc` | recipient's signed, verified X25519 |
+| When real content is sealed | before any Accept / key check | after Accept + **author-bound** key-binding |
+| Key used for real content | unverified link `enc` | recipient's author-bound X25519 |
 
 **Cost.** Client-side only — **no happ change**. Both the stub and the
 real message are ordinary `AclSpec::DirectMessage` commits; the only new
 pieces are a distinct `content_type` for the stub and gating the real
-send on (acceptance ∧ verified key-binding). The win is concentrated on
+send on (acceptance ∧ author-bound key-binding). The win is concentrated on
 the **cross-hive** path (in-hive, the recipient's X25519 already comes
 from their identity-bound `Member` entry, so msg #1 is not sealed to an
 unverified key in the first place). Recommended: adopt stub-first for
@@ -324,9 +328,9 @@ the pair SharedSecret.
 - **Do:**
   - **(Strongest — defer real content.)** For *first contact* use the §6
     Accept/Block contact-request handshake: send a content-free stub
-    first and seal the real message only after acceptance + a *verified*
-    key-binding. The numbered items below harden the per-message path the
-    handshake builds on.
+    first and seal the real message only after acceptance + an
+    *author-bound* key-binding. The numbered items below harden the
+    per-message path the handshake builds on.
   1. **Prefer the on-DHT key.** Whenever sender and recipient share a
      hive, resolve X25519 from the recipient's `Member` entry and
      **ignore the link's `enc`** (or compare and warn on mismatch).
@@ -351,13 +355,25 @@ the pair SharedSecret.
      current `Member` entry on a shared hive, show "key updated —
      verified"; else "key mismatch — verify safety number".
   7. **(Protocol upgrade — closes the TOFU window.)** Recipients MAY
-     publish a self-signed key-binding: `AclSpec::OpenWrite`, content_type
-     `humm-dm-keybinding-v1`, `bytes = sign(recipient_signing_key,
-     AgentPubKey || X25519_pubkey)`. A cross-hive sender fetches it via
-     `list_by_author(recipient, "humm-dm-keybinding-v1")` and verifies the
-     signature with the `recipient` AgentPubKey from the link — binding
+     publish an **author-bound key-binding**: `AclSpec::OpenWrite`,
+     content_type `humm-dm-keybinding-v1`, `bytes = X25519_pubkey`. A
+     cross-hive sender fetches it via
+     `list_by_author(recipient, "humm-dm-keybinding-v1")` and trusts it
+     iff the entry's `action.author` equals the `recipient` AgentPubKey
+     from the link. The binding is enforced by the shipped validators —
+     no client-side signature check exists or is needed: the pass-2 I-H
+     author-path link validator pins `link.author == target.action.author`,
+     and the pass-6 C-1 entry validator pins
+     `revision_author_signing_public_key == action.author`. This binds
      `enc` to `recipient` with no TOFU assumption or shared-hive
-     prerequisite (the Signal signed-prekey analogue).
+     prerequisite (the Signal signed-prekey analogue, with Holochain
+     authorship replacing the prekey signature).
+     *Historical note:* earlier drafts specified an in-bytes Ed25519
+     signature (`bytes = sign(recipient_signing_key, AgentPubKey ||
+     X25519_pubkey)`). humm-tauri's live wire dropped it
+     (`src/sidecars/direct-messages/wire/handshake.ts`) — the DHT-path
+     authorship validators above carry the entire binding; do NOT
+     re-implement the redundant in-bytes check.
 
 ### DM-L2 — the DM link is unauthenticated routing+key data (unlike invite links)
 - **Risk:** unlike `humm://` **invite** links (which carry an
@@ -551,10 +567,11 @@ resolves `Ok`; "rejected with `<substr>`" = error contains `<substr>`.
 - **Given** an unknown cross-hive sender clicking a DM link
 - **When** the client follows the §6 stub-first flow
 - **Then** the first committed entry is a `humm-sidecar-dm-request-v1`
-  stub carrying only the sender's signed key-binding (no secret content);
-  the recipient sees [Accept]/[Block]; the real first message is committed
-  only after Accept **and** the sender verifies the recipient's published
-  key-binding — sealed under the verified X25519, never the raw link `enc`
+  stub carrying only the sender's author-bound key-binding (no secret
+  content); the recipient sees [Accept]/[Block]; the real first message is
+  committed only after Accept **and** the sender confirms the recipient's
+  published key-binding is authored by `recipient` — sealed under the
+  author-bound X25519, never the raw link `enc`
 - **And (contrast)** the current "send the real message with the request"
   path commits msg #1 under the unverified `enc` before any Accept (the
   exposure window DM-12 removes)
@@ -584,15 +601,16 @@ S6 [post_commit] generic Signal::EntryCreated + LinkCreated per action
 ### First contact (stub-first hardening — see §6)
 ```
 F1 [CLIENT]    click link → commit REQUEST STUB (content_type humm-sidecar-dm-request-v1,
-               bytes = signed key-binding only; NO real content)        (🔒 DM-L1)
+               bytes = author-bound key-binding only; NO real content)  (🔒 DM-L1)
 F2 [recv,recipient] recv_remote_signal → UI shows [Accept]/[Block]
 F3a[recipient] Block  → local filter; no signal back (sender not notified)
 F3b[recipient] Accept → commit recipient key-binding (humm-dm-keybinding-v1)
 F4 [CLIENT,sender]  observe acceptance; list_by_author(recipient,"humm-dm-keybinding-v1");
-               VERIFY signature against recipient AgentPubKey           (🔒 DM-L1 binding)
-F5 [CLIENT,sender]  seal real msg#1 under VERIFIED X25519 (not raw enc) → Send flow above
+               CONFIRM entry action.author == recipient (authorship IS
+               the binding — C-1 + I-H validators)                     (🔒 DM-L1 binding)
+F5 [CLIENT,sender]  seal real msg#1 under AUTHOR-BOUND X25519 (not raw enc) → Send flow above
 ```
-- 🔒 **Gap-DM6:** log whether msg #1 was sealed under a *verified*
+- 🔒 **Gap-DM6:** log whether msg #1 was sealed under an *author-bound*
   key-binding or the raw link `enc`. A real first message sealed under an
   unverified `enc` (the current path) is the DM-L1/F-1 exposure window.
 

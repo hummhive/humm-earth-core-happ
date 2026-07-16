@@ -508,11 +508,22 @@ fn summarize(input: ContentSummaryInput) -> ExternResult<Vec<ContentTypeSummary>
 }
 
 pub(crate) const CONTENT_SUMMARY_MANY_MAX_HIVES: usize = 32;
+/// Aggregate fan-out cap: one `get_links` per content type per hive, so
+/// the remote-callable batch bounds TOTAL types, not just hive count.
+pub(crate) const CONTENT_SUMMARY_MANY_MAX_TYPES: usize = 256;
 
-pub(crate) fn check_summary_many_bound(len: usize) -> ExternResult<()> {
-    if len > CONTENT_SUMMARY_MANY_MAX_HIVES {
+pub(crate) fn check_summary_many_bounds(
+    hive_count: usize,
+    total_content_types: usize,
+) -> ExternResult<()> {
+    if hive_count > CONTENT_SUMMARY_MANY_MAX_HIVES {
         return Err(wasm_error!(WasmErrorInner::Guest(String::from(
             "content_summary_many: at most 32 hives per call"
+        ))));
+    }
+    if total_content_types > CONTENT_SUMMARY_MANY_MAX_TYPES {
+        return Err(wasm_error!(WasmErrorInner::Guest(String::from(
+            "content_summary_many: at most 256 content types per call"
         ))));
     }
     Ok(())
@@ -530,7 +541,8 @@ pub struct HiveContentSummary {
 pub fn content_summary_many(
     inputs: Vec<ContentSummaryInput>,
 ) -> ExternResult<Vec<HiveContentSummary>> {
-    check_summary_many_bound(inputs.len())?;
+    let total_content_types = inputs.iter().map(|input| input.content_types.len()).sum();
+    check_summary_many_bounds(inputs.len(), total_content_types)?;
     inputs
         .into_iter()
         .map(|input| {
@@ -575,10 +587,17 @@ mod tests {
     use super::*;
 
     #[test]
-    fn content_summary_many_bounds_literal() {
-        assert!(check_summary_many_bound(CONTENT_SUMMARY_MANY_MAX_HIVES).is_ok());
-        let err = check_summary_many_bound(CONTENT_SUMMARY_MANY_MAX_HIVES + 1)
-            .expect_err("over-cap must reject");
-        assert!(format!("{err:?}").contains("at most 32 hives per call"));
+    fn content_summary_many_bounds_literals() {
+        assert!(check_summary_many_bounds(
+            CONTENT_SUMMARY_MANY_MAX_HIVES,
+            CONTENT_SUMMARY_MANY_MAX_TYPES
+        )
+        .is_ok());
+        let hives_err = check_summary_many_bounds(CONTENT_SUMMARY_MANY_MAX_HIVES + 1, 0)
+            .expect_err("over-cap hives must reject");
+        assert!(format!("{hives_err:?}").contains("at most 32 hives per call"));
+        let types_err = check_summary_many_bounds(1, CONTENT_SUMMARY_MANY_MAX_TYPES + 1)
+            .expect_err("over-cap types must reject");
+        assert!(format!("{types_err:?}").contains("at most 256 content types per call"));
     }
 }
