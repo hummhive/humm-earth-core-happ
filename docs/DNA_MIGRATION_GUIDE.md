@@ -20,7 +20,7 @@ gracefully instead of silently losing access.
 > the new "Pass-3 wire-shape migration" section below for the
 > mechanics and humm-tauri implications. For the full delta vs the
 > pass-2.5 handoff, see
-> [`HANDOFF_UPDATED_INFO.md`](./HANDOFF_UPDATED_INFO.md).
+> [`HANDOFF_UPDATED_INFO.md`](./_archive/HANDOFF_UPDATED_INFO.md).
 >
 > **Status:** the **pass-2** integrity change has shipped on
 > `feat-integrity-pass-2` at DNA hash
@@ -30,7 +30,7 @@ gracefully instead of silently losing access.
 > hive-identity track + V2 markers needed to actually move data from
 > pass-1 to pass-2. No DNA hash change — coordinator-only.
 >
-> See [`PASS_2_DEPLOY_HANDOFF.md`](./PASS_2_DEPLOY_HANDOFF.md) for the
+> See [`_archive/PASS_2_DEPLOY_HANDOFF.md`](./_archive/PASS_2_DEPLOY_HANDOFF.md) for the
 > wire-shape change list + deploy steps.
 
 > **Pre-launch caveat:** with no production users today, this scaffold

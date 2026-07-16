@@ -73,7 +73,7 @@ held the hash + extended migration tooling.
   convention).
 
 **Reference docs:**
-- `docs/PASS_2_DEPLOY_HANDOFF.md`
+- `docs/_archive/PASS_2_DEPLOY_HANDOFF.md`
 - `docs/HUMM_TAURI_COORDINATOR_INTEGRATION.md`
 - `docs/DNA_MIGRATION_GUIDE.md` (the pass-2.5 rewrite is the
   primary deploy reference)
@@ -159,7 +159,7 @@ pass-4 inherits the pass-3 wire-shape change):**
   pass-4).
 
 **Reference docs:**
-- `docs/PASS_3_DEPLOY_HANDOFF.md`
+- `docs/_archive/PASS_3_DEPLOY_HANDOFF.md`
 - `docs/HUMM_TAURI_ACLSPEC_INTEGRATION.md` (canonical wire shape)
 - `docs/HUMM_TAURI_FEATURE_ENABLEMENT.md` (per-feature wiring,
   including E.4.l invite links)
@@ -210,7 +210,7 @@ bundled happ sha advances. **Current bundled target: `v1.0.0` / `2205337c`** (se
 | Task | Class | Files |
 |---|---|---|
 | Extend `contentSchema.ts` types with `AclBucket` + `RecipientWitness` + `recipient_witnesses` field on `AclSpec::HiveGroup` | 🟢 | `src/types/contentSchema.ts` |
-| Implement `stampWitnessesFromGroupAcl` helper (recipe in `PASS_4_DEPLOY_HANDOFF.md` § "REQUIRED humm-tauri callsite update") | 🟢 | `src/api/core/acl/stampWitnesses.ts` (NEW) |
+| Implement `stampWitnessesFromGroupAcl` helper (recipe in `_archive/PASS_4_DEPLOY_HANDOFF.md` § "REQUIRED humm-tauri callsite update") | 🟢 | `src/api/core/acl/stampWitnesses.ts` (NEW) |
 | Call `stampWitnessesFromGroupAcl` from every `AclSpec::HiveGroup` write site before `create_encrypted_content` | 🟢 | every callsite under `src/api/content/**` + `src/containers/MembersAndGroups/**` + Compose-with-group-scope |
 | Surface witness-stamping errors as user-facing "this person is no longer a group member" rather than committing a doomed entry | 🟢 | wrapper around `create_encrypted_content` in the callsite layer |
 | OPTIONAL: surface "your admin role expires at X" hint in Invite/Manage flows when inviter holds an expiring hive admin membership (G-4.4 hive-layer UX) | 🔵 | `src/containers/MembersAndGroups/Invites/`, `Members/ManageMember/` |
@@ -229,10 +229,10 @@ need to wait for pass-4):**
   pass-4 leaves both untouched.
 
 **Reference docs:**
-- `docs/PASS_4_DEPLOY_HANDOFF.md`
+- `docs/_archive/PASS_4_DEPLOY_HANDOFF.md`
 - `docs/HUMM_TAURI_ACLSPEC_INTEGRATION.md` (§ 4 + § 5 updated)
 - `docs/HUMM_TAURI_FEATURE_ENABLEMENT.md`
-- `docs/HANDOFF_UPDATED_INFO.md` § "What is enforced now (formerly
+- `docs/_archive/HANDOFF_UPDATED_INFO.md` § "What is enforced now (formerly
   deferred) — pass-4 G-6.2 SHIPPED"
 
 ---
@@ -253,7 +253,7 @@ The five ingredients, at a glance:
 | (a) | **Fields removed** from the top-level header: `hive_genesis_hash`, `author_membership_hash`, legacy squuid `acl`; plus `hive_id` → `display_hive_id` rename (display-only, not validator-trusted) | ACLSPEC § 1, § 11 |
 | (b) | **Fields added**: `acl_spec` discriminated union; `recipient_witnesses` on the `HiveGroup` variant (pass-4 G-6.2) | ACLSPEC § 1, § 4 |
 | (c) | **Per-content-type AclSpec variant** selection | ACLSPEC § 2 (classification table) |
-| (d) | **`recipient_witnesses` stamping** via `stampWitnessesFromGroupAcl` | `PASS_4_DEPLOY_HANDOFF.md` § "REQUIRED humm-tauri callsite update"; ACLSPEC § 5 |
+| (d) | **`recipient_witnesses` stamping** via `stampWitnessesFromGroupAcl` | `_archive/PASS_4_DEPLOY_HANDOFF.md` § "REQUIRED humm-tauri callsite update"; ACLSPEC § 5 |
 | (e) | **Roster reads** switch to `list_group_members(group_genesis_hash)` | ACLSPEC § 5 (`deriveHiveGroupPublicKeyAcl`) |
 
 The five `pass-3-target` markers in the humm-tauri codebase map
@@ -376,7 +376,7 @@ lineage line. Detail lives there:
 - **Pass-5 / v2.0.0** — ✅ shipped + adopted. DNA `uhC0k2dX…`, happ `42dbf9df…`.
   Hive Owner role (offer/accept handshake) + reader read-only + role-grant
   hardening + GroupGenesis EntryType filter. Cutover contract:
-  [`PASS_5_DEPLOY_HANDOFF.md`](./PASS_5_DEPLOY_HANDOFF.md) +
+  [`_archive/PASS_5_DEPLOY_HANDOFF.md`](./_archive/PASS_5_DEPLOY_HANDOFF.md) +
   [`HUMM_TAURI_OWNER_ROLE_AND_ACL_INTEGRATION.md`](./HUMM_TAURI_OWNER_ROLE_AND_ACL_INTEGRATION.md).
 - **Pass-6 / v3.0.0** — ✅ shipped, blessed 2026-07-02. DNA `uhC0ksXs…`, happ
   `3062de38…`. Integrity module refactor + `OriginalHashPointer` link

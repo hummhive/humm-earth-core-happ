@@ -15,11 +15,11 @@
 > wire-shape reference for pass-3 is
 > [`HUMM_TAURI_ACLSPEC_INTEGRATION.md`](./HUMM_TAURI_ACLSPEC_INTEGRATION.md)**;
 > deploy mechanics in
-> [`PASS_3_DEPLOY_HANDOFF.md`](./PASS_3_DEPLOY_HANDOFF.md); per-feature
+> [`_archive/PASS_3_DEPLOY_HANDOFF.md`](./_archive/PASS_3_DEPLOY_HANDOFF.md); per-feature
 > implementation guide in
 > [`HUMM_TAURI_FEATURE_ENABLEMENT.md`](./HUMM_TAURI_FEATURE_ENABLEMENT.md);
 > ongoing delta view in
-> [`HANDOFF_UPDATED_INFO.md`](./HANDOFF_UPDATED_INFO.md). The pass-2
+> [`HANDOFF_UPDATED_INFO.md`](./_archive/HANDOFF_UPDATED_INFO.md). The pass-2
 > content below remains historical reference.
 >
 > **Pass-2 update (`feat-integrity-pass-2`, commit `1fa4d37`):**
@@ -27,7 +27,7 @@
 > has changed from
 > `uhC0kT0Tkc3b6ccfa75YwWdzpSWvdkXERpdqkxIndRhfK5TJAUusY` (pass-1) to
 > `uhC0kawoZqBxv3Jjvh-TlSQ5aO4U-hwiUNtZxFzXkTOBc5ijKVatw` (pass-2). See
-> [`PASS_2_DEPLOY_HANDOFF.md`](./PASS_2_DEPLOY_HANDOFF.md) for the
+> [`_archive/PASS_2_DEPLOY_HANDOFF.md`](./_archive/PASS_2_DEPLOY_HANDOFF.md) for the
 > wire-shape changes, new externs (`create_hive_genesis`,
 > `create_hive_membership`, `get_latest_membership`, `list_my_hives`,
 > `send_to_inbox`, `probe_inbox`, etc.), and the migration flow. The
@@ -260,7 +260,7 @@ entry under their OWN `hive_id` — which fails the intersection.
 > entry's validated header fields and reject mismatches, and writer
 > membership in the named hive is enforced via the `HiveMembership`
 > chain walk. The text below is preserved as the pre-pass-2 reality.
-> See [`PASS_2_DEPLOY_HANDOFF.md`](./PASS_2_DEPLOY_HANDOFF.md) for the
+> See [`_archive/PASS_2_DEPLOY_HANDOFF.md`](./_archive/PASS_2_DEPLOY_HANDOFF.md) for the
 > pass-2 ship state.
 
 **At pass-1 HEAD, this function did NOT close H-1** against any
@@ -523,7 +523,7 @@ humm-tauri devs don't re-discover them by accident:
 
 The deferred items below have ALL shipped on `feat-integrity-pass-2`
 (commit `1fa4d37`, pass-2 FINAL at `891acc9`). See
-[`PASS_2_DEPLOY_HANDOFF.md`](./PASS_2_DEPLOY_HANDOFF.md) for the
+[`_archive/PASS_2_DEPLOY_HANDOFF.md`](./_archive/PASS_2_DEPLOY_HANDOFF.md) for the
 ship-state details. The table below is the original pass-1-era
 "deferred I-class" plan, preserved as historical context with each
 row annotated with its pass-2 outcome.

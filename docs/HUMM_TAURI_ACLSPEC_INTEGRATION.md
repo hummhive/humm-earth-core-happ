@@ -2,7 +2,7 @@
 
 The canonical reference for humm-tauri devs implementing the pass-3
 wire-shape migration AND the pass-4 G-6.2 `recipient_witnesses`
-addition. Where `PASS_4_DEPLOY_HANDOFF.md` covers the deploy
+addition. Where `_archive/PASS_4_DEPLOY_HANDOFF.md` covers the deploy
 mechanics, this doc covers **what each call site looks like on the
 humm-tauri side after pass-3 + pass-4**.
 
@@ -12,7 +12,7 @@ humm-tauri side after pass-3 + pass-4**.
 > witnesses covering every pubkey in `public_key_acl` exactly once.
 > See § 2 (variant shape), § 3 (per-modal wiring), § 5
 > (`stampWitnessesFromGroupAcl` helper recipe), and
-> [`PASS_4_DEPLOY_HANDOFF.md`](./PASS_4_DEPLOY_HANDOFF.md) for the
+> [`_archive/PASS_4_DEPLOY_HANDOFF.md`](./_archive/PASS_4_DEPLOY_HANDOFF.md) for the
 > end-to-end migration story. humm-tauri never integrated pass-3's
 > intermediate `acl_spec`-without-witnesses shape, so its HiveGroup
 > callsites are authored directly at the pass-4 shape (witnesses
@@ -21,7 +21,7 @@ humm-tauri side after pass-3 + pass-4**.
 
 > **Status note.** This doc is the wire-shape contract. For the
 > living "what changed since pass-2.5" view, see
-> [`HANDOFF_UPDATED_INFO.md`](./HANDOFF_UPDATED_INFO.md). For the
+> [`HANDOFF_UPDATED_INFO.md`](./_archive/HANDOFF_UPDATED_INFO.md). For the
 > feature-by-feature implementation guide (which TS files change,
 > what new files are needed, smoke tests), see
 > [`HUMM_TAURI_FEATURE_ENABLEMENT.md`](./HUMM_TAURI_FEATURE_ENABLEMENT.md).
@@ -531,7 +531,7 @@ Every `AclSpec::HiveGroup` write MUST carry one
 stamping logic in ONE helper humm-tauri calls from every HiveGroup
 write site (Manage*, Compose-with-group-scope, group-SS provisioning,
 sidecar group-message, etc.). The full recipe lives in
-[`PASS_4_DEPLOY_HANDOFF.md`](./PASS_4_DEPLOY_HANDOFF.md) §
+[`_archive/PASS_4_DEPLOY_HANDOFF.md`](./_archive/PASS_4_DEPLOY_HANDOFF.md) §
 "REQUIRED humm-tauri callsite update"; the short version:
 
 ```ts
@@ -653,7 +653,7 @@ leapfrog, skipping pass-3):
    before/after at each marked site (the `pass-3-target` markers).
 4. **NEW (pass-4)**: drop the `stampWitnessesFromGroupAcl` helper
    (§ 5 short version; full recipe in
-   [`PASS_4_DEPLOY_HANDOFF.md`](./PASS_4_DEPLOY_HANDOFF.md)) into
+   [`_archive/PASS_4_DEPLOY_HANDOFF.md`](./_archive/PASS_4_DEPLOY_HANDOFF.md)) into
    `humm-tauri/src/api/core/acl/` and call it from every
    `AclSpec::HiveGroup` write site immediately before
    `create_encrypted_content`.
@@ -663,9 +663,9 @@ leapfrog, skipping pass-3):
 6. Update `derrivePublicKeyAcl` to use `list_group_members` for
    `HiveGroup` content (§ 5).
 7. Run cross-hive smoke tests from
-   [`PASS_3_DEPLOY_HANDOFF.md`](./PASS_3_DEPLOY_HANDOFF.md) + the
+   [`_archive/PASS_3_DEPLOY_HANDOFF.md`](./_archive/PASS_3_DEPLOY_HANDOFF.md) + the
    pass-4 additions in
-   [`PASS_4_DEPLOY_HANDOFF.md`](./PASS_4_DEPLOY_HANDOFF.md)
+   [`_archive/PASS_4_DEPLOY_HANDOFF.md`](./_archive/PASS_4_DEPLOY_HANDOFF.md)
    § "Cross-hive smoke-test checklist".
 
 For the feature-by-feature implementation guide (which files change,

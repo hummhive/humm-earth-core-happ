@@ -115,7 +115,7 @@ See:
 - `docs/DNA_MIGRATION_GUIDE.md`        — migration mechanics (pass-2.5 primary)
 - `docs/HUMM_TAURI_COORDINATOR_INTEGRATION.md`
                                         — wire-shape change list for humm-tauri
-- `docs/PASS_2_DEPLOY_HANDOFF.md`      — post-pass-2 deployment runbook + pass-2.5 migration commands
+- `docs/_archive/PASS_2_DEPLOY_HANDOFF.md`      — post-pass-2 deployment runbook + pass-2.5 migration commands
 
 Pass-3 (branch feat-integrity-pass-3-groups, FINAL)
 ---------------------------------------------------------------------
@@ -227,10 +227,10 @@ import) both round-trip cleanly.
 
 See:
 - `docs/HUMM_TAURI_ACLSPEC_INTEGRATION.md` — pass-3 wire shape + per-modal mechanics (canonical)
-- `docs/PASS_3_DEPLOY_HANDOFF.md`          — pass-3 deploy runbook + smoke tests
+- `docs/_archive/PASS_3_DEPLOY_HANDOFF.md`          — pass-3 deploy runbook + smoke tests
 - `docs/HUMM_TAURI_FEATURE_ENABLEMENT.md`  — feature-by-feature implementation guide
 - `docs/DNA_MIGRATION_GUIDE.md`            — migration mechanics (Pass-3 wire-shape migration section)
-- `docs/HANDOFF_UPDATED_INFO.md`           — living delta from pass-2.5 to pass-3
+- `docs/_archive/HANDOFF_UPDATED_INFO.md`           — living delta from pass-2.5 to pass-3
 
 Pass-4 (branch feat-integrity-pass-4-recipient-witnesses, FINAL — RE-RECORDED)
 ------------------------------------------------------------------------------
@@ -330,11 +330,11 @@ branch) to migrate end-to-end; pre-D.1, HiveGroup entries default
 to Public via the classifier.
 
 See:
-- `docs/PASS_4_DEPLOY_HANDOFF.md`          — pass-4 deploy runbook + smoke tests
+- `docs/_archive/PASS_4_DEPLOY_HANDOFF.md`          — pass-4 deploy runbook + smoke tests
 - `docs/HUMM_TAURI_ACLSPEC_INTEGRATION.md` — pass-3 + pass-4 wire shape + per-modal mechanics
 - `docs/HUMM_TAURI_PASS_ROADMAP.md`        — per-pass concrete-task mapping for humm-tauri
 - `docs/HUMM_TAURI_FEATURE_ENABLEMENT.md`  — feature-by-feature implementation guide (E.4.l invite links new)
-- `docs/HANDOFF_UPDATED_INFO.md`           — living delta from pass-3 to pass-4
+- `docs/_archive/HANDOFF_UPDATED_INFO.md`           — living delta from pass-3 to pass-4
 
 Pass-4 coordinator follow-up — recv_remote_signal ExternIO pre-encode
 ---------------------------------------------------------------------
@@ -509,7 +509,7 @@ AdminWebsocket.updateCoordinators.
 Released to main as v1.0.1 at de7abd83fbc86ca65535f615d549645c6eb05570
 (--no-ff merge preserving the 4-commit rescue block; v1.0.0 tag db2a264 unchanged).
 
-Root cause + rescue mechanics: docs/PASS_4_MIGRATION_RESCUE_HANDOFF.md.
+Root cause + rescue mechanics: docs/_archive/PASS_4_MIGRATION_RESCUE_HANDOFF.md.
 
 Pass-4 coordinator follow-up — delete-link cleanup + dead time-index removal
 ----------------------------------------------------------------------------

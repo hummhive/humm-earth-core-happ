@@ -116,7 +116,7 @@ Evidence:
 - `README.md:25-29` still makes Tryorama the visible test path despite Sweettest being the active conductor harness.
 - `docs/HUMM_TAURI_PASS_ROADMAP.md:363-368` still says earth-core builds against Holochain 0.6.0/HDK 0.6.0/HDI 0.7.0, while current repo docs and Cargo state 0.6.1/0.6.1/0.7.1.
 - `docs/HUMM_TAURI_PASS_ROADMAP.md:374-384` instructs future DNA bumps to append pass sections, but pass-5/pass-6 are not represented there; authoritative state has moved to `.baseline-hashes.txt` and pass-specific handoffs.
-- `docs/HUMM_TAURI_v1.0.0_HANDOFF_DOC.md:1-5` calls itself the canonical current-state starting point, although current downstream target is pass-5/v2.0.0 and pass-6 is an unreleased candidate per `POSTCOMPACTION.md:10-21` and `docs/PASS_6_DRY_REFACTOR_HANDOFF.md:26-38`.
+- `docs/_archive/HUMM_TAURI_v1.0.0_HANDOFF_DOC.md:1-5` calls itself the canonical current-state starting point, although current downstream target is pass-5/v2.0.0 and pass-6 is an unreleased candidate per `POSTCOMPACTION.md:10-21` and `docs/PASS_6_DRY_REFACTOR_HANDOFF.md:26-38`.
 - `docs/HUMM_TAURI_CORE_HAPP_BDD_SANITY_CHECKS.md:114-118` says a non-owner Owner grant should fail because only an Owner may grant Owner. Current code rejects all `HiveMembership` Owner grants at `dnas/humm_earth_core/zomes/integrity/content/src/hive/membership.rs:92-100`; `docs/HUMM_TAURI_OWNER_ROLE_INTEGRATION.md:20-22` correctly says Owner comes only through owner handoff.
 
 Why it matters:
@@ -180,7 +180,7 @@ Evidence:
 - `scripts/migrate-dna.ts` writes a self-contained export bundle and an old-to-new remap as part of the migration pipeline at `scripts/migrate-dna.ts:46-59`; the remap is described as a load-bearing host handoff at `:91-99`.
 - The migration guide shows `bundle.json`, `hive-bundle.json`, and `remap.json` in the pipeline at `docs/DNA_MIGRATION_GUIDE.md:88-99`, and defines `remap.json` contents including source/target app IDs, agent pubkeys, action hashes, content type, hive ID, and failures at `:278-310`.
 - The same guide explicitly says only `hive-bundle` must be sent through an encrypted out-of-band channel and treats its roster leak as operationally sensitive at `docs/DNA_MIGRATION_GUIDE.md:575-581`.
-- Older pass-2 handoff docs add `chmod-700` local-storage guidance for `hive-bundle` at `docs/PASS_2_DEPLOY_HANDOFF.md:343-362`, but I did not find equivalent guidance for `bundle.json` or `remap.json`.
+- Older pass-2 handoff docs add `chmod-700` local-storage guidance for `hive-bundle` at `docs/_archive/PASS_2_DEPLOY_HANDOFF.md:343-362`, but I did not find equivalent guidance for `bundle.json` or `remap.json`.
 
 Why it matters:
 
