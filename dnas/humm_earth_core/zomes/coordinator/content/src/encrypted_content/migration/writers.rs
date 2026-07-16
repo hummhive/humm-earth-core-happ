@@ -163,23 +163,7 @@ fn mark_hive_genesis_migrated(
     }
     let marker_bytes = SerializedBytes::try_from(input.marker)
         .map_err(|err| wasm_error!(WasmErrorInner::Serialize(err)))?;
-    let marker_input = CreateEncryptedContentInput {
-        id: HIVE_MIGRATION_MARKER_CONTENT_ID.into(),
-        display_hive_id: genesis.display_id.clone(),
-        content_type: marker_content_type(HIVE_GENESIS_MARKER_ORIGINAL_TYPE),
-        revision_author_signing_public_key: me.to_string(),
-        bytes: marker_bytes,
-        acl_spec: AclSpec::OpenWrite {
-            target_hive_genesis_hash: Some(input.original_action_hash.clone()),
-        },
-        public_key_acl: Acl {
-            owner: me.to_string(),
-            admin: vec![],
-            writer: vec![],
-            reader: vec![],
-        },
-        dynamic_links: None,
-    };
+    let marker_input = hive_marker_input(genesis, &input.original_action_hash, &me, marker_bytes);
 
     let (existing, _truncated) = content_id_records_by_author(
         &input.original_action_hash,
@@ -204,4 +188,29 @@ fn mark_hive_genesis_migrated(
     }
     let response = create_encrypted_content(marker_input)?;
     Ok(Some(response))
+}
+
+fn hive_marker_input(
+    genesis: &HiveGenesis,
+    original: &ActionHash,
+    founder: &AgentPubKey,
+    marker_bytes: SerializedBytes,
+) -> CreateEncryptedContentInput {
+    CreateEncryptedContentInput {
+        id: HIVE_MIGRATION_MARKER_CONTENT_ID.into(),
+        display_hive_id: genesis.display_id.clone(),
+        content_type: marker_content_type(HIVE_GENESIS_MARKER_ORIGINAL_TYPE),
+        revision_author_signing_public_key: founder.to_string(),
+        bytes: marker_bytes,
+        acl_spec: AclSpec::OpenWrite {
+            target_hive_genesis_hash: Some(original.clone()),
+        },
+        public_key_acl: Acl {
+            owner: founder.to_string(),
+            admin: vec![],
+            writer: vec![],
+            reader: vec![],
+        },
+        dynamic_links: None,
+    }
 }

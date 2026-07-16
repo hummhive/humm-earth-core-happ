@@ -28,8 +28,9 @@ pub mod queries;
 pub use crud::{
     create_group_genesis, create_group_membership, find_or_create_group_genesis,
     find_or_create_group_membership, revoke_group_membership, CreateGroupGenesisInput,
-    CreateGroupMembershipInput, FindOrCreateGroupGenesisResponse, FindOrCreateMembershipResponse,
-    GroupGenesisResponse, GroupMembershipResponse, RevokeGroupMembershipInput,
+    CreateGroupMembershipInput, FindOrCreateGroupGenesisResponse,
+    FindOrCreateGroupMembershipResponse, GroupGenesisResponse, GroupMembershipResponse,
+    RevokeGroupMembershipInput,
 };
 pub use queries::{
     get_group_genesis, get_latest_group_membership, list_group_members, list_groups_in_hive,

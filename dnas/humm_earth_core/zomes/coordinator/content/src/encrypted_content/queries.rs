@@ -474,10 +474,6 @@ pub struct ContentTypeSummary {
 
 #[hdk_extern]
 pub fn content_summary(input: ContentSummaryInput) -> ExternResult<Vec<ContentTypeSummary>> {
-    summarize(input)
-}
-
-fn summarize(input: ContentSummaryInput) -> ExternResult<Vec<ContentTypeSummary>> {
     let mut summaries = Vec::with_capacity(input.content_types.len());
     for content_type in input.content_types {
         let path = Path::from(vec![
@@ -507,12 +503,12 @@ fn summarize(input: ContentSummaryInput) -> ExternResult<Vec<ContentTypeSummary>
     Ok(summaries)
 }
 
-pub(crate) const CONTENT_SUMMARY_MANY_MAX_HIVES: usize = 32;
+const CONTENT_SUMMARY_MANY_MAX_HIVES: usize = 32;
 /// Aggregate fan-out cap: one `get_links` per content type per hive, so
 /// the remote-callable batch bounds TOTAL types, not just hive count.
-pub(crate) const CONTENT_SUMMARY_MANY_MAX_TYPES: usize = 256;
+const CONTENT_SUMMARY_MANY_MAX_TYPES: usize = 256;
 
-pub(crate) fn check_summary_many_bounds(
+fn check_summary_many_bounds(
     hive_count: usize,
     total_content_types: usize,
 ) -> ExternResult<()> {
@@ -549,7 +545,7 @@ pub fn content_summary_many(
             let hive_genesis_hash = input.hive_genesis_hash.clone();
             Ok(HiveContentSummary {
                 hive_genesis_hash,
-                summaries: summarize(input)?,
+                summaries: content_summary(input)?,
             })
         })
         .collect()

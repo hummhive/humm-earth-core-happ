@@ -13,47 +13,33 @@
 //! which this module batches server-side in one zome call.
 
 use content_integrity::*;
-use hdi::hash_path::path::Component;
 use hdk::prelude::*;
 
-use super::crud::{
-    create_encrypted_content, delete_encrypted_content, get_encrypted_content, header_from_input,
-};
+use super::crud::{create_encrypted_content, delete_encrypted_content, header_from_input};
 use super::paging::{canonical_lowest_hash, content_id_records_by_author};
+use super::queries::{list_by_author, ListByAuthorInput};
 use super::{CreateEncryptedContentInput, EncryptedContentResponse};
 
-pub(crate) const REMEDIATE_MAX_ITEMS: usize = 64;
+const REMEDIATE_MAX_ITEMS: usize = 64;
 
 /// List the caller's own entries of `content_type` whose header lacks
 /// hive context (legacy empty-hive-id writes) — the remediation
-/// candidates for [`remediate_hiveless_content`]. Walks the caller's
-/// author path; unresolvable targets are skipped per the list-read
-/// contract. NOT cap-granted: own-content enumeration.
+/// candidates for [`remediate_hiveless_content`]. Delegates to
+/// [`list_by_author`], inheriting its tolerant per-target skip
+/// semantics. NOT cap-granted: own-content enumeration.
 #[hdk_extern]
 pub fn list_my_hiveless_content(
     content_type: String,
 ) -> ExternResult<Vec<EncryptedContentResponse>> {
     let me = agent_info()?.agent_initial_pubkey;
-    let path = Path::from(vec![
-        Component::from(me.to_string()),
-        Component::from(content_type),
-    ]);
-    let links = get_links(
-        LinkQuery::try_new(path.path_entry_hash()?, LinkTypes::Hive)?,
-        GetStrategy::Network,
-    )?;
-    Ok(links
-        .into_iter()
-        .filter_map(|link| link.target.into_action_hash())
-        .filter_map(|hash| match get_encrypted_content(hash.clone()) {
-            Ok(response) => Some(response),
-            Err(err) => {
-                debug!("list_my_hiveless_content: skipping unresolvable target {hash}: {err:?}");
-                None
-            }
-        })
-        .filter(|response| response.encrypted_content.header.hive_context().is_none())
-        .collect())
+    let mut records = list_by_author(ListByAuthorInput {
+        author: me.to_string(),
+        content_type,
+        since_ts: None,
+        limit: None,
+    })?;
+    records.retain(|record| record.encrypted_content.header.hive_context().is_none());
+    Ok(records)
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -90,7 +76,7 @@ pub struct RemediationOutcome {
     pub detail: Option<String>,
 }
 
-pub(crate) fn check_items_bound(len: usize) -> ExternResult<()> {
+fn check_items_bound(len: usize) -> ExternResult<()> {
     if len > REMEDIATE_MAX_ITEMS {
         return Err(wasm_error!(WasmErrorInner::Guest(String::from(
             "remediate_hiveless_content: at most 64 items per call"

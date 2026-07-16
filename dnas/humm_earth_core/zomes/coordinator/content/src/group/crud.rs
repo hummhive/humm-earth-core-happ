@@ -125,13 +125,35 @@ pub fn find_or_create_group_genesis(
     input: CreateGroupGenesisInput,
 ) -> ExternResult<FindOrCreateGroupGenesisResponse> {
     let me = agent_info()?.agent_initial_pubkey;
+    let candidates = caller_matching_geneses(&input, &me)?;
+
+    if let Some(existing) = candidates.into_iter().min_by_key(|c| c.hash.to_string()) {
+        return Ok(FindOrCreateGroupGenesisResponse {
+            response: existing,
+            was_created: false,
+        });
+    }
+    let response = create_group_genesis(input)?;
+    Ok(FindOrCreateGroupGenesisResponse {
+        response,
+        was_created: true,
+    })
+}
+
+/// The find half of [`find_or_create_group_genesis`]: every
+/// caller-authored `GroupGenesis` under `input.hive_genesis_hash` that
+/// matches the role/display key.
+fn caller_matching_geneses(
+    input: &CreateGroupGenesisInput,
+    me: &AgentPubKey,
+) -> ExternResult<Vec<GroupGenesisResponse>> {
     let query = LinkQuery::try_new(
         AnyLinkableHash::from(input.hive_genesis_hash.clone()),
         LinkTypes::HiveToGroups,
     )?
     .author(me.clone());
     let mut links = get_links(query, GetStrategy::Network)?;
-    links.retain(|link| link.author == me);
+    links.retain(|link| link.author == *me);
 
     let mut candidates: Vec<GroupGenesisResponse> = Vec::new();
     for link in links {
@@ -165,18 +187,7 @@ pub fn find_or_create_group_genesis(
             });
         }
     }
-
-    if let Some(existing) = candidates.into_iter().min_by_key(|c| c.hash.to_string()) {
-        return Ok(FindOrCreateGroupGenesisResponse {
-            response: existing,
-            was_created: false,
-        });
-    }
-    let response = create_group_genesis(input)?;
-    Ok(FindOrCreateGroupGenesisResponse {
-        response,
-        was_created: true,
-    })
+    Ok(candidates)
 }
 
 // =============================================================================
@@ -259,7 +270,7 @@ pub fn create_group_membership(
 }
 
 #[derive(Serialize, Deserialize, Debug)]
-pub struct FindOrCreateMembershipResponse {
+pub struct FindOrCreateGroupMembershipResponse {
     pub response: GroupMembershipResponse,
     pub was_created: bool,
 }
@@ -273,21 +284,21 @@ pub struct FindOrCreateMembershipResponse {
 #[hdk_extern]
 pub fn find_or_create_group_membership(
     input: CreateGroupMembershipInput,
-) -> ExternResult<FindOrCreateMembershipResponse> {
+) -> ExternResult<FindOrCreateGroupMembershipResponse> {
     let existing = get_latest_group_membership(GetLatestGroupMembershipInput {
         agent: input.for_agent.clone(),
         group_genesis_hash: input.group_genesis_hash.clone(),
     })?;
     if let Some(found) = existing {
         if found.membership.role == input.role {
-            return Ok(FindOrCreateMembershipResponse {
+            return Ok(FindOrCreateGroupMembershipResponse {
                 response: found,
                 was_created: false,
             });
         }
     }
     let response = create_group_membership(input)?;
-    Ok(FindOrCreateMembershipResponse {
+    Ok(FindOrCreateGroupMembershipResponse {
         response,
         was_created: true,
     })
