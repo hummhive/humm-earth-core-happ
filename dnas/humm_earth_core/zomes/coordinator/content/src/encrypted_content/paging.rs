@@ -151,23 +151,48 @@ pub struct OwnContentRecords {
 #[hdk_extern]
 pub fn get_my_content_by_id_link(input: MyContentByIdInput) -> ExternResult<OwnContentRecords> {
     let me = agent_info()?.agent_initial_pubkey;
+    let (records, truncated) =
+        content_id_records_by_author(&input.hive_genesis_hash, &input.content_id, &me)?;
+    Ok(OwnContentRecords { records, truncated })
+}
+
+/// Author-scoped walk of the `HummContentId` path
+/// `[hive_genesis_hash_b64, content_id]`: only links AUTHORED BY
+/// `author` are considered, so foreign fixed-id collisions are excluded
+/// at the link layer before any target fetch. Shared probe behind
+/// [`get_my_content_by_id_link`], the find-or-create family, hiveless
+/// remediation, and the HiveGenesis migration marker.
+pub(crate) fn content_id_records_by_author(
+    hive_genesis_hash: &ActionHash,
+    content_id: &str,
+    author: &AgentPubKey,
+) -> ExternResult<(Vec<EncryptedContentResponse>, bool)> {
     let path = Path::from(vec![
-        Component::from(input.hive_genesis_hash.to_string()),
-        Component::from(input.content_id),
+        Component::from(hive_genesis_hash.to_string()),
+        Component::from(content_id),
     ]);
-    let query =
-        LinkQuery::try_new(path.path_entry_hash()?, LinkTypes::HummContentId)?.author(me.clone());
+    let query = LinkQuery::try_new(path.path_entry_hash()?, LinkTypes::HummContentId)?
+        .author(author.clone());
     let mut links = get_links(query, GetStrategy::Network)?;
     // Defensive post-filter: the author scoping is load-bearing for
     // exclusion of foreign collisions, so never trust the query filter alone.
-    links.retain(|link| link.author == me);
+    links.retain(|link| link.author == *author);
     sort_by_source_position(&mut links);
     let deduped = dedupe_by_target(links);
     let (selected, truncated) = page_links(deduped, None, None, MY_CONTENT_HARD_LIMIT);
-    Ok(OwnContentRecords {
-        records: resolve_targets(selected),
-        truncated,
-    })
+    Ok((resolve_targets(selected), truncated))
+}
+
+/// Canonical pick when multiple candidates share a content-id path:
+/// lexicographically-lowest base64 `hash` STRING wins — the identical
+/// comparison humm-tauri's `utils/selectCanonicalByHash.ts` performs in
+/// JS, so both sides always elect the same record. (Base64url string
+/// order deliberately differs from raw-byte order; the STRING is the
+/// contract.)
+pub(crate) fn canonical_lowest_hash(
+    records: Vec<EncryptedContentResponse>,
+) -> Option<EncryptedContentResponse> {
+    records.into_iter().min_by(|a, b| a.hash.cmp(&b.hash))
 }
 
 /// Shared page engine behind the three `*_page` externs.
@@ -294,6 +319,48 @@ fn resolve_targets(links: Vec<Link>) -> Vec<EncryptedContentResponse> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn response_with_hash(hash: &str) -> EncryptedContentResponse {
+        EncryptedContentResponse {
+            encrypted_content: EncryptedContent {
+                header: EncryptedContentHeader {
+                    id: "id".into(),
+                    display_hive_id: String::new(),
+                    content_type: "t".into(),
+                    revision_author_signing_public_key: String::new(),
+                    acl_spec: AclSpec::OpenWrite {
+                        target_hive_genesis_hash: None,
+                    },
+                    public_key_acl: Acl {
+                        owner: String::new(),
+                        admin: vec![],
+                        writer: vec![],
+                        reader: vec![],
+                    },
+                },
+                bytes: UnsafeBytes::from(vec![1u8]).into(),
+            },
+            hash: hash.to_string(),
+            original_hash: hash.to_string(),
+            latest_action_micros: None,
+        }
+    }
+
+    #[test]
+    fn canonical_lowest_hash_picks_lexicographically_smallest_b64_string() {
+        let hashes: Vec<String> = [[9u8; 36], [3u8; 36], [7u8; 36]]
+            .into_iter()
+            .map(|raw| ActionHash::from_raw_36(raw.to_vec()).to_string())
+            .collect();
+        let expected = hashes.iter().min().expect("non-empty").clone();
+
+        let picked =
+            canonical_lowest_hash(hashes.iter().map(|hash| response_with_hash(hash)).collect())
+                .expect("candidates non-empty");
+        assert_eq!(picked.hash, expected);
+
+        assert!(canonical_lowest_hash(Vec::new()).is_none());
+    }
 
     fn hash_bytes(index: u16) -> Vec<u8> {
         let mut bytes = vec![0u8; 36];

@@ -77,6 +77,13 @@ pub enum DmCallSignal {
 #[serde(tag = "kind")]
 pub enum DmRemoteSignal {
     /// C6 — ephemeral "please delete this message" request.
+    ///
+    /// DEPRECATED (pass-6-idempotent-writes): redundant since pass-5 —
+    /// `validate_delete_encrypted_content` authorizes any
+    /// `public_key_acl.reader` (either DM party) to author a durable
+    /// native Delete; prefer `delete_encrypted_content`. Wire-live for
+    /// old callers; removal candidate for a future generation after
+    /// humm-tauri confirms no adoption.
     DmDeleteRequest(DmDeleteRequestSignal),
     /// C7 — WebRTC signaling (init request / accept / SDP data).
     DmCall(DmCallSignal),

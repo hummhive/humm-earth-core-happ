@@ -421,3 +421,45 @@ pub async fn wait_for_count_links_by_hive_to(
         "count_links_by_hive did not reach {expected} within 30s of polling (last value {latest})"
     );
 }
+
+pub async fn my_content(
+    conductor: &SweetConductor,
+    zome: &SweetZome,
+    hive_genesis_hash: ActionHash,
+    content_id: &str,
+) -> OwnContentRecords {
+    conductor
+        .call(
+            zome,
+            "get_my_content_by_id_link",
+            MyContentByIdInput {
+                hive_genesis_hash,
+                content_id: content_id.to_string(),
+            },
+        )
+        .await
+}
+
+/// Poll until the own-lookup sees `expected` records — self-authored link
+/// ops integrate on the cascade's own cadence after `await_consistency_s`
+/// (same idiom as `wait_for_count_links_by_hive_to`).
+pub async fn wait_for_own_content_id_count(
+    conductor: &SweetConductor,
+    zome: &SweetZome,
+    hive_genesis_hash: ActionHash,
+    content_id: &str,
+    expected: usize,
+) -> OwnContentRecords {
+    let deadline = std::time::Instant::now() + Duration::from_secs(30);
+    let mut latest = my_content(conductor, zome, hive_genesis_hash.clone(), content_id).await;
+    while latest.records.len() != expected && std::time::Instant::now() < deadline {
+        tokio::time::sleep(Duration::from_millis(50)).await;
+        latest = my_content(conductor, zome, hive_genesis_hash.clone(), content_id).await;
+    }
+    assert_eq!(
+        latest.records.len(),
+        expected,
+        "own-lookup did not reach {expected} records within 30s"
+    );
+    latest
+}

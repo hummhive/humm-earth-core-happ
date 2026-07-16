@@ -37,7 +37,7 @@ and an in-memory keystore.
 
 ## Active tests
 
-21 active tests + 1 ignored dormancy differential:
+28 active tests + 1 ignored dormancy differential:
 
 - `coordinator_cleanup.rs`: delete-link sweep and `get_messages_since(0)` replay.
 - `coordinator_query_tolerance.rs`: missing-target tolerance and mixed Inbox decode.
@@ -53,5 +53,14 @@ and an in-memory keystore.
   update), BlobPinSignal dispatch + provenance stamping (direct extern call,
   junk-payload rejection, cross-agent delivery), and the legacy
   `list_by_hive_link` `since_ts`/`limit` watermark sweep proof.
+- `idempotent_writes.rs`: find-or-create idempotency (content find-wins with
+  same-hash retry, hive-context rejection, role-keyed group genesis singleton,
+  same-role membership regrant vs role-change new grant), hiveless remediation
+  end-to-end (recreate+tombstone makes the entry visible to
+  `fetch_pair_ss_with_hive_check`, idempotent re-run skips, per-item failure
+  routing, batch order), optional-hive fetch_pair union across hives,
+  HiveGenesis create-based migration-marker roundtrip (founder-only,
+  re-mark updates the single entry, V1 reader blind, GroupGenesis rejected),
+  and `content_summary_many` batch-equals-singles + bounds.
 
 Shared wire mirrors and conductor helpers live in `tests/support/mod.rs`.

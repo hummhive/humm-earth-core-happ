@@ -744,6 +744,52 @@ Verification captured on `feat-coordinator-pass6-pinned-hosts`:
   `humm-tauri/.testdata/happs/` (both clones; row LAST = current generation —
   see docs/HUMM_TAURI_PINNED_HOSTS_INTEGRATION.md).
 
+Pass-6 coordinator follow-up — idempotent-writes (find-or-create + remediation + hive markers + batch summary)
+---------------------------------------------------------------------------------------------------------------
+Built from: branch `feat-coordinator-pass6-idempotent-writes` (v3.2.0,
+2026-07-16), coordinator-only hot-swap on pass-6-pinned-hosts. Adds the
+author-scoped find-or-create family (`find_or_create_encrypted_content` /
+`find_or_create_group_genesis` / `find_or_create_group_membership`,
+lowest-b64-string canonical pick, find-wins), the hiveless remediation pair
+(`list_my_hiveless_content` + `remediate_hiveless_content`, batch ≤64,
+recreate+tombstone), the optional-hive `fetch_pair_ss_with_hive_check`
+(`active_hive_genesis_hash: Option<ActionHash>`, None → own-hive union),
+HiveGenesis acceptance in `mark_migrated_v2`/`get_migration_marker_v2`
+(create-based marker on `[genesis_b64, "hive-migration-marker-v2"]`,
+founder-only, entry-def-index dispatch), `content_summary_many` (≤32 hives,
+≤256 aggregate types; the ONLY new cap grant), and doc-deprecation of the
+`send_dm_delete_request` family. EntryTypes, LinkTypes, serde tags, entry
+fields, and every legacy extern wire shape are unchanged; the only changed
+request struct is `FetchPairWithHiveCheckInput` (additive `Option`). DNA
+hash HELD because integrity source/WASM bytes are byte-identical. No
+migration — existing @6 cells hot-swap the coordinator.
+
+  DNA hash (HELD):           uhC0ksXsJOTlVvhUn3KWB0nN6j-II_9BxlsRiMqR9ajhFhYS7gSMz
+  content_integrity.wasm:    2656a9100937f7e6d17e2eebd5e744a1ef16e8e36b0efa089dc2f6382a655ae2  (UNCHANGED)
+  content.wasm:              3b5348ebf99f2de2da2886cfb3711ff9899e3e29e95431fa484bf4f6788b4077  (NEW — coordinator externs/fields above)
+  humm_earth_core.dna:       ca636a08e81415d69674d282080af875ada4902da7ba85bc7db61edb022bcf92
+  humm-earth-core-happ.happ: bfe357aa73c4ee078cdc872d8c86225cd18263c44347a75ce44a613fc4470642
+
+Verification captured on `feat-coordinator-pass6-idempotent-writes`:
+- `cargo fmt --all --check`: green.
+- `cargo test -p content_integrity --lib`: 76/76 green (untouched).
+- `cargo test -p content --lib`: 40/40 green (35 baseline + 5 new
+  canonical/bounds/serde/marker-literal).
+- `cargo clippy --workspace --all-targets -- -D warnings`: green.
+- Serialized 5-lane review (wire-contract, security, silent-failure,
+  standards, DRY) converged APPROVE; all MUST + accepted SHOULD findings
+  applied (entry-def-index marker dispatch, b64-string canonical pick,
+  aggregate summary bound, atomic create propagation in remediation).
+- `nix develop --command bash scripts/build-zomes.sh`, `hc dna pack`, and
+  `hc app pack workdir --recursive`: green; `hc dna hash` printed the HELD
+  hash above; integrity wasm sha byte-identical to the dry-refactor record.
+- `crates/sweettest`: 28/28 active green + 1 ignored dormancy differential
+  (21 pre-existing + 7 new `idempotent_writes.rs`) against this packed DNA.
+- Official prebuilt: `~/hummhive-official-happ-versions/`
+  (MANIFEST row `pass-6-idempotent-writes`, appended LAST) and mirrored to
+  `humm-tauri/.testdata/happs/` (both clones; row LAST = current generation —
+  see docs/HUMM_TAURI_IDEMPOTENT_WRITES_INTEGRATION.md).
+
 Reproducibility contract (effective pass-4 re-record)
 =====================================================
 

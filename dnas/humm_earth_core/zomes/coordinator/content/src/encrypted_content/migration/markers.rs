@@ -11,6 +11,17 @@ pub const MIGRATION_MARKER_CONTENT_TYPE_PREFIX: &str = "_migrated/";
 /// msgpack-decoded bytes will not collide with it.
 pub const MIGRATION_MARKER_SCHEMA_TAG: &str = "humm-earth-core-happ/migration-marker";
 
+/// Deterministic content-id of the ONE hive-identity marker entry a
+/// founder writes per `HiveGenesis` (content-id path
+/// `[genesis_b64, this]`). Create-based: the frozen integrity update
+/// gate forbids cross-entry-type updates, so hive markers can never
+/// ride the V1/V2 update-chain mechanism.
+pub const HIVE_MIGRATION_MARKER_CONTENT_ID: &str = "hive-migration-marker-v2";
+
+/// Pseudo original-content-type for hive-identity markers; becomes
+/// `_migrated/hive-genesis` via `marker_content_type`.
+pub const HIVE_GENESIS_MARKER_ORIGINAL_TYPE: &str = "hive-genesis";
+
 /// Versioned migration-marker payload stored as msgpack-encoded bytes in
 /// the `EncryptedContent.bytes` field of a marker update.
 ///

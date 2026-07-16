@@ -362,3 +362,14 @@ fn decode_marker_returns_none_for_unknown_schema_version() {
     let bytes = SerializedBytes::try_from(v3).expect("ser");
     assert!(decode_marker(bytes).is_none());
 }
+
+/// The reader's content-type gate and humm-tauri's marker detection
+/// both key on this literal; drift breaks hive-marker discovery.
+#[test]
+fn hive_marker_content_type_literal() {
+    assert_eq!(
+        super::payload::marker_content_type(HIVE_GENESIS_MARKER_ORIGINAL_TYPE),
+        "_migrated/hive-genesis"
+    );
+    assert_eq!(HIVE_MIGRATION_MARKER_CONTENT_ID, "hive-migration-marker-v2");
+}

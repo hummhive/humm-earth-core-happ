@@ -1,10 +1,19 @@
-use content_integrity::EncryptedContent;
+use content_integrity::{Acl, AclSpec, EncryptedContent, HiveGenesis};
 use hdk::prelude::*;
 
-use super::markers::{MigrationMarkerV1, MigrationMarkerV2};
-use super::payload::{build_marker_payload, build_marker_v2_payload};
-use crate::encrypted_content::crud::{get_encrypted_content, update_encrypted_content};
-use crate::encrypted_content::{EncryptedContentResponse, UpdateEncryptedContentInput};
+use super::markers::{
+    MigrationMarkerV1, MigrationMarkerV2, HIVE_GENESIS_MARKER_ORIGINAL_TYPE,
+    HIVE_MIGRATION_MARKER_CONTENT_ID,
+};
+use super::payload::{build_marker_payload, build_marker_v2_payload, marker_content_type};
+use crate::encrypted_content::crud::{
+    create_encrypted_content, get_encrypted_content, header_from_input, update_encrypted_content,
+};
+use crate::encrypted_content::get_helpers::decode_encrypted_content;
+use crate::encrypted_content::paging::{canonical_lowest_hash, content_id_records_by_author};
+use crate::encrypted_content::{
+    CreateEncryptedContentInput, EncryptedContentResponse, UpdateEncryptedContentInput,
+};
 
 /// Input for [`mark_migrated`].
 #[derive(Serialize, Deserialize, Debug)]
@@ -72,6 +81,19 @@ pub struct MarkMigratedV2Input {
 /// is sufficient when V1-only readers still exist in the wild; pass-2.5
 /// hosts can write V2 here too without breaking V2-aware readers.
 ///
+/// ## Original entry types (pass-6-idempotent-writes)
+///
+/// - `EncryptedContent` original → marker rides the update chain
+///   (unchanged V1 mechanism).
+/// - `HiveGenesis` original → marker is a fresh `EncryptedContent`
+///   CREATE on the content-id path `[genesis_b64,
+///   "hive-migration-marker-v2"]` with `OpenWrite{target = genesis}`:
+///   the frozen integrity update gate rejects cross-entry-type
+///   updates, so the update mechanism can never serve hives. Founder
+///   only; re-marking updates the one marker entry (no duplicates).
+///   V1 readers structurally never see hive markers.
+/// - Anything else → explicit `Err`, never the silent dormant path.
+///
 /// ## Dormant / unresolvable original entry (pass-4 migration rescue)
 ///
 /// Returns `Ok(None)` if the original entry is not readable from this
@@ -86,6 +108,25 @@ pub struct MarkMigratedV2Input {
 pub fn mark_migrated_v2(
     input: MarkMigratedV2Input,
 ) -> ExternResult<Option<EncryptedContentResponse>> {
+    let Some(record) = get(input.original_action_hash.clone(), GetOptions::network())? else {
+        warn!(
+            "mark_migrated_v2: original entry {} not readable; skipping forward-pointer marker (dormant/absent cell)",
+            input.original_action_hash
+        );
+        return Ok(None);
+    };
+    // Entry-def-index discrimination, NOT msgpack shape: GroupGenesis is
+    // a field-superset of HiveGenesis and would false-positive here.
+    if let Some(genesis) = crate::hive::queries::try_decode_hive_genesis(&record) {
+        return mark_hive_genesis_migrated(input, &genesis, record.action().author());
+    }
+    // No superset hazard for this shape probe: no other entry type
+    // carries EncryptedContent's nested `header` + `bytes` fields.
+    if decode_encrypted_content(&record).is_none() {
+        return Err(wasm_error!(WasmErrorInner::Guest(String::from(
+            "mark_migrated_v2: original must be an EncryptedContent or HiveGenesis entry"
+        ))));
+    }
     let original = match get_encrypted_content(input.original_action_hash.clone()) {
         Ok(o) => o,
         Err(e) => {
@@ -99,4 +140,72 @@ pub fn mark_migrated_v2(
     let marker_payload = build_marker_v2_payload(&original.encrypted_content, &input.marker)?;
     let response = update_marker_entry(input.original_action_hash, marker_payload)?;
     Ok(Some(response))
+}
+
+/// Founder-only create-based hive marker: first mark CREATEs the one
+/// marker entry; a re-mark UPDATEs it (same entry type, so the frozen
+/// update gate allows it).
+fn mark_hive_genesis_migrated(
+    input: MarkMigratedV2Input,
+    genesis: &HiveGenesis,
+    genesis_author: &AgentPubKey,
+) -> ExternResult<Option<EncryptedContentResponse>> {
+    let me = agent_info()?.agent_initial_pubkey;
+    if genesis_author != &me {
+        return Err(wasm_error!(WasmErrorInner::Guest(String::from(
+            "mark_migrated_v2: only the hive founder can mark a HiveGenesis migrated"
+        ))));
+    }
+    let marker_bytes = SerializedBytes::try_from(input.marker)
+        .map_err(|err| wasm_error!(WasmErrorInner::Serialize(err)))?;
+    let marker_input = hive_marker_input(genesis, &input.original_action_hash, &me, marker_bytes);
+
+    let (existing, _truncated) = content_id_records_by_author(
+        &input.original_action_hash,
+        HIVE_MIGRATION_MARKER_CONTENT_ID,
+        &me,
+    )?;
+    if let Some(found) = canonical_lowest_hash(existing) {
+        let previous = ActionHash::try_from(found.hash.as_str()).map_err(|err| {
+            wasm_error!(WasmErrorInner::Guest(format!(
+                "mark_migrated_v2: malformed marker action hash {}: {err:?}",
+                found.hash
+            )))
+        })?;
+        let response = update_encrypted_content(UpdateEncryptedContentInput {
+            previous_encrypted_content_hash: previous,
+            updated_encrypted_content: EncryptedContent {
+                header: header_from_input(&marker_input),
+                bytes: marker_input.bytes,
+            },
+        })?;
+        return Ok(Some(response));
+    }
+    let response = create_encrypted_content(marker_input)?;
+    Ok(Some(response))
+}
+
+fn hive_marker_input(
+    genesis: &HiveGenesis,
+    original: &ActionHash,
+    founder: &AgentPubKey,
+    marker_bytes: SerializedBytes,
+) -> CreateEncryptedContentInput {
+    CreateEncryptedContentInput {
+        id: HIVE_MIGRATION_MARKER_CONTENT_ID.into(),
+        display_hive_id: genesis.display_id.clone(),
+        content_type: marker_content_type(HIVE_GENESIS_MARKER_ORIGINAL_TYPE),
+        revision_author_signing_public_key: founder.to_string(),
+        bytes: marker_bytes,
+        acl_spec: AclSpec::OpenWrite {
+            target_hive_genesis_hash: Some(original.clone()),
+        },
+        public_key_acl: Acl {
+            owner: founder.to_string(),
+            admin: vec![],
+            writer: vec![],
+            reader: vec![],
+        },
+        dynamic_links: None,
+    }
 }
