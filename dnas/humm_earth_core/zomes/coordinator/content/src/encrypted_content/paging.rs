@@ -354,10 +354,9 @@ mod tests {
             .collect();
         let expected = hashes.iter().min().expect("non-empty").clone();
 
-        let picked = canonical_lowest_hash(
-            hashes.iter().map(|hash| response_with_hash(hash)).collect(),
-        )
-        .expect("candidates non-empty");
+        let picked =
+            canonical_lowest_hash(hashes.iter().map(|hash| response_with_hash(hash)).collect())
+                .expect("candidates non-empty");
         assert_eq!(picked.hash, expected);
 
         assert!(canonical_lowest_hash(Vec::new()).is_none());

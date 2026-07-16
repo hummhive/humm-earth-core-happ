@@ -508,10 +508,7 @@ const CONTENT_SUMMARY_MANY_MAX_HIVES: usize = 32;
 /// the remote-callable batch bounds TOTAL types, not just hive count.
 const CONTENT_SUMMARY_MANY_MAX_TYPES: usize = 256;
 
-fn check_summary_many_bounds(
-    hive_count: usize,
-    total_content_types: usize,
-) -> ExternResult<()> {
+fn check_summary_many_bounds(hive_count: usize, total_content_types: usize) -> ExternResult<()> {
     if hive_count > CONTENT_SUMMARY_MANY_MAX_HIVES {
         return Err(wasm_error!(WasmErrorInner::Guest(String::from(
             "content_summary_many: at most 32 hives per call"

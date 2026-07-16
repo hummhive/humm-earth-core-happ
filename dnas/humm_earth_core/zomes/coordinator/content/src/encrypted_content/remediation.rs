@@ -12,7 +12,6 @@
 //! only path is recreate-with-corrected-header + tombstone-original,
 //! which this module batches server-side in one zome call.
 
-use content_integrity::*;
 use hdk::prelude::*;
 
 use super::crud::{create_encrypted_content, delete_encrypted_content, header_from_input};
@@ -125,7 +124,8 @@ fn remediate_item(
         return Ok(failed(original_hash, "corrected input lacks hive context"));
     };
 
-    let (existing, _truncated) = content_id_records_by_author(corrected_hive, &item.corrected.id, me)?;
+    let (existing, _truncated) =
+        content_id_records_by_author(corrected_hive, &item.corrected.id, me)?;
     if let Some(existing) = canonical_lowest_hash(existing) {
         let detail = retry_original_tombstone(&item.original_action_hash, me)?;
         return Ok(RemediationOutcome {
@@ -160,7 +160,9 @@ fn remediate_item(
     let created = create_encrypted_content(item.corrected)?;
     let detail = match delete_encrypted_content(item.original_action_hash) {
         Ok(_) => None,
-        Err(err) => Some(format!("original delete failed (re-run remediates): {err:?}")),
+        Err(err) => Some(format!(
+            "original delete failed (re-run remediates): {err:?}"
+        )),
     };
     Ok(RemediationOutcome {
         original_hash,
