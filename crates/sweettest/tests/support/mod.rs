@@ -351,6 +351,8 @@ pub fn owner_only_acl(owner: &str) -> Acl {
 
 /// Commit one OpenWrite entry targeting `hive_genesis_hash` and return the
 /// create-action hash (b64 string form, as the coordinator responds).
+/// Bytes are unique per call: byte-identical entries content-address to ONE
+/// entry hash, silently collapsing "duplicate root" test fixtures.
 pub async fn create_open_write_content(
     conductor: &SweetConductor,
     zome: &SweetZome,
@@ -359,6 +361,8 @@ pub async fn create_open_write_content(
     id: &str,
     dynamic_links: Option<Vec<String>>,
 ) -> String {
+    static UNIQUE_ENTRY_BYTES: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    let unique = UNIQUE_ENTRY_BYTES.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     let author = zome.cell_id().agent_pubkey().clone();
     let response: CreateResponse = conductor
         .call(
@@ -369,7 +373,7 @@ pub async fn create_open_write_content(
                 display_hive_id: "sweettest-hive".to_string(),
                 content_type: content_type.to_string(),
                 revision_author_signing_public_key: author.to_string(),
-                bytes: UnsafeBytes::from(vec![0u8]).into(),
+                bytes: UnsafeBytes::from(unique.to_le_bytes().to_vec()).into(),
                 acl_spec: AclSpec::OpenWrite {
                     target_hive_genesis_hash: Some(hive_genesis_hash),
                 },
