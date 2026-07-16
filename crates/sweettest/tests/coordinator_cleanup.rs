@@ -9,60 +9,15 @@
 
 mod support;
 
-use std::time::Duration;
-
 use holo_hash::ActionHash;
-use holochain::sweettest::{await_consistency_s, SweetConductor, SweetZome};
-use holochain_types::prelude::{SerializedBytes, UnsafeBytes};
+use holochain::sweettest::await_consistency_s;
 use serde::de::IgnoredAny;
-use serde::{Deserialize, Serialize};
-use support::{single_conductor_app, single_conductor_cell_app, CreateHiveGenesisInput, GenesisResponse};
-
-
-#[derive(Debug, Serialize)]
-struct Acl {
-    owner: String,
-    admin: Vec<String>,
-    writer: Vec<String>,
-    reader: Vec<String>,
-}
-
-/// Mirror of the coordinator `AclSpec` — only `OpenWrite` is needed: it
-/// requires no hive membership (just a real target hive) yet still creates
-/// the full hive-scoped link bundle (hive-shape Hive + HummContentId +
-/// Dynamic), giving the delete sweep links to clean up. Externally-tagged,
-/// matching the coordinator enum's default serde shape.
-#[derive(Debug, Serialize)]
-enum AclSpec {
-    OpenWrite {
-        target_hive_genesis_hash: Option<ActionHash>,
-    },
-}
-
-#[derive(Debug, Serialize)]
-struct CreateEncryptedContentInput {
-    id: String,
-    display_hive_id: String,
-    content_type: String,
-    revision_author_signing_public_key: String,
-    bytes: SerializedBytes,
-    acl_spec: AclSpec,
-    public_key_acl: Acl,
-    dynamic_links: Option<Vec<String>>,
-}
-
-#[derive(Debug, Deserialize)]
-struct CreateResponse {
-    hash: String,
-}
-
-#[derive(Debug, Serialize)]
-struct ListByHiveInput {
-    hive_genesis_hash: ActionHash,
-    content_type: String,
-    since_ts: Option<i64>,
-    limit: Option<usize>,
-}
+use serde::Serialize;
+use support::{
+    create_open_write_content, single_conductor_app, single_conductor_cell_app,
+    wait_for_count_links_by_hive_to, CountByHiveInput, CreateHiveGenesisInput, GenesisResponse,
+    ListByHiveInput,
+};
 
 #[derive(Debug, Serialize)]
 struct ListByDynamicLinkInput {
@@ -72,23 +27,14 @@ struct ListByDynamicLinkInput {
 }
 
 #[derive(Debug, Serialize)]
-struct CountByHiveInput {
-    hive_genesis_hash: ActionHash,
-    content_type: String,
-    since_ts: Option<i64>,
-}
-
-#[derive(Debug, Serialize)]
 struct GetMessagesSinceInput {
     since_seq: u32,
 }
-
 
 #[tokio::test(flavor = "multi_thread")]
 async fn delete_encrypted_content_cleans_up_discovery_links() {
     holochain_trace::test_run();
     let (conductor, cell, zome) = single_conductor_cell_app().await;
-    let author = zome.cell_id().agent_pubkey().clone();
 
     // Found a hive so OpenWrite has a real target (the hive's existence is
     // OpenWrite's only validation gate beyond the author-pubkey header match).
@@ -104,29 +50,15 @@ async fn delete_encrypted_content_cleans_up_discovery_links() {
 
     let content_type = "sweettest-cleanup-type".to_string();
     let label = "sweep-me".to_string();
-    let created: CreateResponse = conductor
-        .call(
-            &zome,
-            "create_encrypted_content",
-            CreateEncryptedContentInput {
-                id: "cleanup-1".to_string(),
-                display_hive_id: "sweettest-cleanup-hive".to_string(),
-                content_type: content_type.clone(),
-                revision_author_signing_public_key: author.to_string(),
-                bytes: UnsafeBytes::from(vec![0u8]).into(),
-                acl_spec: AclSpec::OpenWrite {
-                    target_hive_genesis_hash: Some(genesis.hash.clone()),
-                },
-                public_key_acl: Acl {
-                    owner: author.to_string(),
-                    admin: vec![],
-                    writer: vec![],
-                    reader: vec![],
-                },
-                dynamic_links: Some(vec![label.clone()]),
-            },
-        )
-        .await;
+    let created_hash = create_open_write_content(
+        &conductor,
+        &zome,
+        genesis.hash.clone(),
+        &content_type,
+        "cleanup-1",
+        Some(vec![label.clone()]),
+    )
+    .await;
 
     await_consistency_s(30, [&cell]).await.unwrap();
 
@@ -182,7 +114,7 @@ async fn delete_encrypted_content_cleans_up_discovery_links() {
 
     // Self-delete (author == link author → the discovery-link delete
     // validators pass; the local-chain sweep finds and removes them).
-    let content_ah = ActionHash::try_from(created.hash.as_str())
+    let content_ah = ActionHash::try_from(created_hash.as_str())
         .expect("create response hash parses as an ActionHash");
     let _deleted: ActionHash = conductor
         .call(&zome, "delete_encrypted_content", content_ah)
@@ -274,44 +206,5 @@ async fn get_messages_since_zero_replays_full_chain() {
         "a fresh commit must appear in the since_seq=0 full replay; before={} after={}",
         before.len(),
         after.len()
-    );
-}
-
-/// Poll `count_links_by_hive` every 50 ms until it returns `expected`, or
-/// fail the test after 30 s. Holochain 0.6.1's cascade integrates
-/// self-authored `DeleteLink` ops on its own cadence after
-/// `await_consistency_s` returns (the barrier only waits for ops already
-/// in the DHT-op table; it has no expected-op-set notion), so a bare
-/// post-delete `assert_eq!(count, 0)` flakes. This mirrors the
-/// `wait_for_link_count` idiom holochain's own count_links tests use
-/// (`holochain-0.6.1/src/core/ribosome/host_fn/count_links.rs:222`).
-async fn wait_for_count_links_by_hive_to(
-    conductor: &SweetConductor,
-    zome: &SweetZome,
-    hive_genesis_hash: &ActionHash,
-    content_type: &str,
-    expected: usize,
-) {
-    let deadline = std::time::Instant::now() + Duration::from_secs(30);
-    let mut latest: usize = usize::MAX;
-    while std::time::Instant::now() < deadline {
-        latest = conductor
-            .call(
-                zome,
-                "count_links_by_hive",
-                CountByHiveInput {
-                    hive_genesis_hash: hive_genesis_hash.clone(),
-                    content_type: content_type.to_string(),
-                    since_ts: None,
-                },
-            )
-            .await;
-        if latest == expected {
-            return;
-        }
-        tokio::time::sleep(Duration::from_millis(50)).await;
-    }
-    panic!(
-        "count_links_by_hive did not reach {expected} within 30s of polling (last value {latest}) — hive link count must drop to {expected} (the C3 over-count fix)"
     );
 }

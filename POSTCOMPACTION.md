@@ -7,13 +7,31 @@
 
 ## Current state
 
-**Branch:** `main` at **v3.0.0** — pass-6 blessed 2026-07-02 and merged
-(`dry-refactor` → merge `2de8923`, tag `v3.0.0` on the merge commit). Pass-6 =
-structural DRY refactor (integrity + coordinator directory-module splits) plus
-security validation hardening. Prior: v2.0.0 (pass-5 owner role + GroupGenesis
-filter, DNA `uhC0k2dX…`, happ `42dbf9df…`) — now the migration SOURCE generation.
+**Branch:** `main` at **v3.1.0** — `pass-6-pinned-hosts` coordinator generation
+merged 2026-07-16 (branch `feat-coordinator-pass6-pinned-hosts` → `--no-ff`
+merge, tag `v3.1.0` on the merge commit). Coordinator-only hot-swap on pass-6:
+DNA HELD, no migration. Prior: v3.0.0 (pass-6 blessed 2026-07-02, merge
+`2de8923`) = structural DRY refactor + security validation hardening; v2.0.0
+(pass-5 owner role, DNA `uhC0k2dX…`, happ `42dbf9df…`) — the migration SOURCE
+generation.
 
-**Pass-6 DNA (the new frozen invariant):**
+**pass-6-pinned-hosts (v3.1.0, current coordinator generation):** DNA HELD
+`uhC0ksXs…` / integrity `2656a910…` byte-identical; content wasm
+`cc904ad6…`, happ `1c7d981b…`, artifact
+`humm-earth-core-happ_pass-6-pinned-hosts_dna-uhC0ksXs_happ-1c7d981b.happ`.
+New wire surface (all additive): `latest_action_micros: Option<i64>` on
+`EncryptedContentResponse` (None on create); `BlobPinSignal`
+(`#[serde(tag="pin")]`, Available/TakeNow) + `send_blob_pin_signal`
+(local-only, ≤16 recipients); bounded source-cursor page externs
+`list_by_hive_link_page` / `list_by_dynamic_link_page` / `list_by_author_page`
+(BoundedLinkPage envelope, composite exclusive cursor, limit default 100 /
+cap 256, cap-granted); exact-own `get_my_content_by_id_link` (author-scoped,
+4096 saturation, NOT granted). Legacy externs wire-identical (F1
+`list_by_author` untouched). Handoff + BDD:
+`docs/HUMM_TAURI_PINNED_HOSTS_INTEGRATION.md`. Mailbox: all 9 pending
+pinned-hosts asks answered + archived 2026-07-16.
+
+**Pass-6 DNA (the frozen invariant, HELD through v3.1.0):**
 `uhC0ksXsJOTlVvhUn3KWB0nN6j-II_9BxlsRiMqR9ajhFhYS7gSMz`.
 Integrity wasm `2656a9100937f7e6d17e2eebd5e744a1ef16e8e36b0efa089dc2f6382a655ae2`,
 content wasm `58b1d85f3d57c2fffeccd39c2a9aab602761ce47519ee626def6ae05384a94af`,
@@ -43,11 +61,13 @@ integrity source/WASM bytes changed during directory-module splits plus follow-u
 validation hardening for `OriginalHashPointer` and same-entry-type updates.
 Migration still uses the existing DNA migration path.
 
-**Validation:** `cargo fmt --all --check` green; `cargo test -p content_integrity --lib`
-= 76/76 green; `cargo test -p content --lib` = 25/25 green; `cargo clippy
---workspace --all-targets -- -D warnings` green; Sweettest after rebuild = 12/12
-active green + 1 ignored dormancy differential. Follow-up security/Holochain
-BLOCK findings C-BLOCK-1 and C-BLOCK-2 were fixed and re-gated.
+**Validation (v3.1.0):** `cargo fmt --all --check` green; `cargo test -p
+content_integrity --lib` = 76/76 green (untouched); `cargo test -p content
+--lib` = 35/35 green (25 baseline + 10 new); `cargo clippy --workspace
+--all-targets -- -D warnings` green; Sweettest = 21/21 active green + 1
+ignored (12 pre-existing + 9 new pinned_hosts). Serialized 5-lane reviewer
+loop (rust / security / silent-failure / standards / DRY) converged APPROVE.
+Pass-6 blessing history: C-BLOCK-1/2 fixed and re-gated.
 Blessing verification (2026-07-02): reject-string contract vs pass-5 checked —
 integrity literals a strict superset (zero removals); coordinator lost only the
 two old pointer-path error strings (unmatched in humm-tauri, grep-verified),
@@ -81,13 +101,22 @@ DNA `uhC0k2dX`, happ `42dbf9df`) is what humm-tauri currently bundles and runs
    relays, cache-off): DM 2×2, invite loop on `@6`, all 4 upload scopes,
    byte-exact media; ZERO DNA-side issues; remaining findings app-side
    (their `.newTasks/…/13_HeadlessMigrationFindings.md` @ `0af39311`).
-   Pass-7 consideration captured: stable cross-generation content identity
-   (`docs/HUMM_TAURI_PASS_ROADMAP.md` §Pass-7 candidate considerations).
+   Pass-7 considerations captured: full batch catalogue at
+   `.newTasks/pass-7-integrity-candidates.md` (A1–A9 integrity candidates,
+   B1–B4 coordinator deferrals, C1 LICENSE blocker) + roadmap §Pass-7.
 3. **pass-4→pass-5 migration** for straggler hives — `migrate-dna.ts` skips
    Owner grants (lineage-conferred); direct 4→6 is unexercised — chain 4→5→6
    or validate first (deploy handoff §Straggler `@4` hives).
 4. **Review WARN follow-ups** (non-blocking) — `docs/sec-holo-review/findings-catalog.md`
    C-WARN-1..7 + open decision points.
+5. **humm-tauri pinned-hosts adoption** (their team) — constants bump
+   (`COORDINATOR_WASM_VERSION` 9→10, `CURRENT_HAPP_LABEL`,
+   `CURRENT_HAPP_SHA256`), re-enable their ignored cursor acceptance test;
+   contract in `docs/HUMM_TAURI_PINNED_HOSTS_INTEGRATION.md`.
+6. **LICENSE (DecraLicense)** — RC legal blocker; text unrecorded (user
+   confirmed not at hand 2026-07-16). Catalogued
+   `.newTasks/pass-7-integrity-candidates.md` §C1; apply at repo root the
+   moment the text exists (zero wasm/DNA impact).
 
 ---
 
@@ -102,7 +131,7 @@ DNA `uhC0k2dX`, happ `42dbf9df`) is what humm-tauri currently bundles and runs
   `nix develop --command hc dna pack dnas/humm_earth_core/workdir`, then
   `nix develop --command hc app pack workdir --recursive`; `hc dna hash …` MUST print
   `uhC0ksXs…` on `main` (v3.0.0/pass-6). Pass-5/v2.0.0 was `uhC0k2dX…`.
-- **Tests:** host `cargo test -p content --lib` (25) + `-p content_integrity --lib` (76).
+- **Tests:** host `cargo test -p content --lib` (35) + `-p content_integrity --lib` (76).
   Conductor: `crates/sweettest` (in-process, iroh). **Tryorama CANNOT boot on
   hc 0.6.x** — do not use it.
 
@@ -114,9 +143,10 @@ DNA `uhC0k2dX`, happ `42dbf9df`) is what humm-tauri currently bundles and runs
   devShell provides `openssl` + `pkg-config`; RustCrypto pinned to holochain's RCs.
 - Run: `cd crates/sweettest && nix develop ../.. --command bash -c 'export LIBCLANG_PATH=<nix clang lib dir>; cargo test -- --test-threads=1'`
   (`LIBCLANG_PATH` e.g. `/nix/store/…clang-18.1.8-lib/lib`).
-- **12/12 active green on the pass-6 build (now `main`/v3.0.0)** (coordinator_cleanup 2,
+- **21/21 active green on the v3.1.0 build** (coordinator_cleanup 2,
   coordinator_query_tolerance 2, owner_and_acl 4, migration_rescue 3 active +1
-  ignored, recipient_witnesses 1). First compile slow (conductor + wasmer + iroh).
+  ignored, recipient_witnesses 1, pinned_hosts 9). Shared wire mirrors live in
+  `tests/support/mod.rs`. First compile slow (conductor + wasmer + iroh).
 
 ## Other branches (committed; pass-6 now landed on main)
 
@@ -159,4 +189,4 @@ DNA `uhC0k2dX`, happ `42dbf9df`) is what humm-tauri currently bundles and runs
 - Conductor tests: `crates/sweettest/README.md` · Reproducibility: `.baseline-hashes.txt`
 - Build: `scripts/build-zomes.sh` + `scripts/strip-wasms.sh`
 - Official happ binaries: `~/hummhive-official-happ-versions/` + `MANIFEST.tsv` (mirrored in `humm-tauri/.testdata/happs/`)
-- Handoffs: `docs/PASS_6_DEPLOY_HANDOFF.md` (pass-6 cutover runbook) + `docs/PASS_6_DRY_REFACTOR_HANDOFF.md` (pass-6 detail); `docs/PASS_5_DEPLOY_HANDOFF.md` + `docs/HUMM_TAURI_OWNER_ROLE_AND_ACL_INTEGRATION.md` (pass-5 owner role); `docs/PASS_4_DEPLOY_HANDOFF.md`, `docs/HUMM_TAURI_*` (recv-signal / SharedSecrets / content-type+witness / acl_spec-mutation / roadmap)
+- Handoffs: `docs/HUMM_TAURI_PINNED_HOSTS_INTEGRATION.md` (v3.1.0 pinned-hosts wire + BDD); `docs/PASS_6_DEPLOY_HANDOFF.md` (pass-6 cutover runbook) + `docs/PASS_6_DRY_REFACTOR_HANDOFF.md` (pass-6 detail); `docs/_archive/PASS_5_DEPLOY_HANDOFF.md` + `docs/HUMM_TAURI_OWNER_ROLE_AND_ACL_INTEGRATION.md` (pass-5 owner role); `docs/_archive/PASS_4_DEPLOY_HANDOFF.md`, `docs/HUMM_TAURI_*` (recv-signal / SharedSecrets / content-type+witness / acl_spec-mutation / roadmap)

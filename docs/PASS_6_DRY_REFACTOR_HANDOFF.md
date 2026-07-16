@@ -252,7 +252,7 @@ Reviewer lanes:
 Reference docs:
 
 - Pass-6 cutover runbook: [`PASS_6_DEPLOY_HANDOFF.md`](./PASS_6_DEPLOY_HANDOFF.md)
-- Pass-5 (migration source) deploy handoff: [`PASS_5_DEPLOY_HANDOFF.md`](./PASS_5_DEPLOY_HANDOFF.md)
+- Pass-5 (migration source) deploy handoff: [`_archive/PASS_5_DEPLOY_HANDOFF.md`](./_archive/PASS_5_DEPLOY_HANDOFF.md)
 - Owner-role UI/API contract: [`HUMM_TAURI_OWNER_ROLE_AND_ACL_INTEGRATION.md`](./HUMM_TAURI_OWNER_ROLE_AND_ACL_INTEGRATION.md)
 - Commit-time BDD catalogue: [`HUMM_TAURI_CORE_HAPP_BDD_SANITY_CHECKS.md`](./HUMM_TAURI_CORE_HAPP_BDD_SANITY_CHECKS.md)
 - Pass-6 hash record: [`.baseline-hashes.txt`](../.baseline-hashes.txt)

@@ -45,6 +45,7 @@ pub fn create_encrypted_content(
         encrypted_content: encrypted_content.clone(),
         hash: action_hash.clone().to_string(),
         original_hash: action_hash.to_string(),
+        latest_action_micros: None,
     };
 
     // Local emit (every variant) + best-effort cross-host fan-out to
@@ -118,7 +119,7 @@ pub fn create_encrypted_content(
 #[hdk_extern]
 pub fn get_encrypted_content(content_hash: ActionHash) -> ExternResult<EncryptedContentResponse> {
     let ah = get_eh(content_hash.clone())?;
-    let Some((entry, hash, _)) = get_latest_typed_from_eh(ah)? else {
+    let Some((entry, hash, _, ts)) = get_latest_typed_from_eh(ah)? else {
         return Err(wasm_error!(WasmErrorInner::Guest(String::from(
             "Could not find the EncryptedContent"
         ))));
@@ -127,6 +128,7 @@ pub fn get_encrypted_content(content_hash: ActionHash) -> ExternResult<Encrypted
         encrypted_content: entry,
         hash: hash.to_string(),
         original_hash: content_hash.to_string(),
+        latest_action_micros: Some(ts.as_micros()),
     })
 }
 

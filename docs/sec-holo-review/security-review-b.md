@@ -18,7 +18,7 @@ Per assignment constraints, this was read-only except for this report. I did not
 
 ## 2. Method / codewalk coverage
 
-Read first: `skill://security-review`, `skill://coding-standards`, `skill://rust-patterns`, `skill://rust-testing`, `POSTCOMPACTION.md`, `CLAUDE.md`, `AGENTS.md`, `README.md`, `.baseline-hashes.txt`, `docs/CODEMAPS/{architecture,backend,data,dependencies}.md`, relevant `docs/HUMM_TAURI_*.md`, `docs/DNA_MIGRATION_GUIDE.md`, `docs/PASS_5_DEPLOY_HANDOFF.md`, and `docs/PASS_6_DRY_REFACTOR_HANDOFF.md`.
+Read first: `skill://security-review`, `skill://coding-standards`, `skill://rust-patterns`, `skill://rust-testing`, `POSTCOMPACTION.md`, `CLAUDE.md`, `AGENTS.md`, `README.md`, `.baseline-hashes.txt`, `docs/CODEMAPS/{architecture,backend,data,dependencies}.md`, relevant `docs/HUMM_TAURI_*.md`, `docs/DNA_MIGRATION_GUIDE.md`, `docs/_archive/PASS_5_DEPLOY_HANDOFF.md`, and `docs/PASS_6_DRY_REFACTOR_HANDOFF.md`.
 
 Codewalk coverage:
 
@@ -101,7 +101,7 @@ Replace unwraps with explicit matches and contextual `wasm_error!` / `Ok(None)` 
 - `doImport` writes `remap.json` with old/new action-hash mappings and failure details via default `writeFile`: `scripts/migrate-dna.ts:1231-1232`.
 - `doMarkMigrated` appends marker failures back into the remap file via default `writeFile`: `scripts/migrate-dna.ts:1394-1400`.
 - The migration guide describes the hive-bundle as load-bearing and containing `owner_pubkey_base64`, member pubkeys, roles, and membership hashes: `docs/DNA_MIGRATION_GUIDE.md:130-183`.
-- The pass-2 handoff explicitly says `hive-bundle.json` reveals the full member roster and should be shared over an encrypted out-of-band channel; on multi-user hosts it should be moved out of `/tmp` into a `chmod-700` directory: `docs/PASS_2_DEPLOY_HANDOFF.md:343-349` and `:359-363`.
+- The pass-2 handoff explicitly says `hive-bundle.json` reveals the full member roster and should be shared over an encrypted out-of-band channel; on multi-user hosts it should be moved out of `/tmp` into a `chmod-700` directory: `docs/_archive/PASS_2_DEPLOY_HANDOFF.md:343-349` and `:359-363`.
 
 **Why it matters**
 

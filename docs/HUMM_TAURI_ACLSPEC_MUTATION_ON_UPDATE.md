@@ -154,7 +154,7 @@ passes the complete AclSpec, DNA validates it.
 
 | Doc | Relevant section |
 |---|---|
-| `PASS_4_DEPLOY_HANDOFF.md` | "REQUIRED humm-tauri callsite update" — `stampWitnessesFromGroupAcl` recipe |
+| `_archive/PASS_4_DEPLOY_HANDOFF.md` | "REQUIRED humm-tauri callsite update" — `stampWitnessesFromGroupAcl` recipe |
 | `HUMM_TAURI_ACLSPEC_INTEGRATION.md` | § 2 classification table (which content_type → which AclSpec variant) |
 | `HUMM_TAURI_FEATURE_ENABLEMENT.md` | Per-feature wiring including E.4.e (Media Library selective sharing) |
 | `HUMM_TAURI_SHARED_SECRETS_PUBLIC_ACL_WIRE_SHAPE.md` | Public-ACL bytes encoding (plaintext vs SaltPack) |
