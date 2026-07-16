@@ -272,9 +272,11 @@ content_summary_many(inputs: Vec<ContentSummaryInput>)
 | .happ sha256 | `bfe357aa73c4ee078cdc872d8c86225cd18263c44347a75ce44a613fc4470642` |
 
 Artifact `humm-earth-core-happ_pass-6-idempotent-writes_dna-uhC0ksXs_happ-bfe357aa.happ`
-is in `~/hummhive-official-happ-versions/` (MANIFEST row LAST = current) and
-both humm-tauri clones' `.testdata/happs/` + `src-tauri/bin/`. Your
-constants bump: `COORDINATOR_WASM_VERSION` 10→11, `CURRENT_HAPP_LABEL`,
+is in `~/hummhive-official-happ-versions/` (MANIFEST row LAST = current).
+Your `.testdata/happs/` + `src-tauri/bin/` mirroring is DEFERRED at owner
+request while your testing round is in flight — pull from the official
+store (or ask for the mirror) when ready. Your constants bump:
+`COORDINATOR_WASM_VERSION` 10→11, `CURRENT_HAPP_LABEL`,
 `CURRENT_HAPP_SHA256`.
 
 Verification capture: fmt + clippy(-D warnings) clean; host tests 40/40;

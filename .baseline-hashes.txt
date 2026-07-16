@@ -786,9 +786,10 @@ Verification captured on `feat-coordinator-pass6-idempotent-writes`:
 - `crates/sweettest`: 28/28 active green + 1 ignored dormancy differential
   (21 pre-existing + 7 new `idempotent_writes.rs`) against this packed DNA.
 - Official prebuilt: `~/hummhive-official-happ-versions/`
-  (MANIFEST row `pass-6-idempotent-writes`, appended LAST) and mirrored to
-  `humm-tauri/.testdata/happs/` (both clones; row LAST = current generation —
-  see docs/HUMM_TAURI_IDEMPOTENT_WRITES_INTEGRATION.md).
+  (MANIFEST row `pass-6-idempotent-writes`, appended LAST = current).
+  humm-tauri `.testdata/happs/` + `src-tauri/bin/` mirroring DEFERRED at
+  owner request (their testing in flight 2026-07-16) — pull from the
+  official store when ready; see docs/HUMM_TAURI_IDEMPOTENT_WRITES_INTEGRATION.md.
 
 Reproducibility contract (effective pass-4 re-record)
 =====================================================
