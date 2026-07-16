@@ -288,3 +288,117 @@ fn resolve_targets(links: Vec<Link>) -> Vec<EncryptedContentResponse> {
         .filter_map(|ah| get_encrypted_content(ah).ok())
         .collect()
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn hash_bytes(index: u16) -> Vec<u8> {
+        let mut bytes = vec![0u8; 36];
+        bytes[0] = (index >> 8) as u8;
+        bytes[1] = (index & 0xFF) as u8;
+        bytes
+    }
+
+    fn link_at(timestamp_micros: i64, index: u16) -> Link {
+        Link {
+            author: AgentPubKey::from_raw_36(vec![1u8; 36]),
+            base: EntryHash::from_raw_36(vec![2u8; 36]).into(),
+            target: ActionHash::from_raw_36(hash_bytes(index)).into(),
+            timestamp: Timestamp(timestamp_micros),
+            zome_index: 0.into(),
+            link_type: LinkType(0),
+            tag: LinkTag::new(Vec::new()),
+            create_link_hash: ActionHash::from_raw_36(hash_bytes(index)),
+        }
+    }
+
+    fn indices(links: &[Link]) -> Vec<u16> {
+        links
+            .iter()
+            .map(|link| {
+                let raw = link.create_link_hash.get_raw_36();
+                (u16::from(raw[0]) << 8) | u16::from(raw[1])
+            })
+            .collect()
+    }
+
+    #[test]
+    fn page_links_orders_by_timestamp_then_create_link_hash() {
+        let shuffled = vec![link_at(200, 5), link_at(100, 3), link_at(100, 1), link_at(100, 2)];
+        let (page, truncated) = page_links(shuffled, None, None, 10);
+        assert!(!truncated);
+        assert_eq!(indices(&page), vec![1, 2, 3, 5]);
+    }
+
+    #[test]
+    fn composite_cursor_is_strictly_exclusive_and_gapless() {
+        let all: Vec<Link> = (1..=5).map(|i| link_at(100, i)).collect();
+
+        let (page1, truncated1) = page_links(all.clone(), None, None, 2);
+        assert!(truncated1);
+        assert_eq!(indices(&page1), vec![1, 2]);
+
+        let cursor1 = page1.last().expect("page1 non-empty");
+        let (page2, truncated2) = page_links(
+            all.clone(),
+            Some(cursor1.timestamp),
+            Some(cursor1.create_link_hash.clone()),
+            2,
+        );
+        assert!(truncated2);
+        assert_eq!(indices(&page2), vec![3, 4]);
+
+        let cursor2 = page2.last().expect("page2 non-empty");
+        let (page3, truncated3) = page_links(
+            all,
+            Some(cursor2.timestamp),
+            Some(cursor2.create_link_hash.clone()),
+            2,
+        );
+        assert!(!truncated3);
+        assert_eq!(indices(&page3), vec![5]);
+    }
+
+    #[test]
+    fn since_ts_only_is_inclusive_at_boundary() {
+        let links = vec![link_at(99, 1), link_at(100, 2), link_at(101, 3)];
+        let (page, truncated) = page_links(links, Some(Timestamp(100)), None, 10);
+        assert!(!truncated);
+        assert_eq!(indices(&page), vec![2, 3]);
+    }
+
+    #[test]
+    fn limit_zero_rejected_and_oversize_clamped() {
+        let err = resolve_page_limit(Some(0)).expect_err("limit 0 must be rejected");
+        assert!(err.to_string().contains("limit must be >= 1"));
+
+        assert_eq!(
+            resolve_page_limit(Some(4096)).expect("clamp"),
+            LINK_PAGE_HARD_LIMIT
+        );
+        assert_eq!(
+            resolve_page_limit(None).expect("default"),
+            LINK_PAGE_DEFAULT_LIMIT
+        );
+
+        let many: Vec<Link> = (0..300).map(|i| link_at(100, i)).collect();
+        let (page, truncated) = page_links(many, None, None, LINK_PAGE_HARD_LIMIT);
+        assert!(truncated);
+        assert_eq!(page.len(), LINK_PAGE_HARD_LIMIT);
+    }
+
+    #[test]
+    fn saturation_flags_truncated_at_hard_limit() {
+        let mut links: Vec<Link> = (0..4097).map(|i| link_at(100, i)).collect();
+        links.push(link_at(100, 0));
+
+        sort_by_source_position(&mut links);
+        let deduped = dedupe_by_target(links);
+        assert_eq!(deduped.len(), 4097, "duplicate target must collapse");
+
+        let (page, truncated) = page_links(deduped, None, None, MY_CONTENT_HARD_LIMIT);
+        assert!(truncated);
+        assert_eq!(page.len(), MY_CONTENT_HARD_LIMIT);
+    }
+}
