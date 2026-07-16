@@ -78,6 +78,33 @@ create_link_hash)`; `since_ts`+`source_after_action_hash` strictly exclusive;
 Option<i64>` (None on create responses). Contract doc:
 `HUMM_TAURI_PINNED_HOSTS_INTEGRATION.md`.
 
+## Coordinator Externs — Idempotent writes + remediation (pass-6-idempotent-writes, v3.2.0)
+
+```
+find_or_create_encrypted_content(CreateEncryptedContentInput) → FindOrCreateContentResponse{response, was_created}
+  └─ crud.rs → header_from_input → hive_context gate → content_id_records_by_author(me) → canonical_lowest_hash | create_encrypted_content (NOT cap-granted)
+find_or_create_group_genesis(CreateGroupGenesisInput) → FindOrCreateGroupGenesisResponse{response, was_created}
+  └─ group/crud.rs → caller_matching_geneses (author-scoped HiveToGroups walk; role key, display_id for custom) | create_group_genesis (NOT cap-granted)
+find_or_create_group_membership(CreateGroupMembershipInput) → FindOrCreateGroupMembershipResponse{response, was_created}
+  └─ group/crud.rs → get_latest_group_membership same-role unexpired | create_group_membership (NOT cap-granted)
+list_my_hiveless_content(String) → Vec<EncryptedContentResponse>
+  └─ remediation.rs → list_by_author(me) + retain hive_context().is_none() (NOT cap-granted)
+remediate_hiveless_content(RemediateHivelessInput) → Vec<RemediationOutcome>
+  └─ remediation.rs → ≤64 items; per-item probe-first recreate+tombstone; create Err aborts whole call atomically (NOT cap-granted)
+content_summary_many(Vec<ContentSummaryInput>) → Vec<HiveContentSummary>
+  └─ queries.rs → ≤32 hives, ≤256 aggregate content types; order-preserving map of content_summary (cap-granted — only new grant)
+```
+
+Changed shapes: `FetchPairWithHiveCheckInput.active_hive_genesis_hash` is now
+`Option<ActionHash>` (`#[serde(default)]`; `None` → union over the callee's
+own hives via `pair_intersection` per hive). `mark_migrated_v2` /
+`get_migration_marker_v2` accept HiveGenesis action hashes (create-based
+founder-only marker, content-id `hive-migration-marker-v2`, content_type
+`_migrated/hive-genesis`; entry-def-index dispatch via
+`try_decode_hive_genesis` — GroupGenesis is a serde field-superset of
+HiveGenesis). `send_dm_delete_request` + `DmRemoteSignal::DmDeleteRequest`
+doc-deprecated. Contract doc: `HUMM_TAURI_IDEMPOTENT_WRITES_INTEGRATION.md`.
+
 ## Coordinator Externs — Hive
 
 ```

@@ -390,6 +390,27 @@ lineage line. Detail lives there:
   `0af39311`).
 
 ---
+## Pass-6 coordinator generation — idempotent-writes (v3.2.0, 2026-07-16)
+
+Coordinator-only hot-swap on top of pass-6-pinned-hosts/v3.1.0 — **DNA hash
+HELD `uhC0ksXs…`** (integrity wasm byte-identical `2656a910…`; no chain
+fork, no migration). Ships the fleet-audit §B roll-up: crash-resume
+idempotent writes, the legacy hive-id SharedSecret remediation, and the
+multi-hive read batch. Full wire contract + BDD sanity skeletons:
+[`HUMM_TAURI_IDEMPOTENT_WRITES_INTEGRATION.md`](./HUMM_TAURI_IDEMPOTENT_WRITES_INTEGRATION.md).
+
+| Coordinator gen | hApp | content.wasm | What changed |
+|---|---|---|---|
+| pass-6-idempotent-writes (v3.2.0) | bfe357aa | 3b5348eb | find-or-create family (`find_or_create_encrypted_content` / `find_or_create_group_genesis` / `find_or_create_group_membership`); hiveless remediation pair (`list_my_hiveless_content` + `remediate_hiveless_content`); `fetch_pair_ss_with_hive_check` optional-hive union; `mark_migrated_v2`/`get_migration_marker_v2` HiveGenesis create-based markers; `content_summary_many`; `send_dm_delete_request` doc-deprecated |
+
+**humm-tauri tasks:** pin new label/SHA (`CURRENT_HAPP_LABEL`,
+`CURRENT_HAPP_SHA256`), bump `COORDINATOR_WASM_VERSION` 10→11, keep DNA/app
+id `humm-earth-core-happ@6`; adopt per their
+`.newTasks/14_MISC_PlatformInfraAndDataLayer/16_Pass6IdempotentWritesIntegration.md`.
+Every legacy extern is wire-identical; the only changed request struct is
+`FetchPairWithHiveCheckInput` (additive-compatible).
+
+---
 ## Pass-6 coordinator generation — pinned-hosts (v3.1.0, 2026-07-16)
 
 Coordinator-only hot-swap on top of pass-6/v3.0.0 — **DNA hash HELD

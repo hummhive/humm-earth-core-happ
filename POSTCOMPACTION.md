@@ -7,15 +7,35 @@
 
 ## Current state
 
-**Branch:** `main` at **v3.1.0** — `pass-6-pinned-hosts` coordinator generation
-merged 2026-07-16 (branch `feat-coordinator-pass6-pinned-hosts` → `--no-ff`
-merge, tag `v3.1.0` on the merge commit). Coordinator-only hot-swap on pass-6:
-DNA HELD, no migration. Prior: v3.0.0 (pass-6 blessed 2026-07-02, merge
-`2de8923`) = structural DRY refactor + security validation hardening; v2.0.0
-(pass-5 owner role, DNA `uhC0k2dX…`, happ `42dbf9df…`) — the migration SOURCE
-generation.
+**Branch:** `main` at **v3.2.0** — `pass-6-idempotent-writes` coordinator
+generation merged 2026-07-16 (branch `feat-coordinator-pass6-idempotent-writes`
+→ `--no-ff` merge, tag `v3.2.0` on the merge commit). Coordinator-only
+hot-swap on pass-6: DNA HELD, no migration. Prior: v3.1.0
+(pass-6-pinned-hosts, same day) = blob-keystone coordinator generation;
+v3.0.0 (pass-6 blessed 2026-07-02, merge `2de8923`) = structural DRY refactor
++ security validation hardening; v2.0.0 (pass-5 owner role, DNA `uhC0k2dX…`,
+happ `42dbf9df…`) — the migration SOURCE generation.
 
-**pass-6-pinned-hosts (v3.1.0, current coordinator generation):** DNA HELD
+**pass-6-idempotent-writes (v3.2.0, current coordinator generation):** DNA
+HELD `uhC0ksXs…` / integrity `2656a910…` byte-identical; content wasm
+`3b5348eb…`, happ `bfe357aa…`, artifact
+`humm-earth-core-happ_pass-6-idempotent-writes_dna-uhC0ksXs_happ-bfe357aa.happ`.
+New wire surface (all additive): author-scoped find-or-create family
+(`find_or_create_encrypted_content` / `find_or_create_group_genesis` /
+`find_or_create_group_membership` — find-wins, lowest-b64-STRING canonical
+pick, NOT granted); hiveless remediation pair (`list_my_hiveless_content` +
+`remediate_hiveless_content`, batch ≤64, recreate+tombstone, per-item
+outcomes, NOT granted); `fetch_pair_ss_with_hive_check` optional-hive
+(`active_hive_genesis_hash: Option<ActionHash>`, None → own-hive union);
+`mark_migrated_v2`/`get_migration_marker_v2` accept HiveGenesis originals
+(CREATE-based founder-only marker on `[genesis_b64,
+"hive-migration-marker-v2"]`, entry-def-index dispatch); `content_summary_many`
+(≤32 hives, ≤256 aggregate types — the ONLY new cap grant);
+`send_dm_delete_request` family doc-deprecated. Legacy externs
+wire-identical. Handoff + BDD:
+`docs/HUMM_TAURI_IDEMPOTENT_WRITES_INTEGRATION.md`.
+
+**pass-6-pinned-hosts (v3.1.0, prior coordinator generation):** DNA HELD
 `uhC0ksXs…` / integrity `2656a910…` byte-identical; content wasm
 `cc904ad6…`, happ `1c7d981b…`, artifact
 `humm-earth-core-happ_pass-6-pinned-hosts_dna-uhC0ksXs_happ-1c7d981b.happ`.
@@ -31,7 +51,7 @@ cap 256, cap-granted); exact-own `get_my_content_by_id_link` (author-scoped,
 `docs/HUMM_TAURI_PINNED_HOSTS_INTEGRATION.md`. Mailbox: all 9 pending
 pinned-hosts asks answered + archived 2026-07-16.
 
-**Pass-6 DNA (the frozen invariant, HELD through v3.1.0):**
+**Pass-6 DNA (the frozen invariant, HELD through v3.2.0):**
 `uhC0ksXsJOTlVvhUn3KWB0nN6j-II_9BxlsRiMqR9ajhFhYS7gSMz`.
 Integrity wasm `2656a9100937f7e6d17e2eebd5e744a1ef16e8e36b0efa089dc2f6382a655ae2`,
 content wasm `58b1d85f3d57c2fffeccd39c2a9aab602761ce47519ee626def6ae05384a94af`,
@@ -61,12 +81,15 @@ integrity source/WASM bytes changed during directory-module splits plus follow-u
 validation hardening for `OriginalHashPointer` and same-entry-type updates.
 Migration still uses the existing DNA migration path.
 
-**Validation (v3.1.0):** `cargo fmt --all --check` green; `cargo test -p
+**Validation (v3.2.0):** `cargo fmt --all --check` green; `cargo test -p
 content_integrity --lib` = 76/76 green (untouched); `cargo test -p content
---lib` = 35/35 green (25 baseline + 10 new); `cargo clippy --workspace
---all-targets -- -D warnings` green; Sweettest = 21/21 active green + 1
-ignored (12 pre-existing + 9 new pinned_hosts). Serialized 5-lane reviewer
-loop (rust / security / silent-failure / standards / DRY) converged APPROVE.
+--lib` = 40/40 green (35 v3.1.0 baseline + 5 new); `cargo clippy --workspace
+--all-targets -- -D warnings` green; Sweettest = 28/28 active green + 1
+ignored (21 pre-existing + 7 new idempotent_writes). Serialized 5-lane
+reviewer loop (rust-wire / security / silent-failure / standards / DRY)
+converged APPROVE (key catches applied: entry-def-index marker dispatch —
+GroupGenesis is a serde field-superset of HiveGenesis; b64-string canonical
+pick; aggregate summary bound; atomic create propagation in remediation).
 Pass-6 blessing history: C-BLOCK-1/2 fixed and re-gated.
 Blessing verification (2026-07-02): reject-string contract vs pass-5 checked —
 integrity literals a strict superset (zero removals); coordinator lost only the
