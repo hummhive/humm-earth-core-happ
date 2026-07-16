@@ -389,9 +389,31 @@ lineage line. Detail lives there:
   were app-side (their `.newTasks/…/13_HeadlessMigrationFindings.md` @
   `0af39311`).
 
+---
+## Pass-6 coordinator generation — pinned-hosts (v3.1.0, 2026-07-16)
+
+Coordinator-only hot-swap on top of pass-6/v3.0.0 — **DNA hash HELD
+`uhC0ksXs…`** (integrity wasm byte-identical `2656a910…`; no chain fork, no
+migration). Ships the seams humm-tauri's Persistent Blob Storage Keystone
+("pinned hosts") waits on. Full wire contract + BDD sanity skeletons:
+[`HUMM_TAURI_PINNED_HOSTS_INTEGRATION.md`](./HUMM_TAURI_PINNED_HOSTS_INTEGRATION.md).
+
+| Coordinator gen | hApp | content.wasm | What changed |
+|---|---|---|---|
+| pass-6-pinned-hosts (v3.1.0) | 1c7d981b | cc904ad6 | `latest_action_micros` on responses; `BlobPinSignal` family + `send_blob_pin_signal`; bounded source-cursor page externs (`list_by_hive_link_page` / `list_by_dynamic_link_page` / `list_by_author_page`); exact-own `get_my_content_by_id_link` |
+
+**humm-tauri tasks:** pin new label/SHA (`CURRENT_HAPP_LABEL`,
+`CURRENT_HAPP_SHA256`), bump `COORDINATOR_WASM_VERSION` 9→10, keep DNA/app id
+`humm-earth-core-happ@6`; re-enable the ignored acceptance test
+`full_source_page_replays_when_the_coordinator_emits_source_cursors`
+(envelope field names match 1:1). Legacy externs (incl. F1-critical
+`list_by_author`) are wire-identical — no other callsite changes.
+
 ## Pass-7 candidate considerations (unscheduled)
 
-Collected from downstream field reports; NOT commitments.
+Collected from downstream field reports; NOT commitments. Full batch
+catalogue (fork once, carry everything — owner principle 2026-07-16):
+`.newTasks/pass-7-integrity-candidates.md`.
 
 1. **Stable cross-generation content identity** (humm-tauri, 2026-07-03
    validation report). Migration re-authors every entry under new action

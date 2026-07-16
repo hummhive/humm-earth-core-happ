@@ -506,13 +506,13 @@ humm-tauri devs don't re-discover them by accident:
 
 ### Coordinator-layer items deferred to a future pass
 
-- **Full cursor pagination (Phase 2 of C2)** — `LinkQuery` in HDK 0.6.0
-  has no native limit/tiebreaker, so a true cursor would have to be
-  emulated on top of `since_ts` with action-hash tiebreakers. The
-  watermark-sweep + dedupe pattern covers the actual humm-tauri
-  consumer (DmStore inbox sweep) without it. Re-evaluate when humm-tauri
-  has a paginated list view that requires deterministic cursor
-  semantics.
+- **Full cursor pagination (Phase 2 of C2)** — ✅ **CLOSED by the
+  pass-6-pinned-hosts coordinator generation (v3.1.0)**: emulated
+  composite cursor (`since_ts` + `source_after_action_hash`
+  tie-breaker) on the new `list_by_hive_link_page` /
+  `list_by_dynamic_link_page` / `list_by_author_page` externs; the
+  legacy externs keep their watermark-sweep semantics untouched. See
+  [`HUMM_TAURI_PINNED_HOSTS_INTEGRATION.md`](./HUMM_TAURI_PINNED_HOSTS_INTEGRATION.md).
 - **Dependency refresh (holochain 0.6.1+)** — gated on humm-tauri's
   `tauri-plugin-holochain` advancing past `main-0.6`. Currently blocked
   by darksoil-studio's private p2p-shipyard branch and iroh transport

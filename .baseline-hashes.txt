@@ -710,6 +710,40 @@ Verification captured on `dry-refactor`:
   `pass-6-dry-refactor`) and mirrored to `humm-tauri/.testdata/happs/` (both
   clones; row parked above pass-5 — see docs/PASS_6_DEPLOY_HANDOFF.md).
 
+Pass-6 coordinator follow-up — pinned-hosts (bounded pages + exact-own + latest_action_micros + BlobPinSignal)
+---------------------------------------------------------------------------------------------------------------
+Built from: branch `feat-coordinator-pass6-pinned-hosts` (v3.1.0, 2026-07-16),
+coordinator-only hot-swap on pass-6 dry-refactor. Adds `latest_action_micros`
+to `EncryptedContentResponse`, the `BlobPinSignal` family +
+`send_blob_pin_signal` (local-only), the bounded source-cursor page externs
+`list_by_hive_link_page` / `list_by_dynamic_link_page` / `list_by_author_page`
+(shared engine; composite exclusive cursor on (timestamp, create_link_hash)),
+and the exact-own `get_my_content_by_id_link`. EntryTypes, LinkTypes, serde
+tags, entry fields, and every legacy extern wire shape are unchanged; the DNA
+hash is HELD because integrity source/WASM bytes are byte-identical. No
+migration — existing @6 cells hot-swap the coordinator.
+
+  DNA hash (HELD):           uhC0ksXsJOTlVvhUn3KWB0nN6j-II_9BxlsRiMqR9ajhFhYS7gSMz
+  content_integrity.wasm:    2656a9100937f7e6d17e2eebd5e744a1ef16e8e36b0efa089dc2f6382a655ae2  (UNCHANGED)
+  content.wasm:              cc904ad6b4e94ba9c396224666f6c9f106ae721f5a7c9a7f5ec9d197b0c88a76  (NEW — coordinator externs/fields above)
+  humm_earth_core.dna:       e6fdbd5a85ee1312290af3b01fc2c4040cd5ee1d293ea1e1848084f71e6709a5
+  humm-earth-core-happ.happ: 1c7d981bd1919f853c4551e6c38a0184acfc5c6e1dc7b09b92db11575b116136
+
+Verification captured on `feat-coordinator-pass6-pinned-hosts`:
+- `cargo fmt --all --check`: green.
+- `cargo test -p content_integrity --lib`: 76/76 green (untouched).
+- `cargo test -p content --lib`: 35/35 green (25 baseline + 10 new signal/paging).
+- `cargo clippy --workspace --all-targets -- -D warnings`: green.
+- `nix develop --command bash scripts/build-zomes.sh`, `hc dna pack`, and
+  `hc app pack workdir --recursive`: green; `hc dna hash` printed the HELD
+  hash above; integrity wasm sha byte-identical to the dry-refactor record.
+- `crates/sweettest`: 21/21 active green + 1 ignored dormancy differential
+  (12 pre-existing + 9 new `pinned_hosts.rs`) against this packed DNA.
+- Official prebuilt: `~/hummhive-official-happ-versions/`
+  (MANIFEST row `pass-6-pinned-hosts`, appended LAST) and mirrored to
+  `humm-tauri/.testdata/happs/` (both clones; row LAST = current generation —
+  see docs/HUMM_TAURI_PINNED_HOSTS_INTEGRATION.md).
+
 Reproducibility contract (effective pass-4 re-record)
 =====================================================
 

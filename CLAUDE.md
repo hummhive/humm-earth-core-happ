@@ -26,7 +26,7 @@ prebuilt binaries for every generation live at
 `~/hummhive-official-happ-versions/` with `MANIFEST.tsv` mapping
 label → commit → DNA hash → hApp SHA256.
 
-**Current generation: pass-6 / v3.0.0 on `main`** (blessed 2026-07-02; pass-5/v2.0.0 is the migration source generation).
+**Current generation: pass-6-pinned-hosts / v3.1.0 on `main`** (coordinator-only hot-swap, 2026-07-16; DNA HELD from pass-6/v3.0.0 blessed 2026-07-02; pass-5/v2.0.0 is the migration source generation).
 
 The built `.happ` goes into `../humm-tauri/src-tauri/bin/humm-earth-core-happ.happ`
 for integration with the Tauri app.
@@ -34,7 +34,7 @@ for integration with the Tauri app.
 **Pass lineage:**
 
 ```
-main-hc060 → pass-1 → pass-2 → pass-2.5 → pass-3 → pass-4 → pass-5 → pass-6 (v3.0.0, main)
+main-hc060 → pass-1 → pass-2 → pass-2.5 → pass-3 → pass-4 → pass-5 → pass-6 (v3.0.0) → pass-6-pinned-hosts (v3.1.0, main — coordinator generation, DNA HELD)
 ```
 
 - `pass-2`, `pass-2.5`, `pass-2.5-cleanup` share the same DNA hash
@@ -52,7 +52,12 @@ main-hc060 → pass-1 → pass-2 → pass-2.5 → pass-3 → pass-4 → pass-5 �
   happ `3dcb8827…`) that was never adopted downstream; do not mint pass-7 or
   add constants for the withdrawn hash unless evidence appears that someone
   installed it.
-- Main/v3.0.0: DNA `uhC0ksXs…`, hApp `3062de38…` (pass-6, blessed + published).
+- Main/v3.1.0: DNA `uhC0ksXs…` (HELD), hApp `1c7d981b…` — pass-6-pinned-hosts
+  coordinator generation: `latest_action_micros`, `BlobPinSignal` +
+  `send_blob_pin_signal`, bounded source-cursor page externs, exact-own
+  `get_my_content_by_id_link`. Wire + BDD contract:
+  `docs/HUMM_TAURI_PINNED_HOSTS_INTEGRATION.md`.
+- Pass-6/v3.0.0: DNA `uhC0ksXs…`, hApp `3062de38…` (blessed + published).
 - Pass-5/v2.0.0: DNA `uhC0k2dX…`, hApp `42dbf9df…` (migration source; prior `8f284777…` build was latent-bug + DELETED).
 
 ---

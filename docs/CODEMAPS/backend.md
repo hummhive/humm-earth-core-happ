@@ -1,4 +1,4 @@
-<!-- codemap:backend | generated:2026-06-05 | updated:2026-06-24 | scope:full -->
+<!-- codemap:backend | generated:2026-06-05 | updated:2026-07-16 | scope:full -->
 
 # Backend (Zome Externs)
 
@@ -53,6 +53,30 @@ equivalents) discriminate the genesis target by **EntryType** via
 (`to_app_option`) silently false-positived every device-set / role-group as a
 "hive"; the EntryType filter returns `None` for a non-`HiveGenesis` target (and
 `warn!`-logs a corrupt recognised-type entry) instead of poisoning the list.
+
+## Coordinator Externs — Bounded pages + exact-own (pass-6-pinned-hosts, v3.1.0)
+
+```
+list_by_hive_link_page(HiveLinkPageInput) → BoundedLinkPage
+  └─ paging.rs → hive path, shared link_page engine (composite exclusive cursor)
+list_by_dynamic_link_page(DynamicLinkPageInput) → BoundedLinkPage
+  └─ paging.rs → dynamic path, same engine
+list_by_author_page(AuthorLinkPageInput) → BoundedLinkPage
+  └─ paging.rs → author path (Hive link type), same engine
+get_my_content_by_id_link(MyContentByIdInput) → OwnContentRecords
+  └─ paging.rs → author-scoped LinkQuery + retain, dedupe-by-target, 4096 saturation (NOT cap-granted)
+send_blob_pin_signal(SendBlobPinSignalInput) → ()
+  └─ signals/outbound.rs → BlobPinSignal (tag "pin") to ≤16 recipients via send_encoded_remote_signal (NOT cap-granted)
+```
+
+`BoundedLinkPage` = `{records, source_count, source_positions[{timestamp_micros,
+action_hash}], truncated}` — positions are SOURCE truth (one per selected link,
+targets resolved best-effort after the bound). Cursor: sort asc `(timestamp,
+create_link_hash)`; `since_ts`+`source_after_action_hash` strictly exclusive;
+`since_ts` alone inclusive; limit default 100 / hard cap 256.
+`EncryptedContentResponse` additionally carries `latest_action_micros:
+Option<i64>` (None on create responses). Contract doc:
+`HUMM_TAURI_PINNED_HOSTS_INTEGRATION.md`.
 
 ## Coordinator Externs — Hive
 
@@ -184,10 +208,11 @@ revoke / redeem mutators, `get_messages_since`, `get_last_probe`,
 coordinator/content/src/
   lib.rs                          (init, recv_remote_signal, post_commit, cap grants, get_typed_entry + delete_own_links_targeting helpers)
   encrypted_content/
-    mod.rs                        (wire types: EncryptedContentResponse, CreateInput, UpdateInput)
+    mod.rs                        (wire types: EncryptedContentResponse (+latest_action_micros), CreateInput, UpdateInput)
     crud.rs                       (create/get/update/delete externs)
-    queries.rs                    (list_by_*, count, fetch_pair)
-    signals/                     (EncryptedContentSignal, DmRemoteSignal, send_dm_* externs, ExternIO funnel)
+    queries.rs                    (list_by_*, count, fetch_pair — legacy, wire-stable)
+    paging.rs                     (bounded page externs + link_page/page_links engine + get_my_content_by_id_link)
+    signals/                     (EncryptedContentSignal, DmRemoteSignal, BlobPinSignal (blob_pin.rs), send_dm_* + send_blob_pin_signal externs, ExternIO funnel)
     get_helpers.rs                (get_eh, get_record, get_latest_typed_from_eh)
     migration/                   (MigrationMarkerV1/V2, mark_migrated*, get_migration_marker*)
   linking/
