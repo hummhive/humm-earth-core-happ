@@ -86,6 +86,11 @@
 - **Sketch (coordinator-only, additive):** list/page inputs gain `#[serde(default)] include_liveness: bool`; when true, each resolved record's ROOT action is probed with `get_details(action_hash)` and the response carries `#[serde(default)] tombstoned: Option<bool>` (`None` = not probed / old coordinator). Opt-in because the probe costs +1 DHT get per resolved record; existing callers stay byte-identical. EXCLUSION of dead roots was considered and rejected: silently changes granted-extern semantics, and the reporter's reconciliation wants dead roots visible-but-flagged.
 - **Acceptance:** sweettest fixture with deliberate byte-identical duplicate roots (v3.1.0 lesson — trivial to build), delete one, assert the flagged listing; humm-tauri to attach reproduction counts to the 2026-07-18 mbox thread. Client interim: Deleted-vs-AlreadyGone discrimination on the wire-stable `Could not find the EncryptedContent` literal + per-boot known-tombstoned set (landing on their side now).
 
+### B11. Timestamp-insensitive node-spec no-op (opt-in) — decision-gated; do not scope yet (mbox 2026-07-18)
+- **Observation (humm-tauri, live):** a `publish_node_spec` re-publish with an unchanged spec map but fresh `declared_at_micros` is a real REPLACE (`was_updated: true`) — a boot-time re-publish policy grows the singleton's update fan by one action per boot. DELIBERATE current semantics: `declared_at_micros` is the "still true NOW" re-assertion readers judge staleness by, and once app attestation goes live the timestamp sits INSIDE the signed canonical string (a zome-side timestamp-insensitive no-op would silently discard valid fresh attestations — never acceptable).
+- **Containment (right layer, landing their side):** client skips re-publish when map unchanged AND last publish younger than a staleness window.
+- **IF fleet data ever shows material fan growth despite client policy:** additive opt-in input flag (`#[serde(default)]`), never a behavior change to the shipped extern. Gate on their staleness-window numbers.
+
 ## C. Client-wiring-only (humm-tauri side; ZERO earth-core work — communicated 2026-07-16)
 
 Shipped surface with zero adoption at `725ed49a` (only `latest_action_micros` is consumed):
