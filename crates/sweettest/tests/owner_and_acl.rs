@@ -15,7 +15,6 @@ use support::{
     MembershipResponse,
 };
 
-
 #[derive(Debug, Serialize)]
 struct InitiateOwnerHandoffInput {
     hive_genesis_hash: ActionHash,
@@ -41,7 +40,6 @@ struct RevokeHiveMembershipInput {
     grantor_membership_hash: Option<ActionHash>,
     grantor_owner_accept_hash: Option<ActionHash>,
 }
-
 
 fn founds_membership(
     hive: ActionHash,
@@ -394,8 +392,5 @@ async fn expiring_hive_admin_cannot_extend_delegation_window() {
         "{:?}",
         extended_grant.expect_err("expiring admin cannot extend grant window")
     );
-    assert!(
-        rejection.contains("delegation window"),
-        "got {rejection}"
-    );
+    assert!(rejection.contains("delegation window"), "got {rejection}");
 }

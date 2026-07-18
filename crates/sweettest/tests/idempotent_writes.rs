@@ -14,9 +14,9 @@ use holochain_types::prelude::UnsafeBytes;
 use serde::de::IgnoredAny;
 use serde::{Deserialize, Serialize};
 use support::{
-    create_hive, create_open_write_content, owner_only_acl, setup_cells,
-    single_conductor_cell_app, wait_for_count_links_by_hive_to, wait_for_own_content_id_count,
-    AclSpec, CreateEncryptedContentInput, CreateResponse, GenesisResponse, MembershipResponse,
+    create_hive, create_open_write_content, owner_only_acl, setup_cells, single_conductor_cell_app,
+    wait_for_count_links_by_hive_to, wait_for_own_content_id_count, AclSpec,
+    CreateEncryptedContentInput, CreateResponse, GenesisResponse, MembershipResponse,
 };
 
 const SS_CONTENT_TYPE: &str = "hummhive-elemental-secrets-v1";
@@ -628,7 +628,8 @@ async fn hive_genesis_marker_roundtrip() {
         .await;
     marked.expect("founder mark must write a marker");
 
-    let first_read = wait_for_hive_marker(&conductors[0], &alice_zome, &hive, "uhC0kNEWDNA-A").await;
+    let first_read =
+        wait_for_hive_marker(&conductors[0], &alice_zome, &hive, "uhC0kNEWDNA-A").await;
     assert_eq!(first_read.schema_version, 2);
     assert_eq!(
         first_read.schema_tag,

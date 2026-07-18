@@ -18,7 +18,6 @@ use support::{
     ListedHive,
 };
 
-
 #[derive(Debug, Serialize)]
 struct MarkMigratedV2Input {
     original_action_hash: ActionHash,
@@ -49,7 +48,6 @@ fn dummy_v2_marker() -> MigrationMarkerV2 {
         new_hive_genesis_display_id: None,
     }
 }
-
 
 #[derive(Debug, Serialize)]
 struct CreateGroupGenesisInput {
@@ -170,7 +168,8 @@ async fn joiner_local_lists_granted_membership() {
 
     await_consistency_s(30, [alice, bob]).await.unwrap();
 
-    let genesis_hash = create_hive(&conductors[0], &alice.zome("content"), "joiner-local-hive").await;
+    let genesis_hash =
+        create_hive(&conductors[0], &alice.zome("content"), "joiner-local-hive").await;
 
     grant_hive_membership(
         &conductors[0],
