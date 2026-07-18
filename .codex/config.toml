@@ -28,7 +28,7 @@ approval_policy = "on-request"
 max_threads = 6
 max_depth = 1
 
-# --- Reviewer + build/doc lanes (mirror of .claude/agents/*.md) --------------
+# --- Reviewer + build/doc + research lanes (mirror of .claude/agents/*.md) ---
 # Each role file is a thin adapter pointing at the canonical .claude/agents/<name>.md.
 
 [agents.code_reviewer]
@@ -47,6 +47,10 @@ config_file = "agents/security-reviewer.toml"
 description = "Read-only reviewer that hunts silently-swallowed failures — errors caught and dropped, fallbacks that mask faults, results discarded without propagation. Gating lane after a change lands."
 config_file = "agents/silent-failure-hunter.toml"
 
+[agents.typescript_reviewer]
+description = "Read-only TypeScript reviewer for the repo's only TS — the tryorama/Vitest harness (tests/src/**), scripts/*.ts, and hook/config TS. Type safety, async correctness, error handling, and test quality. No frontend here."
+config_file = "agents/typescript-reviewer.toml"
+
 [agents.rust_build_resolver]
 description = "Rust build, compilation, and dependency error resolution specialist. Fixes cargo build errors, borrow-checker issues, and Cargo.toml problems with minimal changes. Use when Rust builds fail."
 config_file = "agents/rust-build-resolver.toml"
@@ -54,3 +58,14 @@ config_file = "agents/rust-build-resolver.toml"
 [agents.doc_updater]
 description = "Documentation and codemap specialist. Use PROACTIVELY for updating codemaps and docs. Runs /update-codemaps, generates docs/CODEMAPS/*, updates READMEs and guides."
 config_file = "agents/doc-updater.toml"
+
+# --- Research lanes (mirror of .claude/agents/librarian.md + technical-researcher.md) ---
+# librarian pins read-only in its role file; technical_researcher inherits workspace-write.
+
+[agents.librarian]
+description = "Researches external libraries and APIs by reading source code. Returns definitive, source-verified answers."
+config_file = "agents/librarian.toml"
+
+[agents.technical_researcher]
+description = "Analyze code repositories, technical docs, and implementation details; research GitHub/crates.io projects, API docs, version histories, and comparative implementations."
+config_file = "agents/technical-researcher.toml"
