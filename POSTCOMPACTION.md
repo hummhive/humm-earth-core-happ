@@ -5,6 +5,50 @@
 
 ---
 
+## Latest arc (2026-07-17): standards canon + config parity + cleanliness + futureproofing capture
+
+Seven commits on `main` after the v3.2.0 freshness commit, no zome changes,
+DNA/wasm untouched:
+
+1. **Standards canon (`86e1b35`)** — root `CODING_STANDARDS.md` +
+   `ADDITIONAL_CODING_STANDARDS_AND_GUIDANCE.md` are now THIS repo's canonical
+   standards (adapted from humm-tauri, same section numbers, §9 MobX stubbed
+   N/A); `ANTI_SLOP.md` copied verbatim as the prose bar. The
+   `coding-standards` skill is an index over them; `standard-workflow`'s old
+   "don't import humm-tauri standards" guard superseded.
+2. **Injection fixed (`530f7c3`)** — the omp session hook was DEAD (flat
+   `.omp/hooks/` is never discovered; only `hooks/pre|post/` is scanned) —
+   moved to `.omp/hooks/pre/`. `hooks/session-context.mjs` now reads the
+   CURRENT generation row live from `~/hummhive-official-happ-versions/
+   MANIFEST.tsv` (last row) and prints MATCHES/DIFFERS — no more hardcoded
+   pass labels going stale. `CONTEXT-INJECTION.md` documents all three
+   wirings (omp/Claude Code/Codex).
+3. **TTSR rules (`c94b9f6`)** — 12 rules adopted from humm-tauri (600/500
+   file caps, ~60/~50 fn caps, TS-test hygiene incl. `ts-test-no-cwd-path`);
+   not-adopted set documented in `.omp/README.md`.
+4. **Toolkit parity (`39df13d`)** — new skills `slop-scan` + `search-first`;
+   new agents `librarian`, `technical-researcher`, `typescript-reviewer`
+   (test/tooling TS only) across `.claude/` + `.codex/`; `/skill-health`
+   command; fresh `.claude/agents/README.md`.
+5. **Scaffold prune (`76bec92`)** — dead `ui` workspace wiring removed from
+   `package.json` (workspaces, 6 scripts, 6 devDeps, −1225 lockfile lines),
+   `workdir/web-happ.yaml` + sublime-project deleted, README rewritten honest
+   (nix develop; three test layers; tryorama dormant on hc 0.6.x — sweettest
+   is the conductor gate). Archived docs deliberately untouched.
+6. **Docs freshness (`0f0d65c`)** — architecture codemap caught up to v3.2.0
+   lineage; vendored `holochain` skill indexed in AGENTS.md.
+7. **Futureproofing capture (`e3600b3`)** — `.newTasks/rc-happ-futureproofing.md`
+   (sibling to the pass-7 catalogue): Unyt/Holo-Hosting study — Unyt NEVER
+   hosts third-party hApps (Bridge-Agent integration model), zero
+   integrity-fork asks, coordinator-only F1 service-proof candidate, RC
+   hygiene debt (CI runs dormant tryorama; sweettest not in CI; LICENSE
+   missing), open questions incl. owner premise call (host vs pay vs
+   neither-yet). Owner /plan session pending on that file.
+
+Owner working-agreement addition: comma/slash-separated instruction lists
+ending in "commit" → commit LAST, each logical piece its own commit (noted in
+`CLAUDE.md`).
+
 ## Current state
 
 **Branch:** `main` at **v3.2.0** — `pass-6-idempotent-writes` coordinator
