@@ -12,8 +12,7 @@
  * was silently dropped via `filter_map(...ok())`; cross-host DM
  * delivery via push-signal worked end-to-end ONLY for tests that
  * encoded with the same STANDARD alphabet — i.e. a green-bar that
- * never reproduced the production wire shape. Pinned by
- * `.extraResearch/DM_SECURITY_RECV_REMOTE_SIGNAL_2026-05-21.md`.
+ * never reproduced the production wire shape.
  */
 import { assert, expect, test } from "vitest";
 import { runScenario, AppSignal, Signal, SignalType } from "@holochain/tryorama";

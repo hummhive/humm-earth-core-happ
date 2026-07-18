@@ -1,7 +1,0 @@
----
-manifest_version: "1"
-name: humm-earth-core-happ
-ui:
-  bundled: "../ui/dist.zip"
-happ_manifest:
-  bundled: "./humm-earth-core-happ.happ"

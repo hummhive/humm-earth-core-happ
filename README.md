@@ -1,59 +1,67 @@
-# Humm Earth Core Happ
+# humm-earth-core-happ
 
-## Environment Setup
+The Holochain DNA behind HummHive. This repo builds ONE artifact: a `.happ`
+bundle containing the `humm_earth_core` DNA — an integrity zome (the frozen
+validation rules; changing it forks the network) plus a coordinator zome (the
+callable API; hot-swappable). The desktop app in the sibling
+[humm-tauri](https://github.com/hummhive/humm-tauri) repo embeds a Holochain
+conductor and loads this `.happ` — there is no UI and no web app in this repo.
 
-> PREREQUISITE: set up the [holochain development environment](https://developer.holochain.org/docs/install/).
+New here? Read in this order: `POSTCOMPACTION.md` (current state) →
+this file → `CLAUDE.md` (change gravity + workflow) → `AGENTS.md` (toolkit).
+Standards: `CODING_STANDARDS.md` + `ADDITIONAL_CODING_STANDARDS_AND_GUIDANCE.md`.
+Architecture maps: `docs/CODEMAPS/`. Domain vocabulary:
+`../humm-tauri/GLOSSARY.md`.
 
-Enter the nix shell by running this in the root folder of the repository: 
+## Environment
+
+Everything builds inside the pinned nix shell (holonix — Holochain's nix
+toolchain distribution):
 
 ```bash
-nix-shell
+nix develop
 npm install
 ```
 
-**Run all the other instructions in this README from inside this nix-shell, otherwise they won't work**.
+On WSL: work in the native-filesystem clone (`~/humm-earth-core-happ`), never
+the `/mnt/c` mount — see `CLAUDE.md` for the two-clone workflow.
 
-## Running 2 agents
- 
+## Build
+
 ```bash
-npm start
+npm run build:zomes   # cargo → wasm32 + wasm-opt strip (deterministic hashes)
+npm run build:happ    # build:zomes + `hc app pack workdir --recursive`
 ```
 
-This will create a network of 2 nodes connected to each other and their respective UIs.
-It will also bring up the Holochain Playground for advanced introspection of the conductors.
+Output: `workdir/humm-earth-core-happ.happ`. Official prebuilt generations
+live in `~/hummhive-official-happ-versions/` (`MANIFEST.tsv`: label → commit →
+DNA hash → hApp sha256; LAST row = current). `.baseline-hashes.txt` is the
+reproducibility contract — the build must reproduce those hashes byte-for-byte.
 
-## Running the backend tests
+## Test
+
+Three layers, from fastest to fullest:
 
 ```bash
+# 1. Host unit tests (pure Rust, no conductor)
+cargo test -p content --lib
+cargo test -p content_integrity --lib
+
+# 2. Conductor behavior tests (in-process Holochain via sweettest)
+cd crates/sweettest && cargo test -- --test-threads=1 --nocapture
+
+# 3. Tryorama harness (tests/) — currently DORMANT
 npm test
 ```
 
-## Bootstrapping a network
+Layer 2 is the real conductor gate. Layer 3 (`tests/`, tryorama + Vitest)
+cannot boot a conductor on holochain 0.6.x — kept for the eventual hc-0.7
+revival; do not treat a tryorama failure to boot as a regression.
 
-Create a custom network of nodes connected to each other and their respective UIs with:
+## Releases
 
-```bash
-AGENTS=3 npm run network
-```
-
-Substitute the "3" for the number of nodes that you want to bootstrap in your network.
-This will also bring up the Holochain Playground for advanced introspection of the conductors.
-
-## Packaging
-
-To package the web happ:
-``` bash
-npm run package
-```
-
-You'll have the `humm-earth-core-happ.webhapp` in `workdir`. This is what you should distribute so that the Holochain Launcher can install it.
-You will also have its subcomponent `humm-earth-core-happ.happ` in the same folder`.
-
-## Documentation
-
-This repository is using these tools:
-- [NPM Workspaces](https://docs.npmjs.com/cli/v7/using-npm/workspaces/): npm v7's built-in monorepo capabilities.
-- [hc](https://github.com/holochain/holochain/tree/develop/crates/hc): Holochain CLI to easily manage Holochain development instances.
-- [@holochain/tryorama](https://www.npmjs.com/package/@holochain/tryorama): test framework.
-- [@holochain/client](https://www.npmjs.com/package/@holochain/client): client library to connect to Holochain from the UI.
-- [@holochain-playground/cli](https://www.npmjs.com/package/@holochain-playground/cli): introspection tooling to understand what's going on in the Holochain nodes.
+A "pass" = one integrity-zome generation (one DNA hash). Coordinator-only
+releases reuse the held DNA hash and hot-swap the API. The full lineage and
+per-pass handoff docs: `CLAUDE.md` (lineage), `docs/PASS_6_DEPLOY_HANDOFF.md` +
+`docs/HUMM_TAURI_*_INTEGRATION.md` (wire contracts per generation),
+`docs/_archive/` (superseded generations).
