@@ -12,7 +12,9 @@ consumed by `../humm-tauri/`. hdi 0.7 / hdk 0.6 (holonix 0.6).
 ## Read order (before non-trivial work)
 
 `POSTCOMPACTION.md` (current state) → `README.md` → `CLAUDE.md` → `AGENTS.md`
-(toolkit). Skills: `coding-standards`, `rust-patterns`, `rust-testing`. Map:
+(toolkit). Standards canon: `CODING_STANDARDS.md` +
+`ADDITIONAL_CODING_STANDARDS_AND_GUIDANCE.md` (prose bar: `ANTI_SLOP.md`).
+Skills: `rust-patterns`, `rust-testing`. Map:
 `docs/CODEMAPS/{architecture,backend,data,dependencies}.md`. Terms:
 `../humm-tauri/GLOSSARY.md` (shared ontology — Hive, Member, Group, Content,
 Sidecar, Node, Cell, DNA, Agent, ACL/AclSpec).
