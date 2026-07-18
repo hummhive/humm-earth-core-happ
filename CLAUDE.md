@@ -188,6 +188,15 @@ rationale and verification commands.
   `chore(build):`, `docs(handoff):`, etc.
 - **Match existing formatting.** Tabs, LF, single trailing newline —
   follow the file you are editing.
+- **Standards canon:** root `CODING_STANDARDS.md` +
+  `ADDITIONAL_CODING_STANDARDS_AND_GUIDANCE.md` (earth-core editions, same
+  section numbering as humm-tauri's); prose held to `ANTI_SLOP.md`. Enforced
+  live by the `.omp/rules/` TTSR layer + the session-start injection — see
+  `CONTEXT-INJECTION.md`.
+- **Commit-sequencing note (owner preference):** when an instruction lists
+  work comma-separated or slash-separated and ends in "commit", commit LAST
+  (or in the sane order of the sequence) — each logical piece its own commit,
+  intent legible from the headline sequence alone.
 - **`POSTCOMPACTION.md`** is the single recovery doc. Update it every
   few commits or when major state changes — assume compaction can happen
   any time. Keep it to current state + the last 1–3 work arcs; older

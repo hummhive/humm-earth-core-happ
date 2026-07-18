@@ -23,6 +23,9 @@ Hold the full context yourself and hand the relevant slice to every subagent.
 Full context for THIS repo is:
 
 - `POSTCOMPACTION.md` — what already shipped this arc; do NOT redo it.
+- `CODING_STANDARDS.md` + `ADDITIONAL_CODING_STANDARDS_AND_GUIDANCE.md` — the
+  canonical coding standards (earth-core editions, adapted from humm-tauri with
+  matching section numbers). `ANTI_SLOP.md` is the prose bar.
 - `CLAUDE.md` — change gravity (integrity forks the chain, coordinator hot-swaps),
   the WSL⇄Windows two-clone workflow, build/test, working agreement.
 - `AGENTS.md` — the local agent/skill/command toolkit.
@@ -34,11 +37,12 @@ Full context for THIS repo is:
   Sidecar, Node, …). Read-only; never edit humm-tauri.
 - the `docs/HUMM_TAURI_*.md` integration/handoff docs for the area you're touching.
 
-The orchestrator MUST have all of the above in context before dispatching. Do NOT
-import humm-tauri's `CODING_STANDARDS.md` / `ADDITIONAL_*` / `ARCHITECTURE.md` —
-they are not geared for this repo. Naming/immutability/code-smell guidance here is
-`skill://coding-standards`; Rust specifics are `skill://rust-patterns` +
-`skill://rust-testing`; the dispatch checklist + WSL build rules live in `CLAUDE.md`.
+The orchestrator MUST have all of the above in context before dispatching. The
+root standards docs are THIS repo's editions — do not substitute humm-tauri's
+copies (same section map, different surfaces). Naming/immutability/code-smell
+quick-reference is `skill://coding-standards`; Rust specifics are
+`skill://rust-patterns` + `skill://rust-testing`; the dispatch checklist + WSL
+build rules live in `CLAUDE.md`.
 
 Subagent context also includes: the exact files/symbols, explicit non-goals, the
 acceptance criteria, and the standing rules — subagents NEVER run repo-wide gates,
