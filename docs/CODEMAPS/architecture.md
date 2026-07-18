@@ -1,4 +1,4 @@
-<!-- codemap:architecture | generated:2026-06-05 | updated:2026-06-24 | scope:full -->
+<!-- codemap:architecture | generated:2026-06-05 | updated:2026-07-17 | scope:full -->
 
 # Architecture
 
@@ -103,9 +103,12 @@ for cross-repo integration testing against this hApp.
 
 ## hApp Version Lineage
 
-Current: **`main` = v3.0.0 = pass-6-dry-refactor**, DNA `uhC0ksXs` (structural
-integrity refactor + validation hardening; no schema change), happ `3062de38`,
-blessed 2026-07-02 (merge `2de8923`, tag `v3.0.0`; zome-source tip `a07dc99`).
+Current: **`main` = v3.2.0 = pass-6-idempotent-writes**, DNA `uhC0ksXs` (HELD
+from pass-6/v3.0.0 — coordinator-only generation), happ `bfe357aa`, merged
+2026-07-16 (merge `b5c830f`, tag `v3.2.0`). Prior coordinator generation:
+**v3.1.0 = pass-6-pinned-hosts**, same DNA, happ `1c7d981b` (merge `e16b793`).
+Integrity baseline: **v3.0.0 = pass-6-dry-refactor**, happ `3062de38`, blessed
+2026-07-02 (merge `2de8923`, tag `v3.0.0`; zome-source tip `a07dc99`).
 Prior: **v2.0.0 = pass-5-owner-role**, DNA `uhC0k2dX`, happ `42dbf9df`, built at
 `834335e` (tag `v2.0.0` @ `4e28a86`) — the migration source generation. Official
 released binaries live in
@@ -125,3 +128,5 @@ released binaries live in
 | pass-4-migration-rescue (v1.0.1) | uhC0k26bYG0q | no (coordinator) | dormancy rescue: `_local` read twins (`list_my_hives_local`, `get_latest_membership_local`) + `mark_migrated_v2` fail-soft + EntryType GroupGenesis filter (`try_decode_hive_genesis`); DNA held |
 | pass-5-owner-role (v2.0.0) | uhC0k2dXMIa1 | YES | Hive Owner role (offer/accept handshake) + reader read-only + role-grant hardening + GroupGenesis EntryType filter + pass-4 rescue `_local` externs merged onto main; hc 0.6.1 |
 | pass-6-dry-refactor (v3.0.0) | uhC0ksXsJOT | YES | Structural module split (`encrypted_content`, `hive`, `group`, `validation_dispatch`; coordinator `migration`/`signals` dirs) plus `OriginalHashPointer` and cross-entry-update validation hardening; no EntryTypes/LinkTypes/wire changes |
+| pass-6-pinned-hosts (v3.1.0) | uhC0ksXsJOT | no (coordinator) | `latest_action_micros`, `BlobPinSignal` + `send_blob_pin_signal`, bounded source-cursor page externs (`list_by_{hive_link,dynamic_link,author}_page`), exact-own `get_my_content_by_id_link`; DNA held |
+| pass-6-idempotent-writes (v3.2.0) | uhC0ksXsJOT | no (coordinator) | find-or-create family (content/group-genesis/membership), hiveless remediation pair, optional-hive `fetch_pair_ss_with_hive_check`, HiveGenesis CREATE-based migration markers, `content_summary_many`; DNA held |

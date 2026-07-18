@@ -59,6 +59,7 @@ the root standards canon (`CODING_STANDARDS.md` +
 | `update-docs-workflow` | Full docs-freshness pass (run before a release/merge): stale-mention audit, `.newTasks`/`.doneTasks` reconcile, codemap refresh, DNA-hash/happ-sha/version pin verification |
 | `slop-scan` | Prose-quality pass against `ANTI_SLOP.md` before shipping docs, commit bodies, `.newTasks` specs, or mbox replies |
 | `search-first` | Research-before-coding: check hdk/holochain/existing helpers (via `librarian`/`technical-researcher`) before writing custom code |
+| `holochain` | Vendored third-party reference (github.com/Soushi888/holochain-agent-skill, 22 files): HDK/HDI patterns, zome architecture, validation, testing, deployment. Uncurated — trust repo docs/code over it where they disagree |
 
 ## What's NOT here (and why)
 
