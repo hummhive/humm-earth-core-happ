@@ -1,8 +1,8 @@
 # RC hApp futureproofing — Unyt / Holo-Hosting readiness + platform posture (rev 1)
 
-- **Status:** OPEN — research captured, plan pending. This file is the living
-  plan: update it at each phase of learning / decision / execution, like its
-  sibling `pass-7-integrity-candidates.md`.
+- **Status:** OPEN — F1 service metering and F3 CI cutover were scoped on
+  2026-07-17. F2 and F4 remain at their prior watch state. This file stays
+  current as decisions and work land.
 - **Sibling:** `pass-7-integrity-candidates.md` (the integrity-fork batch).
   Nothing in THIS file forks the DNA — every candidate here is coordinator-only
   or lives outside the DNA entirely. If that ever changes for an item, it moves
@@ -98,25 +98,24 @@ networks (`unyt-sandbox/README.md:30-37`, `scripts/inherit-ui-release.sh:41-47`,
   asked of us either. (Our own countersigned-receipts interest stays parked in
   pass-7 scoping notes, on its own merits.)
 
-## 3. Candidate work items (all coordinator-only or app-side; none scheduled)
+## 3. Candidate work items
 
-### F1. Service-proof read surface (COORDINATOR-ONLY, candidate for a future coordinator generation)
-One sentence: make a host's serving activity externally readable in a stable,
-bounded way, so any Bridge-Agent/Log-Harvester-style reader can meter it
-without us trusting them.
-- Most of this EXISTS: pin/provider records are EncryptedContent with
-  discovery links, and v3.1.0's bounded page externs
-  (`list_by_dynamic_link_page` etc.) are exactly the "stable query surface"
-  such a reader needs. `BlobPinSignal` (tag `"pin"`) already broadcasts pin
-  events to up to 16 readers.
-- The GAP, if billing ever gets real: an append-only, author-signed serving
-  COUNTER record (what was served, to whom, how many bytes, when) with a
-  deterministic content-id path — i.e. an auditable meter, not just current
-  state. Design constraint learned from Unyt: conserved quantities travel as
-  exact-arithmetic STRINGS, never floats (their `add_fuel`/`sub_fuel`
-  convention) — if we emit billable numbers, emit strings.
-- Do NOT build until a counterparty exists; capture only. (YAGNI — but the
-  design constraint is cheap to honor from day one.)
+### F1. Service meter + node spec — SCOPED (pass-6-service-meter / v3.3.0, COORDINATOR-ONLY)
+Owner premise: HummHive nodes are already hosts AND should be payers — BOTH.
+The scoped generation adds a cumulative service meter and opt-in validated
+node-spec stats:
+- One meter record per author+hive+UTC day carries exact-arithmetic string
+  counters under a deterministic content id. Upserts retain the per-dimension
+  maximum, so retries never double a total and meters never decrement.
+- One node-spec record per author+hive carries bounded hardware and system
+  claims. Publication is explicit, replacement-based, and optionally signed
+  by a humm-tauri app key.
+- Existing granted reads (`get_by_content_id_link`,
+  `list_by_dynamic_link_page`, `list_by_hive_link`) remain the Log Harvester
+  surface. The new mutators stay local to the cell owner.
+
+Wire contract and client cadence:
+`docs/HUMM_TAURI_SERVICE_METER_INTEGRATION.md`.
 
 ### F2. Unyt-alongside provisioning (CLIENT/CONDUCTOR — humm-tauri's, tracked here for the contract only)
 If HummHive users ever hold Unyt accounts, Unyt runs as a SECOND installed
@@ -124,14 +123,11 @@ app (its own DNA + agent keys), not inside our conductor cell. Our only
 contract exposure is F1's read surface. humm-tauri's `09_PROJECT_Payments`
 epic is the natural home; nothing for this repo.
 
-### F3. RC hygiene debt (this repo, found during the 2026-07-17 cleanliness sweep)
-- **CI tests the wrong suite:** `.github/workflows/test.yaml` runs `npm t` →
-  the tryorama harness, which CANNOT boot a conductor on holochain 0.6.x —
-  while `crates/sweettest` (28/28 active, the real conductor gate) never runs
-  in CI. Fix shape: CI runs host tests + sweettest; tryorama stays dormant
-  until the hc-0.7 hop revives it. (Nix pin staleness in that workflow is
-  already tracked in `github-release-automation-happ-registry.md` — don't
-  double-ticket it.)
+### F3. RC hygiene debt — CI cutover SCOPED
+- **CI cutover — SCOPED:** `.github/workflows/test.yaml` now runs host tests +
+  build + sweettest. Tryorama stays dormant until the hc-0.7 hop revives it.
+  Nix pin staleness in that workflow remains tracked in
+  `github-release-automation-happ-registry.md`; do not double-ticket it.
 - **LICENSE text still missing** (DecraLicense — owner hasn't supplied text;
   RC blocker class, zero wasm impact).
 - **D1 GitHub release automation** deferred by owner — batch near RC.
@@ -143,7 +139,7 @@ epic is the natural home; nothing for this repo.
   principle 2) is where tryorama revival, kitsune/tx5 changes, and any Unyt
   version alignment all get re-evaluated TOGETHER — one wipe, not two.
 
-## 4. Open questions (blocked on people, not code)
+## 4. People-dependent questions and answered premise
 
 1. **Private source:** the real Unyt zome code lives in the private
    `unytco/unyt` repo (`unyt-sandbox/.gitmodules`; submodule uninitialized,
@@ -151,9 +147,9 @@ epic is the natural home; nothing for this repo.
    list, cap-grant/membrane-proof usage, countersigning reality of
    Send→Accept, and the concrete Proof-of-Service input schema for
    DNA-hosted services.
-2. **Premise check with owner:** is the goal for HummHive nodes to BE
-   Holo-style hosts (earn credit for serving), to PAY for hosting, both, or
-   neither-yet? F1's priority hangs entirely on this.
+2. **ANSWERED — premise check (owner, 2026-07-17):** HummHive nodes are
+   already hosts AND should be payers — **BOTH**. F1 therefore includes
+   opt-in validated node-spec stats with the daily service meter.
 3. **Who builds a Log-Harvester adapter** if billing gets real — humm-tauri
    sidecar, standalone process, or Unyt-side tooling?
 
@@ -163,3 +159,7 @@ epic is the natural home; nothing for this repo.
   repos read end-to-end; no integrity-fork requirement found; F1–F4 captured;
   premise question routed to owner). Next: owner /plan session to rank F1/F3
   and answer §4.2.
+- 2026-07-17 — F1 scoped into `pass-6-service-meter` / v3.3.0. The
+  implementation is coordinator-only; the node-spec app-attestation handshake
+  checks baked-in accepted keys and ships with that list empty. Integrity
+  remains untouched. F3 CI cutover also scoped: host tests + build + sweettest.
