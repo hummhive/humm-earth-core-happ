@@ -5,7 +5,55 @@
 
 ---
 
-## Latest arc (2026-07-17): standards canon + config parity + cleanliness + futureproofing capture
+## Latest arc (2026-07-17, evening): pass-6-service-meter shipped (v3.3.0)
+
+Coordinator-only generation on the HELD pass-6 DNA, merged `--no-ff` as
+`311e10c`, tag `v3.3.0` on the merge commit (local; owner pushes). Headline
+sequence on the branch: CI cutover (`ccb5fce`), coordinator feature
+(`4c8af39`), sweettest proof (`0ff2430`), handoff docs (`765c934`), CI
+fail-fast fix (`6071278`).
+
+1. **`upsert_service_meter`** — one `EncryptedContent` per (author, hive,
+   UTC day), content type `hummhive-core-service-meter-v1`, id
+   `service-meter-v1:<YYYY-MM-DD>`, dynamic link = period. Counters are
+   absolute cumulative u128 decimal strings, canonicalized on input,
+   max-merged over the key union on update; identical merged state is a
+   no-op. Corrupt priors are hard errors, never resets.
+2. **`publish_node_spec`** — opt-in singleton `node-spec-v1` per
+   (author, hive), REPLACE semantics, optional Ed25519 app attestation
+   (`verify_signature_raw` over the canonical string) against
+   `ACCEPTED_APP_SIGNING_KEYS_B64` which SHIPS EMPTY — every attestation
+   rejects with `unrecognized app signing key` until humm-tauri mints the
+   app key (adding it is a coordinator hot-swap).
+3. **Header convergence** — every upsert converges the stored header
+   (`display_hive_id`, `revision_author_signing_public_key`,
+   `public_key_acl`) to the caller's values; widening the reader ACL alone
+   is a real update (silent-failure lane finding, conductor-proven).
+4. **CI cutover** — `.github/workflows/test.yaml` now runs host tests →
+   happ build → sweettest (tryorama gate removed; it cannot boot on hc
+   0.6.x). Lockfile-keyed cargo caching; libclang derivation fails fast.
+5. **Wire contract** — `docs/HUMM_TAURI_SERVICE_METER_INTEGRATION.md`
+   (bounds, exact reject literals, attestation canonical string + raw-UTF-8
+   signing warning, client cadence guidance, payer-side zero-surface).
+   Neither new extern is cap-granted. `.newTasks/rc-happ-futureproofing.md`
+   F1+F3 SCOPED→shipped; pass-7 catalogue gained A12 (TEE attestation).
+
+Gates at the merge: fmt clean; host `content` 48/48 + `content_integrity`
+76/76 (integrity byte-untouched); clippy `-D warnings` clean; sweettest 37
+passed / 1 ignored (28 baseline + 9 new); five serialized reviewer lanes all
+APPROVE with findings applied; rebuild at `311e10c` reproduced DNA
+`uhC0ksXs…`, integrity wasm `2656a910…`, content.wasm `34676ba0…`, happ
+`b98916f1…` byte-identically. Known blemish: a `cargo fmt` inside
+`crates/sweettest` normalized ±24 lines across five pre-existing test files
+(rode the test commit; suite green on the exact tree).
+
+Distribution: official store row `pass-6-service-meter` appended LAST.
+humm-tauri `.testdata`/`bin` mirroring still DEFERRED at owner request —
+**v3.2.0 AND v3.3.0 are now both owed** to both humm-tauri clones when their
+testing settles (their `currentGenerationRow()` takes the LAST row; the
+v3.3.0 row supersedes v3.2.0 as current unless they want both).
+
+## Arc (2026-07-17): standards canon + config parity + cleanliness + futureproofing capture
 
 Seven commits on `main` after the v3.2.0 freshness commit, no zome changes,
 DNA/wasm untouched:
@@ -51,16 +99,29 @@ ending in "commit" → commit LAST, each logical piece its own commit (noted in
 
 ## Current state
 
-**Branch:** `main` at **v3.2.0** — `pass-6-idempotent-writes` coordinator
-generation merged 2026-07-16 (branch `feat-coordinator-pass6-idempotent-writes`
-→ `--no-ff` merge, tag `v3.2.0` on the merge commit). Coordinator-only
-hot-swap on pass-6: DNA HELD, no migration. Prior: v3.1.0
-(pass-6-pinned-hosts, same day) = blob-keystone coordinator generation;
-v3.0.0 (pass-6 blessed 2026-07-02, merge `2de8923`) = structural DRY refactor
-+ security validation hardening; v2.0.0 (pass-5 owner role, DNA `uhC0k2dX…`,
-happ `42dbf9df…`) — the migration SOURCE generation.
+**Branch:** `main` at **v3.3.0** — `pass-6-service-meter` coordinator
+generation merged 2026-07-17 (branch `feat-coordinator-pass6-service-meter`
+→ `--no-ff` merge `311e10c`, tag `v3.3.0` on the merge commit). Coordinator-only
+hot-swap on pass-6: DNA HELD, no migration. Prior: v3.2.0
+(pass-6-idempotent-writes, 2026-07-16) = idempotent-writes coordinator
+generation; v3.1.0 (pass-6-pinned-hosts, same day) = blob-keystone
+coordinator generation; v3.0.0 (pass-6 blessed 2026-07-02, merge `2de8923`)
+= structural DRY refactor + security validation hardening; v2.0.0 (pass-5
+owner role, DNA `uhC0k2dX…`, happ `42dbf9df…`) — the migration SOURCE
+generation.
 
-**pass-6-idempotent-writes (v3.2.0, current coordinator generation):** DNA
+**pass-6-service-meter (v3.3.0, current coordinator generation):** DNA HELD
+`uhC0ksXs…` / integrity `2656a910…` byte-identical; content wasm
+`34676ba0…`, happ `b98916f1…`, artifact
+`humm-earth-core-happ_pass-6-service-meter_dna-uhC0ksXs_happ-b98916f1.happ`.
+New wire surface (all additive, neither granted): `upsert_service_meter` +
+`publish_node_spec` returning `UpsertContentResponse { response, was_created,
+was_updated }`; snapshots `ServiceMeterSnapshot` / `NodeSpecSnapshot`;
+attestation dormant behind the empty `ACCEPTED_APP_SIGNING_KEYS_B64`. Reads
+ride existing granted list/page externs. Full contract:
+`docs/HUMM_TAURI_SERVICE_METER_INTEGRATION.md`.
+
+**pass-6-idempotent-writes (v3.2.0):** DNA
 HELD `uhC0ksXs…` / integrity `2656a910…` byte-identical; content wasm
 `3b5348eb…`, happ `bfe357aa…`, artifact
 `humm-earth-core-happ_pass-6-idempotent-writes_dna-uhC0ksXs_happ-bfe357aa.happ`.

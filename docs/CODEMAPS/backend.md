@@ -1,4 +1,4 @@
-<!-- codemap:backend | generated:2026-06-05 | updated:2026-07-16 | scope:full -->
+<!-- codemap:backend | generated:2026-06-05 | updated:2026-07-17 | scope:full -->
 
 # Backend (Zome Externs)
 
@@ -104,6 +104,20 @@ founder-only marker, content-id `hive-migration-marker-v2`, content_type
 `try_decode_hive_genesis` — GroupGenesis is a serde field-superset of
 HiveGenesis). `send_dm_delete_request` + `DmRemoteSignal::DmDeleteRequest`
 doc-deprecated. Contract doc: `HUMM_TAURI_IDEMPOTENT_WRITES_INTEGRATION.md`.
+
+## Coordinator Externs — Service records (pass-6-service-meter, v3.3.0)
+
+```
+upsert_service_meter(UpsertServiceMeterInput) → UpsertContentResponse{response, was_created, was_updated}
+  └─ service_records.rs → validate period/counters (canonical u128, ≤16 dims) → content_id_records_by_author(me, "service-meter-v1:<period>") → canonical_lowest_hash → create (dynamic link = period) | max-merge union + header convergence → update | no-op (NOT cap-granted)
+publish_node_spec(PublishNodeSpecInput) → UpsertContentResponse{response, was_created, was_updated}
+  └─ service_records.rs → validate spec (≤32 entries, no control chars) → optional app attestation (verify_signature_raw vs ACCEPTED_APP_SIGNING_KEYS_B64 — SHIPS EMPTY, all attestations reject) → find "node-spec-v1" → create | REPLACE + header convergence → update | no-op (NOT cap-granted)
+```
+
+Snapshots `ServiceMeterSnapshot{schema, period, counters}` /
+`NodeSpecSnapshot{schema, spec, declared_at_micros, verified_by_app_key}` are
+zome-built msgpack; reads ride the existing granted list/page externs.
+Contract doc: `HUMM_TAURI_SERVICE_METER_INTEGRATION.md`.
 
 ## Coordinator Externs — Hive
 

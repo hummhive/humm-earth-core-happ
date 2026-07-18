@@ -103,10 +103,12 @@ for cross-repo integration testing against this hApp.
 
 ## hApp Version Lineage
 
-Current: **`main` = v3.2.0 = pass-6-idempotent-writes**, DNA `uhC0ksXs` (HELD
-from pass-6/v3.0.0 — coordinator-only generation), happ `bfe357aa`, merged
-2026-07-16 (merge `b5c830f`, tag `v3.2.0`). Prior coordinator generation:
-**v3.1.0 = pass-6-pinned-hosts**, same DNA, happ `1c7d981b` (merge `e16b793`).
+Current: **`main` = v3.3.0 = pass-6-service-meter**, DNA `uhC0ksXs` (HELD
+from pass-6/v3.0.0 — coordinator-only generation), happ `b98916f1`, merged
+2026-07-17 (merge `311e10c`, tag `v3.3.0`). Prior coordinator generations:
+**v3.2.0 = pass-6-idempotent-writes**, same DNA, happ `bfe357aa` (merge
+`b5c830f`); **v3.1.0 = pass-6-pinned-hosts**, same DNA, happ `1c7d981b`
+(merge `e16b793`).
 Integrity baseline: **v3.0.0 = pass-6-dry-refactor**, happ `3062de38`, blessed
 2026-07-02 (merge `2de8923`, tag `v3.0.0`; zome-source tip `a07dc99`).
 Prior: **v2.0.0 = pass-5-owner-role**, DNA `uhC0k2dX`, happ `42dbf9df`, built at
@@ -130,3 +132,4 @@ released binaries live in
 | pass-6-dry-refactor (v3.0.0) | uhC0ksXsJOT | YES | Structural module split (`encrypted_content`, `hive`, `group`, `validation_dispatch`; coordinator `migration`/`signals` dirs) plus `OriginalHashPointer` and cross-entry-update validation hardening; no EntryTypes/LinkTypes/wire changes |
 | pass-6-pinned-hosts (v3.1.0) | uhC0ksXsJOT | no (coordinator) | `latest_action_micros`, `BlobPinSignal` + `send_blob_pin_signal`, bounded source-cursor page externs (`list_by_{hive_link,dynamic_link,author}_page`), exact-own `get_my_content_by_id_link`; DNA held |
 | pass-6-idempotent-writes (v3.2.0) | uhC0ksXsJOT | no (coordinator) | find-or-create family (content/group-genesis/membership), hiveless remediation pair, optional-hive `fetch_pair_ss_with_hive_check`, HiveGenesis CREATE-based migration markers, `content_summary_many`; DNA held |
+| pass-6-service-meter (v3.3.0) | uhC0ksXsJOT | no (coordinator) | `upsert_service_meter` (cumulative max-merge day buckets) + `publish_node_spec` (opt-in singleton, REPLACE, dormant app-attestation behind empty accepted-keys), header convergence on upsert, CI cutover to host tests + build + sweettest; DNA held |

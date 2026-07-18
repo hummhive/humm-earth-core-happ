@@ -791,6 +791,51 @@ Verification captured on `feat-coordinator-pass6-idempotent-writes`:
   owner request (their testing in flight 2026-07-16) — pull from the
   official store when ready; see docs/HUMM_TAURI_IDEMPOTENT_WRITES_INTEGRATION.md.
 
+Pass-6 coordinator follow-up — service-meter (service-meter/node-spec upserts + CI gate cutover)
+---------------------------------------------------------------------------------------------------------------
+Built from: branch `feat-coordinator-pass6-service-meter` (v3.3.0, 2026-07-17),
+coordinator-only hot-swap on pass-6-idempotent-writes. Adds the self-authored
+service-record mutators `upsert_service_meter` (one record per author+hive+UTC
+day, id `service-meter-v1:<YYYY-MM-DD>`, dynamic link = period, cumulative
+u128 decimal counters canonicalized on input and max-merged over the key
+union on update) and `publish_node_spec` (singleton `node-spec-v1`, REPLACE
+semantics, optional Ed25519 app attestation via `verify_signature_raw`
+against `ACCEPTED_APP_SIGNING_KEYS_B64` — SHIPS EMPTY: every attestation
+rejects with "unrecognized app signing key" until the humm-tauri app key
+lands by coordinator hot-swap). Every upsert converges the stored header
+(display alias, revision signing key, public-key ACL) to the caller's
+values. Neither extern is cap-granted. CI cut over from the dormant tryorama
+gate to host tests + happ build + sweettest with lockfile-keyed caching.
+
+  merge commit:              311e10c (tag v3.3.0)
+  DNA hash:                  uhC0ksXsJOTlVvhUn3KWB0nN6j-II_9BxlsRiMqR9ajhFhYS7gSMz  (HELD)
+  content_integrity.wasm:    2656a9100937f7e6d17e2eebd5e744a1ef16e8e36b0efa089dc2f6382a655ae2  (UNCHANGED)
+  content.wasm:              34676ba03911cda4bbbd3a26852c81003f2aa60d61b3b86b2ed4948fbd98d008  (NEW — service-record externs above)
+  humm_earth_core.dna:       761976d896bc3854579a44fcdab38621f91b93b7b0a0a0d8832c007738ca3da9
+  humm-earth-core-happ.happ: b98916f18def33731a93b70c36f60838186a52e4e41efcd58de5071f150430c8
+
+Verification captured on `main` at the v3.3.0 merge (311e10c):
+- `cargo fmt --all --check`: green.
+- Host: `content` 48/48 (8 new service_records unit tests),
+  `content_integrity` 76/76 (UNTOUCHED).
+- `cargo clippy --workspace --all-targets -- -D warnings`: clean.
+- Sweettest conductor suite: 37 passed / 0 failed / 1 ignored
+  (28 baseline + 9 new `service_records.rs` tests, incl. ACL-widening
+  header convergence and empty-accepted-list attestation rejection).
+- Serialized 5-lane review (rust, security, silent-failure, standards, DRY)
+  converged APPROVE; all findings applied (borrow-not-clone decode, header
+  convergence on update, distinct union-overflow literal, control-char ban
+  in spec values, test split to service_records/tests.rs).
+- Rebuild at the merge commit reproduced every sha above byte-identically;
+  `hc dna hash` printed the HELD hash.
+
+Distribution:
+- Official prebuilt: `~/hummhive-official-happ-versions/`
+  (MANIFEST row `pass-6-service-meter`, appended LAST = current).
+  humm-tauri `.testdata/happs/` + `src-tauri/bin/` mirroring remains
+  DEFERRED at owner request (v3.2.0 and v3.3.0 both owed; pull from the
+  official store when ready) — see docs/HUMM_TAURI_SERVICE_METER_INTEGRATION.md.
+
 Reproducibility contract (effective pass-4 re-record)
 =====================================================
 
