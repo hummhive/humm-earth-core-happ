@@ -50,6 +50,9 @@
 ### A11. Per-tuple uniqueness validators (companion to §B2 find-or-create) — HARDENS
 - **NEW.** A coordinator find-or-create closes the single-writer TOCTOU window (the actual crash-resume pain) but NOT cross-agent races (two agents find-or-creating the same key concurrently on different chains). If non-bypassable uniqueness ever matters, integrity rules are the only fix: at most one `GroupGenesis` per `(hive_genesis_hash, hive_wide_role)`; optionally `(hive, content_type, content_id)` for designated types. Current posture (accept duplicates + canonical-pick) is livable — include only if the pass-7 window is open anyway.
 
+### A12. Hardware/TEE attestation for node-spec records — WATCH ITEM
+- **v3.3.0 baseline:** the coordinator-side app-signature handshake is the trustworthy-enough tier. A future integrity-level rule or trusted execution environment (TEE)-backed attestation would be a pass-7 candidate if node-spec claims need hardware proof.
+
 ## B. Coordinator-only candidates — next coordinator generation roll-up (no fork; build-ready pending noted confirmations)
 
 ### B1. `EncryptedContentSignal` hive-scoping — ANSWERED (no code). Reader-scoped fan-out re-verified with fresh line evidence (`signals/outbound.rs:31-61`).

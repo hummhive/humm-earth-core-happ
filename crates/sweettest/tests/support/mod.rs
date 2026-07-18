@@ -1,5 +1,6 @@
 #![allow(dead_code)]
 
+use std::collections::BTreeMap;
 use std::path::Path;
 use std::time::Duration;
 
@@ -336,6 +337,104 @@ pub enum BlobPinSignal {
 pub struct SendBlobPinSignalInput {
     pub signal: BlobPinSignal,
     pub recipients: Vec<AgentPubKey>,
+}
+
+// --- pass-6-service-meter wire mirrors ---------------------------------------
+
+#[derive(Debug, Serialize)]
+pub struct UpsertServiceMeterInput {
+    pub hive_genesis_hash: ActionHash,
+    pub period: String,
+    pub counters: BTreeMap<String, String>,
+    pub display_hive_id: String,
+    pub revision_author_signing_public_key: String,
+    pub public_key_acl: Acl,
+}
+
+#[derive(Debug, Serialize)]
+pub struct NodeSpecAttestation {
+    pub app_signing_key_b64: String,
+    pub signature_b64: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct PublishNodeSpecInput {
+    pub hive_genesis_hash: ActionHash,
+    pub spec: BTreeMap<String, String>,
+    pub declared_at_micros: i64,
+    pub app_attestation: Option<NodeSpecAttestation>,
+    pub display_hive_id: String,
+    pub revision_author_signing_public_key: String,
+    pub public_key_acl: Acl,
+}
+
+/// `Acl` subset carrying only the reader list.
+#[derive(Debug, Deserialize)]
+pub struct ReaderAcl {
+    pub reader: Vec<String>,
+}
+
+/// `EncryptedContentHeader` subset for header-convergence assertions.
+#[derive(Debug, Deserialize)]
+pub struct ServiceRecordHeader {
+    pub display_hive_id: String,
+    pub public_key_acl: ReaderAcl,
+}
+
+/// `EncryptedContent` subset carrying the stored payload and header.
+#[derive(Debug, Deserialize)]
+pub struct EncryptedContentPayload {
+    pub header: ServiceRecordHeader,
+    pub bytes: SerializedBytes,
+}
+
+/// `EncryptedContentResponse` subset used by service-record assertions.
+#[derive(Debug, Deserialize)]
+pub struct EncryptedContentPayloadResponse {
+    pub hash: String,
+    pub encrypted_content: EncryptedContentPayload,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct UpsertContentResponse {
+    pub response: EncryptedContentPayloadResponse,
+    pub was_created: bool,
+    pub was_updated: bool,
+}
+
+/// `BoundedLinkPage` subset; serde ignores paging metadata.
+#[derive(Debug, Deserialize)]
+pub struct ServiceRecordPage {
+    pub records: Vec<EncryptedContentPayloadResponse>,
+}
+
+#[derive(Debug, Deserialize, PartialEq, Eq)]
+pub struct ServiceMeterSnapshot {
+    pub schema: String,
+    pub period: String,
+    pub counters: BTreeMap<String, String>,
+}
+
+#[derive(Debug, Deserialize, PartialEq, Eq)]
+pub struct NodeSpecSnapshot {
+    pub schema: String,
+    pub spec: BTreeMap<String, String>,
+    pub declared_at_micros: i64,
+    pub verified_by_app_key: Option<String>,
+}
+
+pub fn public_reader_acl(owner: &str) -> Acl {
+    let mut acl = owner_only_acl(owner);
+    acl.reader.push("*".to_string());
+    acl
+}
+
+pub fn decode_content_payload<T>(record: &EncryptedContentPayloadResponse) -> T
+where
+    T: for<'de> Deserialize<'de> + std::fmt::Debug,
+{
+    holochain_types::prelude::decode(record.encrypted_content.bytes.bytes())
+        .expect("decode service record snapshot from msgpack")
 }
 
 // --- Shared conductor helpers --------------------------------------------------

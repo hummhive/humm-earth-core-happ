@@ -377,7 +377,6 @@ async fn exact_own_lookup_excludes_foreign_collisions_and_scopes_by_hive() {
     assert!(!empty.truncated);
 }
 
-
 #[tokio::test(flavor = "multi_thread")]
 async fn latest_action_micros_populated_on_get_none_on_create() {
     let (conductor, cell, zome) = single_conductor_cell_app().await;

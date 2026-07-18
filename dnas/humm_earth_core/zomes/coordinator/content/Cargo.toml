@@ -17,7 +17,7 @@ holochain_serialized_bytes = { workspace = true }
 # happ's existing dependency tree already pulls base64 0.22 transitively
 # via hdk/holochain_types; the explicit dep here just exposes it to the
 # zome.
-base64 = "0.22"
+base64 = "=0.22.1"
 
 serde = { workspace = true }
 

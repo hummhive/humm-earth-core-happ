@@ -20,7 +20,7 @@ use holo_hash::ActionHash;
 use holochain::sweettest::await_consistency_s;
 use serde::de::IgnoredAny;
 use support::{
-    single_conductor_app, setup_cells, CreateHiveGenesisInput, CreateHiveMembershipInput,
+    setup_cells, single_conductor_app, CreateHiveGenesisInput, CreateHiveMembershipInput,
     GenesisResponse, ListedHive,
 };
 

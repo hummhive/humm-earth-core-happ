@@ -24,7 +24,23 @@ jobs:
         with:
           name: holochain-ci
 
-      - name: Install and test
-        run: |
-          nix develop --command bash -c "npm i && npm t"
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+            crates/sweettest/target
+          key: rust-${{ runner.os }}-${{ hashFiles('flake.lock', 'Cargo.lock', 'crates/sweettest/Cargo.lock') }}
 
+      - name: Host unit tests
+        run: |
+          nix develop --command bash -c "cargo test -p content --lib && cargo test -p content_integrity --lib"
+
+      - name: Build hApp
+        run: |
+          nix develop --command bash -c "npm run build:happ"
+
+      - name: Sweettest conductor suite
+        run: |
+          nix develop --command bash -c 'LIBCLANG_PATH=$(ls -d /nix/store/*clang*-lib/lib | head -1); test -n "$LIBCLANG_PATH" || { echo "no clang lib under /nix/store — bindgen cannot run" >&2; exit 1; }; export LIBCLANG_PATH; cd crates/sweettest && cargo test -- --test-threads=1'

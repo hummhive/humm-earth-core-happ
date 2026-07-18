@@ -10,6 +10,7 @@
 //!   externs, and ACL-reader fan-out.
 //! - `get_helpers.rs` — generic DHT-get helpers.
 //! - `migration/` — forward-pointer migration markers and marker readers/writers.
+//! - `service_records.rs` — service-meter upserts and opt-in node-spec publication.
 //!
 //! Public-API guarantee: every `#[hdk_extern]` and shared struct exposed
 //! by the original file is re-exported from this module so existing
@@ -26,6 +27,7 @@ pub mod migration;
 pub mod paging;
 pub mod queries;
 pub mod remediation;
+pub mod service_records;
 pub mod signals;
 
 // --- Shared wire-shape types -------------------------------------------------
@@ -109,6 +111,12 @@ pub use queries::{
 pub use remediation::{
     list_my_hiveless_content, remediate_hiveless_content, RemediateHivelessInput,
     RemediateHivelessItem, RemediationOutcome, RemediationStatus,
+};
+pub use service_records::{
+    publish_node_spec, upsert_service_meter, NodeSpecAttestation, NodeSpecSnapshot,
+    PublishNodeSpecInput, ServiceMeterSnapshot, UpsertContentResponse, UpsertServiceMeterInput,
+    NODE_SPEC_CONTENT_ID, NODE_SPEC_CONTENT_TYPE, NODE_SPEC_SCHEMA_TAG, SERVICE_METER_CONTENT_TYPE,
+    SERVICE_METER_ID_PREFIX, SERVICE_METER_SCHEMA_TAG,
 };
 pub use signals::{
     remote_signal_acl_readers, send_blob_pin_signal, send_dm_call_init_accept,
