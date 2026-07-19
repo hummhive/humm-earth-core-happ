@@ -5,7 +5,8 @@
 |---|---|---|---|
 | M0 (pre-integrity baseline) | 991b729 | uhC0ksXsJOTlVvhUn3KWB0nN6j-II_9BxlsRiMqR9ajhFhYS7gSMz | 2656a9100937f7e6d17e2eebd5e744a1ef16e8e36b0efa089dc2f6382a655ae2 |
 | M1 (header bounds + update continuity) | 3a548db | uhC0kC6Rjh9-NE9vHSQ6Zy4EUtjoZvKfwzD8Txo5Hsu6Gw7irpl4C | 86c7950fe65f7e5c24d54f85fbabb7a8fdf3591632fd0d8d7f529b22ca0f8128 |
-| M2 (open-write payload caps) | <fill> | uhC0kXQNnSRgwB42kF0RhtyCgm9noYg-VspFoeeetC4LufcMt7geE | f2e4284043b6cd0bb4076342378f1d1c15e2c0c1ac03e2c1782bbed94d610c23 |
+| M2 (open-write payload caps) | 192047f | uhC0kXQNnSRgwB42kF0RhtyCgm9noYg-VspFoeeetC4LufcMt7geE | f2e4284043b6cd0bb4076342378f1d1c15e2c0c1ac03e2c1782bbed94d610c23 |
+| M3 (system-role GroupGenesis uniqueness) | <fill> | uhC0k8qyE7-0_OOmMw2beHEmaLTyksE1i6oVqj0EididK2Da2BEJ7 | 4f764c336eb280f8a764475dc1897ded3bd0afb5ec58547a069856492836a85d |
 
 ## New reject literals (accumulates the blessing-time BDD delta)
 | # | literal | validator fn | milestone |
@@ -23,5 +24,6 @@
 | L11 | `EncryptedContent updates may only stamp content_type with the _migrated/ prefix` | `validate_update_continuity` | M1 |
 | — | `update original is not an EncryptedContent` (defensive; upstream same-entry-type gate normally fires first) | `validate_update_encrypted_content` | M1 |
 | L12 | `Public and OpenWrite payloads accept at most 1000000 bytes` | `validate_open_write_payload_size` | M2 |
+| L13 | `a GroupGenesis for this hive and hive-wide role already exists on your chain` | `validate_create_group_genesis` | M3 |
 
 ## Decisions taken mid-build

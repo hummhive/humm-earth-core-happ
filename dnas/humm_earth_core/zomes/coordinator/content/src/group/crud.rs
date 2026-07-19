@@ -133,7 +133,25 @@ pub fn find_or_create_group_genesis(
             was_created: false,
         });
     }
-    let response = create_group_genesis(input)?;
+    let response = match create_group_genesis(input.clone()) {
+        Ok(response) => response,
+        Err(err) if format!("{err:?}").contains(GROUP_GENESIS_UNIQUENESS_REJECT) => {
+            let winner = caller_matching_geneses(&input, &me)?
+                .into_iter()
+                .min_by_key(|c| c.hash.to_string())
+                .ok_or_else(|| {
+                    wasm_error!(WasmErrorInner::Guest(
+                        "GroupGenesis uniqueness rejected the create but no matching genesis resolved"
+                            .to_string(),
+                    ))
+                })?;
+            return Ok(FindOrCreateGroupGenesisResponse {
+                response: winner,
+                was_created: false,
+            });
+        }
+        Err(err) => return Err(err),
+    };
     Ok(FindOrCreateGroupGenesisResponse {
         response,
         was_created: true,

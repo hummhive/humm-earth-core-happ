@@ -296,3 +296,44 @@ fn group_link_delete_requires_link_author() {
         ValidateCallbackResult::Invalid(_)
     ));
 }
+
+// ---------------------------------------------------------------------
+// Pass-7 M3 — system-role GroupGenesis uniqueness tuple
+// ---------------------------------------------------------------------
+
+#[test]
+fn tuple_conflicts_on_same_hive_and_role() {
+    let mut existing = sample_group_genesis();
+    existing.hive_wide_role = Some(Role::Owner);
+    let mut new = sample_group_genesis();
+    new.hive_wide_role = Some(Role::Owner);
+    assert!(genesis_tuple_conflicts(&existing, &new));
+}
+
+#[test]
+fn tuple_no_conflict_on_different_role() {
+    let mut existing = sample_group_genesis();
+    existing.hive_wide_role = Some(Role::Owner);
+    let mut new = sample_group_genesis();
+    new.hive_wide_role = Some(Role::Writer);
+    assert!(!genesis_tuple_conflicts(&existing, &new));
+}
+
+#[test]
+fn tuple_no_conflict_on_different_hive() {
+    let mut existing = sample_group_genesis();
+    existing.hive_genesis_hash = action_hash(9);
+    existing.hive_wide_role = Some(Role::Owner);
+    let mut new = sample_group_genesis();
+    new.hive_genesis_hash = action_hash(10);
+    new.hive_wide_role = Some(Role::Owner);
+    assert!(!genesis_tuple_conflicts(&existing, &new));
+}
+
+#[test]
+fn tuple_custom_candidate_never_conflicts_with_system_role() {
+    let existing = sample_group_genesis();
+    let mut new = sample_group_genesis();
+    new.hive_wide_role = Some(Role::Owner);
+    assert!(!genesis_tuple_conflicts(&existing, &new));
+}

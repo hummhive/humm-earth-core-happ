@@ -1,5 +1,7 @@
 use hdi::prelude::*;
 
+use std::collections::HashSet;
+
 use super::authority::{check_group_authority, fetch_group_genesis, fetch_group_membership};
 use super::types::{GroupGenesis, GroupMembership};
 use crate::hive::{check_hive_authority, Role};
@@ -18,13 +20,76 @@ pub fn validate_create_group_genesis(
     } else {
         Role::Admin
     };
-    check_hive_authority(
+    let authority = check_hive_authority(
         action.author(),
         &genesis.hive_genesis_hash,
         genesis.creator_hive_membership_hash.as_ref(),
         required_role,
         action.timestamp(),
-    )
+    )?;
+    if !matches!(authority, ValidateCallbackResult::Valid) || genesis.hive_wide_role.is_none() {
+        return Ok(authority);
+    }
+    validate_unique_system_role_on_chain(&action, &genesis)
+}
+
+/// Reject literal when an author's chain already carries a live
+/// system-role `GroupGenesis` for the same `(hive, role)` tuple. Shared
+/// so the coordinator's find-wins path recognises the same rejection.
+pub const GROUP_GENESIS_UNIQUENESS_REJECT: &str =
+    "a GroupGenesis for this hive and hive-wide role already exists on your chain";
+
+/// Two system-role `GroupGenesis` entries collide when they name the same
+/// hive AND the same hive-wide role. A custom group (`hive_wide_role:
+/// None`) never collides — its `None` role can equal no system role.
+pub(crate) fn genesis_tuple_conflicts(candidate: &GroupGenesis, new: &GroupGenesis) -> bool {
+    candidate.hive_genesis_hash == new.hive_genesis_hash
+        && candidate.hive_wide_role == new.hive_wide_role
+}
+
+/// Reject a second live system-role `GroupGenesis` for the same
+/// `(hive, role)` tuple already on the author's chain. Walks the author's
+/// activity to genesis (absence proofs need the full range), excluding
+/// Creates a later same-chain Delete tombstones — so deleting a
+/// mis-configured system-role group frees its slot. Cross-agent duplicates
+/// stay possible (separate chains) and remain a client canonical-pick.
+///
+/// Cost is O(chain) per system-role create; these are rare
+/// lifetime writes, never a hot path (holochain #3028 saturation).
+fn validate_unique_system_role_on_chain(
+    action: &EntryCreationAction,
+    genesis: &GroupGenesis,
+) -> ExternResult<ValidateCallbackResult> {
+    let activity = must_get_agent_activity(
+        action.author().clone(),
+        ChainFilter::new(action.prev_action().clone()),
+    )?;
+    let tombstoned: HashSet<ActionHash> = activity
+        .iter()
+        .filter_map(|registered| match registered.action.action() {
+            Action::Delete(delete) => Some(delete.deletes_address.clone()),
+            _ => None,
+        })
+        .collect();
+    let new_entry_type = action.entry_type();
+    for registered in &activity {
+        let candidate_action = registered.action.action();
+        let Some((entry_hash, entry_type)) = candidate_action.entry_data() else {
+            continue;
+        };
+        if entry_type != new_entry_type || tombstoned.contains(registered.action.action_address()) {
+            continue;
+        }
+        let Ok(existing) = GroupGenesis::try_from(must_get_entry(entry_hash.clone())?) else {
+            continue;
+        };
+        if genesis_tuple_conflicts(&existing, genesis) {
+            return Ok(ValidateCallbackResult::Invalid(
+                GROUP_GENESIS_UNIQUENESS_REJECT.to_string(),
+            ));
+        }
+    }
+    Ok(ValidateCallbackResult::Valid)
 }
 
 /// GroupGenesis is immutable. Updating one would let the creator
