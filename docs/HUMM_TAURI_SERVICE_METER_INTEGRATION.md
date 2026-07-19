@@ -195,6 +195,25 @@ merged counters produce a no-op with no write.
 prior map; fields omitted by the new map disappear. An identical snapshot
 produces a no-op with no write.
 
+### 5.3 Reading service records — pick the right extern
+
+Meter content ids are SHARED across authors by design (`service-meter-v1:
+<date>` collides across every host in a hive), and `get_by_content_id_link`
+resolves an arbitrary link target with no author disambiguation — fine only
+when a single author can exist on the path. For service records:
+
+- Your own records: `get_my_content_by_id_link` (author-scoped, v3.1.0).
+- Anyone else's, or all hosts for a day: `list_by_dynamic_link_page`
+  (meters) / `list_by_hive_link` (node specs), then filter by the
+  validator-attested `revision_author_signing_public_key`.
+- Never use `get_by_content_id_link` for cross-host meter reads — which
+  author you get back is arbitrary.
+
+Payload bytes for both record types are zome-built plaintext msgpack —
+there is nothing to decrypt. `public_key_acl.reader` is the app-level
+consent contract for who SHOULD read and bill, not a key barrier; route
+these content types around any client decrypt cascade.
+
 ## 6. App-attestation handshake
 
 The signature covers the UTF-8 bytes of this canonical string with Ed25519:
