@@ -27,6 +27,94 @@ pub(super) fn check_author_matches_header(
     ValidateCallbackResult::Valid
 }
 
+/// Structural DoS floor on every header: string-length caps plus
+/// per-bucket `public_key_acl` cardinality, key-length, and duplicate
+/// rejection. Runs on create AND update, all `AclSpec` variants.
+pub(super) fn validate_header_bounds(header: &EncryptedContentHeader) -> ValidateCallbackResult {
+    let id_chars = header.id.chars().count();
+    if id_chars == 0 || id_chars > HEADER_ID_MAX_CHARS {
+        return ValidateCallbackResult::Invalid(format!(
+            "header id must be 1-{HEADER_ID_MAX_CHARS} chars"
+        ));
+    }
+    let content_type_chars = header.content_type.chars().count();
+    if content_type_chars == 0 || content_type_chars > HEADER_CONTENT_TYPE_MAX_CHARS {
+        return ValidateCallbackResult::Invalid(format!(
+            "header content_type must be 1-{HEADER_CONTENT_TYPE_MAX_CHARS} chars"
+        ));
+    }
+    if header.display_hive_id.chars().count() > HEADER_DISPLAY_HIVE_ID_MAX_CHARS {
+        return ValidateCallbackResult::Invalid(format!(
+            "header display_hive_id must be at most {HEADER_DISPLAY_HIVE_ID_MAX_CHARS} chars"
+        ));
+    }
+    let acl = &header.public_key_acl;
+    if acl.owner.chars().count() > PUBLIC_KEY_ACL_MAX_KEY_CHARS {
+        return ValidateCallbackResult::Invalid(format!(
+            "public_key_acl owner must be at most {PUBLIC_KEY_ACL_MAX_KEY_CHARS} chars"
+        ));
+    }
+    for bucket in [&acl.admin, &acl.writer, &acl.reader] {
+        if bucket.len() > PUBLIC_KEY_ACL_MAX_ENTRIES {
+            return ValidateCallbackResult::Invalid(format!(
+                "public_key_acl buckets accept at most {PUBLIC_KEY_ACL_MAX_ENTRIES} entries"
+            ));
+        }
+        let mut seen = std::collections::HashSet::with_capacity(bucket.len());
+        for key in bucket {
+            let key_chars = key.chars().count();
+            if key_chars == 0 || key_chars > PUBLIC_KEY_ACL_MAX_KEY_CHARS {
+                return ValidateCallbackResult::Invalid(format!(
+                    "public_key_acl keys must be 1-{PUBLIC_KEY_ACL_MAX_KEY_CHARS} chars"
+                ));
+            }
+            if !seen.insert(key.as_str()) {
+                return ValidateCallbackResult::Invalid(
+                    "public_key_acl buckets must not contain duplicate keys".to_string(),
+                );
+            }
+        }
+    }
+    ValidateCallbackResult::Valid
+}
+
+/// Identity fields an update may never change: `id`, hive context, and
+/// the `AclSpec` variant; `content_type` may only take the one-way
+/// `_migrated/` stamp. ACL and display fields stay deliberately mutable
+/// (header-convergence upserts depend on that).
+pub(super) fn validate_update_continuity(
+    old: &EncryptedContentHeader,
+    new: &EncryptedContentHeader,
+) -> ValidateCallbackResult {
+    if new.id != old.id {
+        return ValidateCallbackResult::Invalid(
+            "EncryptedContent updates must not change the id".to_string(),
+        );
+    }
+    if new.hive_context() != old.hive_context() {
+        return ValidateCallbackResult::Invalid(
+            "EncryptedContent updates must not change the hive context".to_string(),
+        );
+    }
+    if std::mem::discriminant(&new.acl_spec) != std::mem::discriminant(&old.acl_spec) {
+        return ValidateCallbackResult::Invalid(
+            "EncryptedContent updates must not change the acl_spec variant".to_string(),
+        );
+    }
+    let single_migration_stamp = !old
+        .content_type
+        .starts_with(MIGRATION_MARKER_CONTENT_TYPE_PREFIX)
+        && new.content_type
+            == format!("{MIGRATION_MARKER_CONTENT_TYPE_PREFIX}{}", old.content_type);
+    if new.content_type != old.content_type && !single_migration_stamp {
+        return ValidateCallbackResult::Invalid(
+            "EncryptedContent updates may only stamp content_type with the _migrated/ prefix"
+                .to_string(),
+        );
+    }
+    ValidateCallbackResult::Valid
+}
+
 /// Variant-dispatch entrypoint for create + update validation. Runs the
 /// pass-1 author-vs-header guard once, then delegates to the
 /// per-variant validator that carries the right authority contract.
@@ -39,6 +127,10 @@ pub(super) fn run_content_validators(
         check_author_matches_header(author, &content.header.revision_author_signing_public_key);
     if !matches!(header_check, ValidateCallbackResult::Valid) {
         return Ok(header_check);
+    }
+    let bounds_check = validate_header_bounds(&content.header);
+    if !matches!(bounds_check, ValidateCallbackResult::Valid) {
+        return Ok(bounds_check);
     }
     match &content.header.acl_spec {
         AclSpec::HiveGroup {
@@ -521,6 +613,20 @@ pub fn validate_update_encrypted_content(
             "EncryptedContent update author {} does not match original action author {}",
             action.author, original_author,
         )));
+    }
+    let original_content = original
+        .entry()
+        .to_app_option::<EncryptedContent>()
+        .map_err(|e| wasm_error!(WasmErrorInner::Serialize(e)))?;
+    let Some(original_content) = original_content else {
+        return Ok(ValidateCallbackResult::Invalid(
+            "update original is not an EncryptedContent".to_string(),
+        ));
+    };
+    let continuity =
+        validate_update_continuity(&original_content.header, &encrypted_content.header);
+    if !matches!(continuity, ValidateCallbackResult::Valid) {
+        return Ok(continuity);
     }
     run_content_validators(&action.author, &action.timestamp, &encrypted_content)
 }

@@ -1,3 +1,4 @@
+mod continuity;
 mod delete;
 mod direct_message;
 mod header;

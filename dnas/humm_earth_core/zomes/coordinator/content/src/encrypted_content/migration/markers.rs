@@ -1,10 +1,6 @@
 use hdk::prelude::*;
 
-/// Sentinel prefix on `EncryptedContentHeader.content_type` that marks an
-/// entry as having been forward-migrated to a new DNA. The original
-/// content_type is preserved after the prefix so a `split_once('/')`
-/// recovers it cheaply.
-pub const MIGRATION_MARKER_CONTENT_TYPE_PREFIX: &str = "_migrated/";
+pub use content_integrity::MIGRATION_MARKER_CONTENT_TYPE_PREFIX;
 
 /// Magic discriminator that identifies a [`MigrationMarkerV1`] payload
 /// when deserialised from untrusted bytes — distinct enough that random

@@ -12,12 +12,12 @@ use holochain::sweettest::{
 use holochain_types::prelude::{SerializedBytes, UnsafeBytes};
 use serde::{Deserialize, Serialize};
 
-/// Expected DNA hash for the pass-6 dry-refactor bundle this suite must run
-/// against.
+/// Expected DNA hash for the pass-7 scratch bundle this suite must run
+/// against (moves at every integrity-touching pass-7 milestone).
 ///
 /// Stale workdir bundles silently mask coordinator and integrity behavior; this
 /// hash gate keeps conductor tests on the intended DNA generation.
-pub const EXPECTED_DNA_HASH: &str = "uhC0ksXsJOTlVvhUn3KWB0nN6j-II_9BxlsRiMqR9ajhFhYS7gSMz";
+pub const EXPECTED_DNA_HASH: &str = "uhC0kC6Rjh9-NE9vHSQ6Zy4EUtjoZvKfwzD8Txo5Hsu6Gw7irpl4C";
 
 /// Absolute path to the pre-built DNA, resolved from this crate's manifest dir
 /// so integration tests are cwd-independent.
@@ -33,7 +33,7 @@ pub async fn load_dna() -> DnaFile {
     let actual = dna.dna_hash().to_string();
     assert_eq!(
         actual, EXPECTED_DNA_HASH,
-        "Stale workdir/humm_earth_core.dna — loaded DNA hash {actual} but expected pass-6 dry-refactor {EXPECTED_DNA_HASH}. \
+        "Stale workdir/humm_earth_core.dna — loaded DNA hash {actual} but expected the pass-7 scratch pin {EXPECTED_DNA_HASH}. \
          Rebuild: `nix develop --command bash -c 'npm run build:zomes && hc dna pack dnas/humm_earth_core/workdir'`."
     );
     dna

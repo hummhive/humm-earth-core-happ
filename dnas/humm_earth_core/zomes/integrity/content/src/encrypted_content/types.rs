@@ -163,6 +163,24 @@ pub const GROUP_ACL_MAX_GROUPS: usize = 64;
 /// since group fan-out is naturally larger than DM fan-out).
 pub const HIVEGROUP_MAX_WITNESSES: usize = 256;
 
+/// Per-bucket cardinality floor on `public_key_acl` (admin/writer/reader
+/// each); an unbounded bucket is a validator-DoS and fan-out surface.
+pub const PUBLIC_KEY_ACL_MAX_ENTRIES: usize = 256;
+
+/// AgentPubKey b64 is 53 chars and the `"*"` wildcard is 1; 64 bounds
+/// every legitimate key form with slack.
+pub const PUBLIC_KEY_ACL_MAX_KEY_CHARS: usize = 64;
+
+pub const HEADER_ID_MAX_CHARS: usize = 256;
+
+pub const HEADER_CONTENT_TYPE_MAX_CHARS: usize = 128;
+
+pub const HEADER_DISPLAY_HIVE_ID_MAX_CHARS: usize = 256;
+
+/// Sentinel prefix on `content_type` marking a forward-migrated entry;
+/// the update-continuity gate permits stamping it exactly once.
+pub const MIGRATION_MARKER_CONTENT_TYPE_PREFIX: &str = "_migrated/";
+
 /// First-class per-scope authority contract on every `EncryptedContent`
 /// entry. Variant-dispatched at commit time.
 #[hdk_entry_helper]
