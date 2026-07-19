@@ -91,6 +91,11 @@
 - **Containment (right layer, landing their side):** client skips re-publish when map unchanged AND last publish younger than a staleness window.
 - **IF fleet data ever shows material fan growth despite client policy:** additive opt-in input flag (`#[serde(default)]`), never a behavior change to the shipped extern. Gate on their staleness-window numbers.
 
+### B12. App-signing key rotation — accepted-keys list add (mbox 2026-07-19, humm-tauri delivered)
+- **Delivered:** humm-tauri minted the real app-signing keypair. Public half (Ed25519 `AgentPubKeyB64`): `uhCAkyyOeMalaAEDiWSFPoywDMtLOB5AaisjAhnQ-9m2y81p9xnJC`. Add to `ACCEPTED_APP_SIGNING_KEYS_B64` (`coordinator/content/src/encrypted_content/service_records.rs`) on the next coordinator generation. Rides a gen bump alongside B10 — days-scale, no urgency (their side confirmed).
+- **Until it lands:** attested `publish_node_spec` publishes reject with `Guest("unrecognized app signing key")` (`service_records.rs:488`), live-proven both sides; unattested dev publishes unaffected. Wire shape unchanged: canonical string `hummhive-node-spec/1|<author>|<declared_at>|<sorted spec pairs>`, Ed25519 sig b64, `app_signing_public_key_b64` field.
+- **Acceptance:** the minted key in the accepted set; a sweettest attested publish that previously rejected now succeeds. Thread replied + archived 2026-07-19.
+
 ## C. Client-wiring-only (humm-tauri side; ZERO earth-core work — communicated 2026-07-16)
 
 Shipped surface with zero adoption at `725ed49a` (only `latest_action_micros` is consumed):
