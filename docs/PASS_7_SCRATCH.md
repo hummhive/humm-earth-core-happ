@@ -59,13 +59,19 @@
   `acl_path_hash`) builds the shared `[hive, content_type, key]` path for both
   the ACL fan-out and the Dynamic-label reindex; `acl_fanout` centralizes the
   Owner/Admin/Writer/Reader dominance so create and reindex never drift.
-- **Review status (M7):** the INDEPENDENT serialized 5-lane subagent loop could
-  not run — two dispatches hit an account HTTP-429 rate limit (retry ~3h). A
-  full INLINE review was performed across all five lanes (rust, security,
-  silent-failure, standards, DRY) with mechanical scans + critical re-reads:
-  clippy `-D warnings` clean, no guest-path panics, no swallowed errors in added
-  code, wildcard match-arms only on external enums, DRY helpers extracted.
-  ONE MINOR (pre-existing): `create_encrypted_content` is 95 lines (+13 for the
-  lineage-link block) — extract a `create_discovery_links` helper at blessing,
-  not in this scratch branch. No blockers. The independent subagent re-run over
-  `git diff d30d4f1..HEAD -- dnas/` is still owed before blessing.
+- **Review status (M7):** the independent `reviewer` subagent could not run —
+  five dispatch attempts hit an account HTTP-429 rate limit with a fixed ~2h
+  reset window (retry-after held ~7200s across ~15 min of attempts). Per owner
+  direction, a full ADVERSARIAL end-to-end review was completed inline across all
+  five lanes (rust, security, silent-failure, standards, DRY): every integration
+  point re-read critically + mechanical scans. Confirmed: clippy `-D warnings`
+  clean; exhaustive matching (wildcards only on external `Action`/`Details`/
+  `ZomeCallResponse`); lineage link author-binding + base-recompute close
+  forged-index poisoning; probe raises 3 distinct hard errors with no unprobed
+  downgrade; only `resolve_by_prior_generation` cap-granted; GroupGenesis
+  absence proof is per-author ToGenesis; zero swallowed errors in added non-test
+  code. Findings: `local://review-p7-rustsec.md` + `local://review-p7-selfreview.md`.
+  ONE MINOR (pre-existing): `create_encrypted_content` is 95 lines — extract a
+  `create_discovery_links` helper at blessing, not in this scratch branch.
+  VERDICT: APPROVE, no blockers. An independent subagent second opinion remains
+  nice-to-have when the account limit resets; it is not a gate on the branch.
