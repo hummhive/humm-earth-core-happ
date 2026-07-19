@@ -75,6 +75,29 @@ pub(super) fn validate_header_bounds(header: &EncryptedContentHeader) -> Validat
             }
         }
     }
+    if let Some(lineage) = &header.lineage {
+        let shape = validate_lineage_shape(lineage);
+        if !matches!(shape, ValidateCallbackResult::Valid) {
+            return shape;
+        }
+    }
+    ValidateCallbackResult::Valid
+}
+
+/// Shape-only lineage check: both cited hashes must parse as their
+/// declared holohash types. The prior-generation guard (DNA is not this
+/// one) needs `dna_info()` and lives in [`run_content_validators`].
+pub(super) fn validate_lineage_shape(lineage: &ContentLineage) -> ValidateCallbackResult {
+    if DnaHash::try_from(lineage.prior_dna_hash_b64.as_str()).is_err() {
+        return ValidateCallbackResult::Invalid(
+            "lineage prior dna hash is not a valid DNA hash".to_string(),
+        );
+    }
+    if ActionHash::try_from(lineage.prior_action_hash_b64.as_str()).is_err() {
+        return ValidateCallbackResult::Invalid(
+            "lineage prior action hash is not a valid action hash".to_string(),
+        );
+    }
     ValidateCallbackResult::Valid
 }
 
@@ -112,6 +135,9 @@ pub(super) fn validate_update_continuity(
                 .to_string(),
         );
     }
+    if old.lineage.is_some() && new.lineage != old.lineage {
+        return ValidateCallbackResult::Invalid("lineage is immutable once set".to_string());
+    }
     ValidateCallbackResult::Valid
 }
 
@@ -139,6 +165,15 @@ pub(super) fn run_content_validators(
     let bounds_check = validate_header_bounds(&content.header);
     if !matches!(bounds_check, ValidateCallbackResult::Valid) {
         return Ok(bounds_check);
+    }
+    if let Some(lineage) = &content.header.lineage {
+        let prior_dna = DnaHash::try_from(lineage.prior_dna_hash_b64.as_str())
+            .map_err(|e| wasm_error!(WasmErrorInner::Guest(format!("{e:?}"))))?;
+        if prior_dna == dna_info()?.hash {
+            return Ok(ValidateCallbackResult::Invalid(
+                "lineage must cite a prior generation, not this one".to_string(),
+            ));
+        }
     }
     if matches!(
         content.header.acl_spec,

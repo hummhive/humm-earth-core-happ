@@ -107,6 +107,19 @@ pub fn create_encrypted_content(
         create_acl_links(encrypted_content.clone(), action_hash.clone())?;
     }
 
+    if let Some(lineage) = &encrypted_content.header.lineage {
+        create_link(
+            Path::from(vec![
+                Component::from(lineage.prior_dna_hash_b64.clone()),
+                Component::from(lineage.prior_action_hash_b64.clone()),
+            ])
+            .path_entry_hash()?,
+            action_hash.clone(),
+            LinkTypes::Lineage,
+            LinkTag::from(lineage.prior_action_hash_b64.clone()),
+        )?;
+    }
+
     Ok(response)
 }
 
@@ -123,6 +136,7 @@ pub(crate) fn header_from_input(input: &CreateEncryptedContentInput) -> Encrypte
         revision_author_signing_public_key: input.revision_author_signing_public_key.clone(),
         acl_spec: input.acl_spec.clone(),
         public_key_acl: input.public_key_acl.clone(),
+        lineage: input.lineage.clone(),
     }
 }
 

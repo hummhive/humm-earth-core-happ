@@ -24,6 +24,7 @@ fn dm_content(
             acl_spec: AclSpec::DirectMessage { recipients },
             public_key_acl,
             revision_author_signing_public_key: author.to_string(),
+            lineage: None,
         },
         bytes: SerializedBytes::from(UnsafeBytes::from(vec![])),
     }
@@ -186,6 +187,7 @@ fn openwrite_content(author: AgentPubKey, target: Option<ActionHash>) -> Encrypt
             },
             public_key_acl: empty_acl(),
             revision_author_signing_public_key: author.to_string(),
+            lineage: None,
         },
         bytes: SerializedBytes::from(UnsafeBytes::from(vec![])),
     }

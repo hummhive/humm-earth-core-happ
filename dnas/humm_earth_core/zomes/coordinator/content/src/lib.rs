@@ -84,6 +84,9 @@ pub fn set_cap_tokens() -> ExternResult<()> {
     fns.insert((zome.clone(), "list_by_author".into()));
     fns.insert((zome.clone(), "count_links_by_hive".into()));
     fns.insert((zome.clone(), "fetch_pair_ss_with_hive_check".into()));
+    // Pass-7 lineage reverse-lookup over public DHT link space; no author
+    // scoping, so it grants like the other public readers above.
+    fns.insert((zome.clone(), "resolve_by_prior_generation".into()));
 
     // Bounded source-cursor page externs (pass-6-pinned-hosts): read-only
     // queries over public DHT link space, same grant class as their

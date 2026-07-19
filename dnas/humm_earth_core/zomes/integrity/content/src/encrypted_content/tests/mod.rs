@@ -2,6 +2,7 @@ mod continuity;
 mod delete;
 mod direct_message;
 mod header;
+mod lineage;
 mod links;
 mod support;
 mod witnesses;

@@ -23,6 +23,7 @@ use hdk::prelude::*;
 
 pub mod crud;
 pub mod get_helpers;
+pub mod lineage;
 pub mod migration;
 pub mod paging;
 pub mod queries;
@@ -76,6 +77,10 @@ pub struct CreateEncryptedContentInput {
     /// (the integrity validator rejects Dynamic links targeting
     /// non-hive-context entries).
     pub dynamic_links: Option<Vec<String>>,
+    /// Pass-7: optional cross-generation provenance. `create_encrypted_
+    /// content_with_lineage` sets this; raw creates leave it `None`.
+    #[serde(default)]
+    pub lineage: Option<ContentLineage>,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -90,6 +95,10 @@ pub use crud::{
     create_encrypted_content, delete_encrypted_content, find_or_create_encrypted_content,
     get_encrypted_content, get_many_encrypted_content, update_encrypted_content,
     FindOrCreateContentResponse,
+};
+pub use lineage::{
+    create_encrypted_content_with_lineage, resolve_by_prior_generation, CreateWithLineageInput,
+    ResolveByPriorInput,
 };
 pub use migration::{
     build_marker_payload, build_marker_v2_payload, get_migration_marker, get_migration_marker_v2,

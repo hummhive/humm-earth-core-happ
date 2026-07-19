@@ -45,6 +45,7 @@ pub(super) fn dispatch_create_link(
         LinkTypes::InviteToRedemptions => {
             validate_create_link_invite_to_redemptions(action, base, target, tag)
         }
+        LinkTypes::Lineage => validate_create_link_lineage(action, base, target, tag),
         LinkTypes::OriginalHashPointer => {
             validate_create_link_original_hash_pointer(action, base, target, tag)
         }
@@ -125,6 +126,9 @@ pub(super) fn dispatch_delete_link(
         }
         LinkTypes::InviteToRedemptions => {
             validate_delete_group_link(action, original_action, "InviteToRedemptions")
+        }
+        LinkTypes::Lineage => {
+            validate_delete_link_lineage(action, original_action, base, target, tag)
         }
         LinkTypes::OriginalHashPointer => {
             validate_delete_link_original_hash_pointer(action, original_action, base, target, tag)

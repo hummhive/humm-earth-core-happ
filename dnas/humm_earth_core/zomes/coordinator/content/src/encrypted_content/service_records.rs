@@ -263,6 +263,7 @@ fn build_record_header(
             target_hive_genesis_hash: Some(hive_genesis_hash),
         },
         public_key_acl,
+        lineage: None,
     }
 }
 
@@ -278,6 +279,7 @@ fn build_create_input(
         revision_author_signing_public_key,
         acl_spec,
         public_key_acl,
+        lineage,
     } = header;
     CreateEncryptedContentInput {
         id,
@@ -288,6 +290,7 @@ fn build_create_input(
         acl_spec,
         public_key_acl,
         dynamic_links,
+        lineage,
     }
 }
 

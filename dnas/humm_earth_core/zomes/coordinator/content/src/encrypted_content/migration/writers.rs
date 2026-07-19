@@ -207,5 +207,6 @@ fn hive_marker_input(
             reader: vec![],
         },
         dynamic_links: None,
+        lineage: None,
     }
 }

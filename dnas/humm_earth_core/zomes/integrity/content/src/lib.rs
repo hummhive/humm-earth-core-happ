@@ -67,6 +67,9 @@ pub enum LinkTypes {
     AgentToOwnerHandoffs,
     HiveToOwnerHandoffs,
     InviteToRedemptions,
+    /// Pass-7 lineage reverse-lookup. Appended at the END to keep
+    /// existing link-type indices (0..=17) stable.
+    Lineage,
 }
 
 #[hdk_extern]

@@ -11,7 +11,7 @@ pub use types::*;
 #[cfg(test)]
 use entry_validation::{
     check_author_matches_header, run_content_validators, validate_header_bounds,
-    validate_recipient_witnesses, validate_update_continuity,
+    validate_lineage_shape, validate_recipient_witnesses, validate_update_continuity,
 };
 #[cfg(test)]
 use links::recompute_base;

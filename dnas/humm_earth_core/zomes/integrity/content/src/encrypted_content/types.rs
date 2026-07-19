@@ -38,6 +38,22 @@ pub struct EncryptedContentHeader {
     pub acl_spec: AclSpec,
     pub public_key_acl: Acl,
     pub revision_author_signing_public_key: String,
+    /// Pass-7: optional provenance claim citing the prior-generation
+    /// content this entry migrated from. Shape-validated (both hashes
+    /// parse, DNA is not this generation); the coordinator probe and a
+    /// reverse-lookup `Lineage` link enforce authorship and discovery.
+    #[serde(default)]
+    pub lineage: Option<ContentLineage>,
+}
+
+/// Cross-generation provenance pair on an [`EncryptedContentHeader`]: the
+/// DNA hash and action hash of the prior-generation content this entry
+/// claims descent from, both as base64url holohash strings.
+#[hdk_entry_helper]
+#[derive(Clone, PartialEq)]
+pub struct ContentLineage {
+    pub prior_dna_hash_b64: String,
+    pub prior_action_hash_b64: String,
 }
 
 /// Per-entry access control by `GroupGenesis` action hash (pass-3

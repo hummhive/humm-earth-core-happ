@@ -37,6 +37,7 @@ pub(crate) fn sample_header_pubkey(pk_b64: &str) -> EncryptedContentHeader {
             reader: vec![],
         },
         revision_author_signing_public_key: pk_b64.into(),
+        lineage: None,
     }
 }
 
@@ -49,6 +50,7 @@ pub(crate) fn content_with_spec(acl_spec: AclSpec, public_key_acl: Acl) -> Encry
             acl_spec,
             public_key_acl,
             revision_author_signing_public_key: agent_pubkey(1).to_string(),
+            lineage: None,
         },
         bytes: SerializedBytes::from(UnsafeBytes::from(vec![])),
     }

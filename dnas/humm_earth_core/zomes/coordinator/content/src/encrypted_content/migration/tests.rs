@@ -34,6 +34,7 @@ fn sample_original() -> EncryptedContent {
                 recipient_witnesses: vec![],
             },
             public_key_acl: sample_acl(),
+            lineage: None,
         },
         bytes: UnsafeBytes::from(vec![0xDE, 0xAD, 0xBE, 0xEF]).into(),
     }

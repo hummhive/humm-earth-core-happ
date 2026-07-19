@@ -32,6 +32,7 @@ fn sample_response() -> EncryptedContentResponse {
                     writer: vec![],
                     reader: vec![],
                 },
+                lineage: None,
             },
             bytes: UnsafeBytes::from(vec![1u8, 2, 3]).into(),
         },

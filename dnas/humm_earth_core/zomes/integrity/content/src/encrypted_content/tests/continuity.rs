@@ -141,3 +141,24 @@ fn acl_display_and_revision_key_stay_mutable() {
         ValidateCallbackResult::Valid,
     ));
 }
+
+#[test]
+fn lineage_may_be_added_once_then_is_locked() {
+    let without = base_header();
+    let mut with = base_header();
+    with.lineage = Some(ContentLineage {
+        prior_dna_hash_b64: "prior-dna".into(),
+        prior_action_hash_b64: "prior-action".into(),
+    });
+    assert!(matches!(
+        validate_update_continuity(&without, &with),
+        ValidateCallbackResult::Valid,
+    ));
+    let mut retargeted = base_header();
+    retargeted.lineage = Some(ContentLineage {
+        prior_dna_hash_b64: "other-dna".into(),
+        prior_action_hash_b64: "other-action".into(),
+    });
+    assert_continuity_reject(&with, &retargeted, "lineage is immutable once set");
+    assert_continuity_reject(&with, &without, "lineage is immutable once set");
+}
