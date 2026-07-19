@@ -132,3 +132,21 @@ Shipped surface with zero adoption at `725ed49a` (only `latest_action_micros` is
 - Endpoint-binding entry type for edge hosting: existing author-binding already gives the needed guarantee — an integrity entry type would be over-scoped fork spend.
 - `BlobApi.addWithoutDedup` (`03/02` "new earth-core zome call"): wrong — dedup is their app-side pre-check; fresh-squuid `add()` already creates distinct entries.
 - Legacy identity migration (`03/04`): pre-Holochain local key formats; no DNA angle.
+
+## G. humm-tauri curated pass-7 wishlist (mbox 2026-07-19, read-only RC.3 scan; replied + archived)
+
+Batch of 15 items with humm-tauri file:line workaround citations. Reply told them pass-7 is NOT ready to build against and pointed at shipped pass-6 primitives. Digest for pass-7 scoping:
+
+**Already shipped in pass-6 (client can delete workarounds now — reconfirmed on main):**
+- G-#10 idempotent id-keyed upsert → `find_or_create_encrypted_content` (v3.2.0) + `get_by_content_id_link`/`get_my_content_by_id_link` (v3.1.0). Deletes their provider reconcile + canonical-dedup path.
+- G-#11 bounded cursor pagination → `list_by_author_page`/`list_by_hive_link_page`/`list_by_dynamic_link_page` (v3.1.0). Kills the 1000-record list_by_author cliff + newest-row-drop truncation + directory client-cap. GENUINE GAP: `probe_inbox` has no since/cursor (real coordinator ask).
+- G-#7 service-meter sink → `upsert_service_meter` (v3.3.0) exists; multi-hive attribution is THEIR iroh-GET-ticket transport, not a DNA primitive.
+
+**Genuine pass-7 integrity candidates (feasible, NOT locked):**
+- G-#1 per-entry-type ACL validators — ANCHOR / highest-leverage; G-6.2 + pass-6 author==action.author prove the pattern. Instances: G-#2 invite HMAC + real max_uses (self-tombstoning/native counter), G-#4 DM pair_hash header pinned to reader set, G-#5 pair-SS reader-ACL validator + global list-by-author-and-dynamic-link query. G-#3 blob is_public_plaintext cross-checked vs acl_spec — DEPENDS on the blob-owning content_type payload becoming non-opaque to the validator.
+- G-#6 idempotent delete no-op + tombstone-tolerant/paginated list externs (coordinator-wide root cause) — deletes their hive soft-delete tier + tombstone caches. Overlaps the B10 liveness lane.
+- G-#8 CRITICAL cross-subsystem: split durable membership index off `LinkTypes::Inbox` (dedicated HiveMembershipIndex/GroupMembershipIndex; reserve Inbox for one-shot DmCreate/DmDelete). Integrity change → rides the fork. Client immediate mitigation: `eventFilter:'DmCreate'` on the DM sweep (told them to land now).
+- G-#9 durable DmDelete pointer / `deleted:true` sentinel from list/get (offline "delete for everyone"). G-#12 recipient-scoped `list_by_acl_reader(content_type, since_ts)` via a [reader_pubkey, content_type] link at commit. G-#13 provider liveness/TTL re-assertion window + page-completeness signal. G-#14 coordinator-anchored `get_or_create_blob_seal_key` keyed by (hive, plaintext-hash) — optional.
+- G-#15 tagged ACL-bucket wire type ({Sentinel}|{GroupGenesis}|{Pubkey}) — breaking wire → next-generation candidate.
+
+humm-tauri's own "highest-leverage trio": (1) per-entry-type ACL validators [G-#1], (2) idempotent delete + tombstone-tolerant/paginated lists [G-#6/#10/#11], (3) inbox membership-index split [G-#8].
