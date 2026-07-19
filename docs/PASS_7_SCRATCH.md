@@ -59,10 +59,13 @@
   `acl_path_hash`) builds the shared `[hive, content_type, key]` path for both
   the ACL fan-out and the Dynamic-label reindex; `acl_fanout` centralizes the
   Owner/Admin/Writer/Reader dominance so create and reindex never drift.
-- **Review status (M7):** the independent serialized 5-lane reviewer loop
-  (rust → security → silent-failure → standards → DRY) is DEFERRED — the
-  reviewer subagent hit an account HTTP-429 rate limit (retry ~3.2h). An
-  orchestrator self-review found no blockers (clippy `-D warnings` clean, no
-  guest-path panics, deliberate tolerant-drops documented, DRY helpers
-  extracted). Re-run the 5 lanes over `git diff d30d4f1..HEAD -- dnas/` before
-  any blessing.
+- **Review status (M7):** the INDEPENDENT serialized 5-lane subagent loop could
+  not run — two dispatches hit an account HTTP-429 rate limit (retry ~3h). A
+  full INLINE review was performed across all five lanes (rust, security,
+  silent-failure, standards, DRY) with mechanical scans + critical re-reads:
+  clippy `-D warnings` clean, no guest-path panics, no swallowed errors in added
+  code, wildcard match-arms only on external enums, DRY helpers extracted.
+  ONE MINOR (pre-existing): `create_encrypted_content` is 95 lines (+13 for the
+  lineage-link block) — extract a `create_discovery_links` helper at blessing,
+  not in this scratch branch. No blockers. The independent subagent re-run over
+  `git diff d30d4f1..HEAD -- dnas/` is still owed before blessing.
