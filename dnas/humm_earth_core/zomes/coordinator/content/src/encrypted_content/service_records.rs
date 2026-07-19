@@ -305,6 +305,8 @@ fn update_prior_payload(
     update_encrypted_content(UpdateEncryptedContentInput {
         previous_encrypted_content_hash,
         updated_encrypted_content: EncryptedContent { header, bytes },
+        dynamic_links: None,
+        remove_dynamic_links: None,
     })
 }
 

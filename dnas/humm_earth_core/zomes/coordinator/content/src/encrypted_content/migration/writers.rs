@@ -58,6 +58,8 @@ fn update_marker_entry(
     update_encrypted_content(UpdateEncryptedContentInput {
         previous_encrypted_content_hash: original_action_hash,
         updated_encrypted_content: marker_payload,
+        dynamic_links: None,
+        remove_dynamic_links: None,
     })
 }
 
@@ -178,6 +180,8 @@ fn mark_hive_genesis_migrated(
                 header: header_from_input(&marker_input),
                 bytes: marker_input.bytes,
             },
+            dynamic_links: None,
+            remove_dynamic_links: None,
         })?;
         return Ok(Some(response));
     }

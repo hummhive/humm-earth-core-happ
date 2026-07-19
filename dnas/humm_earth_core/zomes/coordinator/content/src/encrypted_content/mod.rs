@@ -48,6 +48,13 @@ pub struct EncryptedContentResponse {
     /// old consumers deserialize it away, absent decodes to `None`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub latest_action_micros: Option<i64>,
+    /// Pass-7 B10 liveness probe: `Some(true)` = this record's ROOT action
+    /// is tombstoned (probed per-action, so byte-identical duplicate roots
+    /// sharing one entry are distinguished); `Some(false)` = probed live;
+    /// `None` = not probed (default / pre-B10 coordinator). Only list/page
+    /// reads with `include_liveness: true` populate it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tombstoned: Option<bool>,
 }
 
 #[hdk_entry_helper]
@@ -87,6 +94,17 @@ pub struct CreateEncryptedContentInput {
 pub struct UpdateEncryptedContentInput {
     pub previous_encrypted_content_hash: ActionHash,
     pub updated_encrypted_content: EncryptedContent,
+    /// Pass-7 reindex: `Some(v)` relinks each label in `v` to the update
+    /// action on `[hive, content_type, label]` and retargets the caller's
+    /// own older links on those same paths; `None` leaves Dynamic links
+    /// untouched.
+    #[serde(default)]
+    pub dynamic_links: Option<Vec<String>>,
+    /// Pass-7 reindex: `Some(w)` deletes the caller's own Dynamic links on
+    /// each label path in `w` regardless of target. Applied AFTER
+    /// `dynamic_links`, so a label in both nets to removal.
+    #[serde(default)]
+    pub remove_dynamic_links: Option<Vec<String>>,
 }
 
 // --- Re-exports for external (lib.rs / tests / older import paths) consumers -

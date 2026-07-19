@@ -49,6 +49,8 @@ pub struct HiveLinkPageInput {
     pub limit: Option<usize>,
     #[serde(default)]
     pub source_after_action_hash: Option<String>,
+    #[serde(default)]
+    pub include_liveness: bool,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -62,6 +64,8 @@ pub struct DynamicLinkPageInput {
     pub limit: Option<usize>,
     #[serde(default)]
     pub source_after_action_hash: Option<String>,
+    #[serde(default)]
+    pub include_liveness: bool,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -74,6 +78,8 @@ pub struct AuthorLinkPageInput {
     pub limit: Option<usize>,
     #[serde(default)]
     pub source_after_action_hash: Option<String>,
+    #[serde(default)]
+    pub include_liveness: bool,
 }
 
 /// Paged twin of `list_by_hive_link` — same path, same link type, plus
@@ -90,6 +96,7 @@ pub fn list_by_hive_link_page(input: HiveLinkPageInput) -> ExternResult<BoundedL
         input.since_ts,
         input.limit,
         input.source_after_action_hash,
+        input.include_liveness,
     )
 }
 
@@ -107,6 +114,7 @@ pub fn list_by_dynamic_link_page(input: DynamicLinkPageInput) -> ExternResult<Bo
         input.since_ts,
         input.limit,
         input.source_after_action_hash,
+        input.include_liveness,
     )
 }
 
@@ -126,6 +134,7 @@ pub fn list_by_author_page(input: AuthorLinkPageInput) -> ExternResult<BoundedLi
         input.since_ts,
         input.limit,
         input.source_after_action_hash,
+        input.include_liveness,
     )
 }
 
@@ -195,6 +204,36 @@ pub(crate) fn canonical_lowest_hash(
     records.into_iter().min_by(|a, b| a.hash.cmp(&b.hash))
 }
 
+/// Probe a resolved record's ROOT action for tombstoning, per-action so
+/// byte-identical duplicate roots sharing one entry are distinguished
+/// (the B10 bug: entry-level liveness cannot tell a dead root from a live
+/// sibling). Any failure — unparseable hash, absent details, wrong Details
+/// variant, host error — yields `None` (unknown), never dropping the
+/// record or failing the tolerant list read.
+pub(crate) fn root_tombstoned(original_hash_b64: &str) -> Option<bool> {
+    let action = ActionHash::try_from(original_hash_b64).ok()?;
+    match get_details(action, GetOptions::network()).ok()?? {
+        Details::Record(record_details) => Some(!record_details.deletes.is_empty()),
+        _ => None,
+    }
+}
+
+/// Stamp `tombstoned` on each record when `include_liveness`; otherwise
+/// leave every record's `tombstoned` at `None` (byte-identical pre-B10
+/// behavior). The opt-in gate keeps the +1 `get_details` per record off
+/// the default read path.
+pub(crate) fn apply_liveness(
+    mut records: Vec<EncryptedContentResponse>,
+    include_liveness: bool,
+) -> Vec<EncryptedContentResponse> {
+    if include_liveness {
+        for record in &mut records {
+            record.tombstoned = root_tombstoned(&record.original_hash);
+        }
+    }
+    records
+}
+
 /// Shared page engine behind the three `*_page` externs.
 fn link_page(
     path_hash: EntryHash,
@@ -202,6 +241,7 @@ fn link_page(
     since_ts: Option<Timestamp>,
     limit: Option<usize>,
     source_after_action_hash: Option<String>,
+    include_liveness: bool,
 ) -> ExternResult<BoundedLinkPage> {
     let limit = resolve_page_limit(limit)?;
     let after_hash = source_after_action_hash
@@ -231,7 +271,7 @@ fn link_page(
     Ok(BoundedLinkPage {
         source_count: source_positions.len(),
         source_positions,
-        records: resolve_targets(selected),
+        records: apply_liveness(resolve_targets(selected), include_liveness),
         truncated,
     })
 }
@@ -344,6 +384,7 @@ mod tests {
             hash: hash.to_string(),
             original_hash: hash.to_string(),
             latest_action_micros: None,
+            tombstoned: None,
         }
     }
 

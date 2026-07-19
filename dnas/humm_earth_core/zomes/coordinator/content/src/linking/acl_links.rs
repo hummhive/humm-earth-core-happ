@@ -23,10 +23,11 @@ use content_integrity::{AclByGroupGenesis, EncryptedContent, LinkTypes};
 use hdi::hash_path::path::Component;
 use hdk::prelude::*;
 
-/// Build the ACL link's base path: `[hive_genesis_hash_b64,
-/// content_type, entity_id]`. Returns the path hash a `create_link`
-/// call would use as `base_address`.
-fn acl_path_hash(
+/// Build a discovery link's base path hash `[hive_genesis_hash_b64,
+/// content_type, key]` — shared by the ACL fan-out (key = group-genesis
+/// entity id) and the update-time Dynamic reindex (key = dynamic label),
+/// which are structurally identical three-component paths.
+pub(crate) fn discovery_path_hash(
     hive_b64: &str,
     content_type: &str,
     entity_id: &str,
@@ -42,7 +43,7 @@ fn acl_path_hash(
 /// Create a single ACL link of the given variant. The `entity_id` is
 /// stamped into the `LinkTag` as UTF-8 bytes so the integrity validator
 /// can recompute the third path component (see this module's header).
-fn create_acl_link(
+pub(crate) fn create_acl_link(
     hive_b64: &str,
     content_type: &str,
     target: &ActionHash,
@@ -50,7 +51,7 @@ fn create_acl_link(
     link_type: LinkTypes,
 ) -> ExternResult<ActionHash> {
     create_link(
-        acl_path_hash(hive_b64, content_type, entity_id)?,
+        discovery_path_hash(hive_b64, content_type, entity_id)?,
         target.clone(),
         link_type,
         LinkTag::from(entity_id.to_string()),
@@ -77,7 +78,7 @@ pub fn create_acl_links(
             "create_acl_links called on a header with no hive_context".into(),
         ))
     })?;
-    let group_acl: &AclByGroupGenesis = encrypted_content.header.group_acl().ok_or_else(|| {
+    let group_acl = encrypted_content.header.group_acl().ok_or_else(|| {
         wasm_error!(WasmErrorInner::Guest(
             "create_acl_links called on a header whose acl_spec is not \
                  HiveGroup; HummContent* links anchor only to HiveGroup \
@@ -88,59 +89,45 @@ pub fn create_acl_links(
     let hive_b64 = hive_hash.to_string();
     let content_type = encrypted_content.header.content_type.clone();
 
-    // entity_id is the string form of a GroupGenesis ActionHash.
-    let owner_id = group_acl.owner.to_string();
-    let admin_ids: Vec<String> = group_acl.admin.iter().map(|h| h.to_string()).collect();
-    // Writer set = admin ∪ writer (admins inherit writer rights).
-    let writer_ids: Vec<String> = group_acl
+    let mut acl_link_action_hashes: Vec<ActionHash> = Vec::new();
+    for (link_type, entity_ids) in acl_fanout(group_acl) {
+        for entity_id in entity_ids {
+            acl_link_action_hashes.push(create_acl_link(
+                &hive_b64,
+                &content_type,
+                &action_hash,
+                &entity_id,
+                link_type,
+            )?);
+        }
+    }
+    Ok(acl_link_action_hashes)
+}
+
+/// The full per-link-type entity fan-out for a `group_acl`, encoding the
+/// dominance rule once: Owner→[owner]; Admin→admin; Writer→admin∪writer;
+/// Reader→admin∪writer∪reader. Shared by [`create_acl_links`] and the
+/// update-time ACL reindex so both compute the identical link set.
+pub(crate) fn acl_fanout(group_acl: &AclByGroupGenesis) -> Vec<(LinkTypes, Vec<String>)> {
+    let owner = vec![group_acl.owner.to_string()];
+    let admin: Vec<String> = group_acl.admin.iter().map(|h| h.to_string()).collect();
+    let writer: Vec<String> = group_acl
         .admin
         .iter()
         .chain(group_acl.writer.iter())
         .map(|h| h.to_string())
         .collect();
-    // Reader set = (admin ∪ writer) ∪ reader.
-    let reader_ids: Vec<String> = group_acl
+    let reader: Vec<String> = group_acl
         .admin
         .iter()
         .chain(group_acl.writer.iter())
         .chain(group_acl.reader.iter())
         .map(|h| h.to_string())
         .collect();
-
-    let mut acl_link_action_hashes: Vec<ActionHash> = Vec::new();
-    acl_link_action_hashes.push(create_acl_link(
-        &hive_b64,
-        &content_type,
-        &action_hash,
-        &owner_id,
-        LinkTypes::HummContentOwner,
-    )?);
-    for id in &admin_ids {
-        acl_link_action_hashes.push(create_acl_link(
-            &hive_b64,
-            &content_type,
-            &action_hash,
-            id,
-            LinkTypes::HummContentAdmin,
-        )?);
-    }
-    for id in &writer_ids {
-        acl_link_action_hashes.push(create_acl_link(
-            &hive_b64,
-            &content_type,
-            &action_hash,
-            id,
-            LinkTypes::HummContentWriter,
-        )?);
-    }
-    for id in &reader_ids {
-        acl_link_action_hashes.push(create_acl_link(
-            &hive_b64,
-            &content_type,
-            &action_hash,
-            id,
-            LinkTypes::HummContentReader,
-        )?);
-    }
-    Ok(acl_link_action_hashes)
+    vec![
+        (LinkTypes::HummContentOwner, owner),
+        (LinkTypes::HummContentAdmin, admin),
+        (LinkTypes::HummContentWriter, writer),
+        (LinkTypes::HummContentReader, reader),
+    ]
 }

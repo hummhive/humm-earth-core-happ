@@ -7,7 +7,9 @@
 | M1 (header bounds + update continuity) | 3a548db | uhC0kC6Rjh9-NE9vHSQ6Zy4EUtjoZvKfwzD8Txo5Hsu6Gw7irpl4C | 86c7950fe65f7e5c24d54f85fbabb7a8fdf3591632fd0d8d7f529b22ca0f8128 |
 | M2 (open-write payload caps) | 192047f | uhC0kXQNnSRgwB42kF0RhtyCgm9noYg-VspFoeeetC4LufcMt7geE | f2e4284043b6cd0bb4076342378f1d1c15e2c0c1ac03e2c1782bbed94d610c23 |
 | M3 (system-role GroupGenesis uniqueness) | a2350d7 | uhC0k8qyE7-0_OOmMw2beHEmaLTyksE1i6oVqj0EididK2Da2BEJ7 | 4f764c336eb280f8a764475dc1897ded3bd0afb5ec58547a069856492836a85d |
-| M4 (cross-generation lineage) | <fill> | uhC0k7pbRFimR34Mc5CzgC_QTbh3Z-9rdIypgTf-2U0tur2ir7vSd | c27ccbe0a97498c0da9be90a6e378039c731ac12c9f11391eb64052399e29fd7 |
+| M4 (cross-generation lineage) | 9ba4244 | uhC0k7pbRFimR34Mc5CzgC_QTbh3Z-9rdIypgTf-2U0tur2ir7vSd | c27ccbe0a97498c0da9be90a6e378039c731ac12c9f11391eb64052399e29fd7 |
+| M5 (two-generation conductor proof) | 685b0dd | uhC0k7pbRFimR34Mc5CzgC_QTbh3Z-9rdIypgTf-2U0tur2ir7vSd (unchanged; test-only) | c27ccbe0a97498c0da9be90a6e378039c731ac12c9f11391eb64052399e29fd7 |
+| M6 (coordinator riders: reindex + include_liveness) | <fill> | uhC0k7pbRFimR34Mc5CzgC_QTbh3Z-9rdIypgTf-2U0tur2ir7vSd (UNCHANGED; coordinator-only) | c27ccbe0a97498c0da9be90a6e378039c731ac12c9f11391eb64052399e29fd7 |
 
 ## New reject literals (accumulates the blessing-time BDD delta)
 | # | literal | validator fn | milestone |
@@ -38,3 +40,22 @@
 | — | `Lineage link delete must be authored by the link creator` | `validate_delete_link_lineage` | M4 |
 
 ## Decisions taken mid-build
+
+- **M1 lineage self-reference guard placement:** the `dna_info()` check
+  (L16) runs in `run_content_validators`, not the pure `validate_header_bounds`,
+  keeping bounds host-testable. L14/L15 (pure b64 parse) stay in the bounds
+  path. All three literals still fire on every create.
+- **M6 B10 in-process limitation:** the "dead root still resolves through a
+  byte-identical live sibling" path is a multi-node eventual-consistency
+  artifact. In one in-process conductor, deleting any create of a shared
+  entry integrates immediately and marks the whole entry Dead, so the dead
+  root drops rather than resolving with `tombstoned:Some(true)`. The
+  `root_tombstoned` probe returns `Some(true)` whenever `get_details` shows
+  deletes; the sweettest proves the deterministic contract (live →
+  `Some(false)`, flag-off → `None`, ordinarily-deleted → absent). The
+  `Some(true)` re-delivery discrimination is the production value humm-tauri
+  measured live, not reproducible single-node.
+- **M6 reindex path reuse:** `discovery_path_hash` (renamed from
+  `acl_path_hash`) builds the shared `[hive, content_type, key]` path for both
+  the ACL fan-out and the Dynamic-label reindex; `acl_fanout` centralizes the
+  Owner/Admin/Writer/Reader dominance so create and reindex never drift.

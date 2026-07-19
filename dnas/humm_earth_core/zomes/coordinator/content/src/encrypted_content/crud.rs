@@ -14,12 +14,15 @@ use content_integrity::*;
 use hdi::hash_path::path::Component;
 use hdk::prelude::*;
 
+use std::collections::HashSet;
+
+use crate::linking::acl_links::{acl_fanout, create_acl_link, discovery_path_hash};
 use crate::{
     dynamic_links::create_dynamic_links, hive_link::create_hive_link,
     humm_content_id_link::create_humm_content_id_link, linking::acl_links::create_acl_links,
 };
 
-use super::get_helpers::{get_eh, get_latest_typed_from_eh};
+use super::get_helpers::{decode_encrypted_content, get_eh, get_latest_typed_from_eh};
 use super::paging::{canonical_lowest_hash, content_id_records_by_author};
 use super::signals::{
     remote_signal_acl_readers, EncryptedContentSignal, EncryptedContentSignalType,
@@ -40,6 +43,7 @@ pub fn create_encrypted_content(
         hash: action_hash.clone().to_string(),
         original_hash: action_hash.to_string(),
         latest_action_micros: None,
+        tombstoned: None,
     };
 
     // Local emit (every variant) + best-effort cross-host fan-out to
@@ -197,6 +201,7 @@ pub fn get_encrypted_content(content_hash: ActionHash) -> ExternResult<Encrypted
         hash: hash.to_string(),
         original_hash: content_hash.to_string(),
         latest_action_micros: Some(ts.as_micros()),
+        tombstoned: None,
     })
 }
 
@@ -261,6 +266,12 @@ pub fn update_encrypted_content(
 ) -> ExternResult<EncryptedContentResponse> {
     let original_content_hash =
         encrypted_content_root_hash(input.previous_encrypted_content_hash.clone())?;
+    let prior_header = get(
+        input.previous_encrypted_content_hash.clone(),
+        GetOptions::network(),
+    )?
+    .and_then(|record| decode_encrypted_content(&record))
+    .map(|content| content.header);
     let updated_encrypted_content_hash = update_entry(
         input.previous_encrypted_content_hash.clone(),
         &input.updated_encrypted_content,
@@ -277,6 +288,20 @@ pub fn update_encrypted_content(
         LinkTypes::OriginalHashPointer,
         (),
     )?;
+
+    reindex_dynamic_links(
+        &input.updated_encrypted_content,
+        &updated_encrypted_content_hash,
+        input.dynamic_links,
+        input.remove_dynamic_links,
+    )?;
+    if let Some(prior_header) = prior_header {
+        reindex_acl_links(
+            &prior_header,
+            &input.updated_encrypted_content,
+            &updated_encrypted_content_hash,
+        )?;
+    }
 
     let record = get_encrypted_content(updated_encrypted_content_hash.clone())?;
 
@@ -295,6 +320,115 @@ pub fn update_encrypted_content(
     );
 
     Ok(record)
+}
+
+/// Relink Dynamic discovery to the update action per the caller's label
+/// contract: `dynamic_links` retargets each named label to `updated_hash`
+/// (deleting the caller's own older links on that path); then
+/// `remove_dynamic_links` deletes the caller's own links on those paths
+/// outright. No-op for headers without a hive context.
+fn reindex_dynamic_links(
+    updated_content: &EncryptedContent,
+    updated_hash: &ActionHash,
+    dynamic_links: Option<Vec<String>>,
+    remove_dynamic_links: Option<Vec<String>>,
+) -> ExternResult<()> {
+    let Some(hive_hash) = updated_content.header.hive_context() else {
+        return Ok(());
+    };
+    let hive_b64 = hive_hash.to_string();
+    let content_type = &updated_content.header.content_type;
+    let me = agent_info()?.agent_initial_pubkey;
+    if let Some(labels) = dynamic_links {
+        create_dynamic_links(
+            updated_content.clone(),
+            updated_hash.clone(),
+            labels.clone(),
+        )?;
+        for label in &labels {
+            delete_own_links_on_path(
+                discovery_path_hash(&hive_b64, content_type, label)?,
+                LinkTypes::Dynamic,
+                &me,
+                Some(updated_hash),
+            )?;
+        }
+    }
+    if let Some(labels) = remove_dynamic_links {
+        for label in &labels {
+            delete_own_links_on_path(
+                discovery_path_hash(&hive_b64, content_type, label)?,
+                LinkTypes::Dynamic,
+                &me,
+                None,
+            )?;
+        }
+    }
+    Ok(())
+}
+
+fn delete_own_links_on_path(
+    base: EntryHash,
+    link_type: LinkTypes,
+    me: &AgentPubKey,
+    keep_target: Option<&ActionHash>,
+) -> ExternResult<()> {
+    for link in get_links(LinkQuery::try_new(base, link_type)?, GetStrategy::Network)? {
+        if link.author != *me {
+            continue;
+        }
+        if keep_target
+            .is_some_and(|keep| link.target.clone().into_action_hash().as_ref() == Some(keep))
+        {
+            continue;
+        }
+        delete_link(link.create_link_hash, GetOptions::network())?;
+    }
+    Ok(())
+}
+
+/// Converge HummContent* ACL discovery links to the update action when the
+/// group_acl changed: entities newly present in a bucket's fan-out get a
+/// link to `updated_hash`; entities that dropped out have the caller's own
+/// bucket links deleted. No-op unless both headers are HiveGroup with a
+/// changed group_acl.
+fn reindex_acl_links(
+    prior_header: &EncryptedContentHeader,
+    updated_content: &EncryptedContent,
+    updated_hash: &ActionHash,
+) -> ExternResult<()> {
+    let (Some(old_acl), Some(new_acl)) =
+        (prior_header.group_acl(), updated_content.header.group_acl())
+    else {
+        return Ok(());
+    };
+    if old_acl == new_acl {
+        return Ok(());
+    }
+    let Some(hive_hash) = updated_content.header.hive_context() else {
+        return Ok(());
+    };
+    let hive_b64 = hive_hash.to_string();
+    let content_type = &updated_content.header.content_type;
+    let me = agent_info()?.agent_initial_pubkey;
+    for ((link_type, old_ids), (_, new_ids)) in
+        acl_fanout(old_acl).into_iter().zip(acl_fanout(new_acl))
+    {
+        let old_set: HashSet<&String> = old_ids.iter().collect();
+        let new_set: HashSet<&String> = new_ids.iter().collect();
+        for id in new_ids.iter().filter(|id| !old_set.contains(*id)) {
+            create_acl_link(&hive_b64, content_type, updated_hash, id, link_type)?;
+        }
+        for id in old_ids.iter().filter(|id| !new_set.contains(*id)) {
+            delete_own_links_on_path(
+                discovery_path_hash(&hive_b64, content_type, id)?,
+                link_type,
+                &me,
+                None,
+            )?;
+        }
+    }
+    Ok(())
 }
 
 #[hdk_extern]

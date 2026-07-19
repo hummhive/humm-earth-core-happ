@@ -24,6 +24,7 @@ use hdk::prelude::*;
 use std::collections::HashSet;
 
 use super::crud::{get_encrypted_content, get_many_encrypted_content};
+use super::paging::apply_liveness;
 use super::EncryptedContentResponse;
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -31,6 +32,8 @@ pub struct ListByDynamicLinkInput {
     pub hive_genesis_hash: ActionHash,
     pub content_type: String,
     pub dynamic_link: String,
+    #[serde(default)]
+    pub include_liveness: bool,
 }
 
 #[hdk_extern]
@@ -51,7 +54,10 @@ pub fn list_by_dynamic_link(
         .into_iter()
         .filter_map(|link| link.target.into_action_hash())
         .collect();
-    get_many_encrypted_content(hashes)
+    Ok(apply_liveness(
+        get_many_encrypted_content(hashes)?,
+        input.include_liveness,
+    ))
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -72,6 +78,8 @@ pub struct ListByHiveInput {
     /// older entries that arrived after a network partition.
     #[serde(default)]
     pub limit: Option<usize>,
+    #[serde(default)]
+    pub include_liveness: bool,
 }
 
 /// List entries linked off the hive path
@@ -112,7 +120,10 @@ pub fn list_by_hive_link(input: ListByHiveInput) -> ExternResult<Vec<EncryptedCo
         .into_iter()
         .filter_map(|l| l.target.into_action_hash())
         .collect();
-    get_many_encrypted_content(hashes)
+    Ok(apply_liveness(
+        get_many_encrypted_content(hashes)?,
+        input.include_liveness,
+    ))
 }
 
 /// C3 input. Distinct from `ListByHiveInput` because counting has no
@@ -245,6 +256,8 @@ pub struct ListByAuthorInput {
     pub since_ts: Option<Timestamp>,
     #[serde(default)]
     pub limit: Option<usize>,
+    #[serde(default)]
+    pub include_liveness: bool,
 }
 
 /// Author's content of a type, oldest-first. `since_ts`/`limit` page forward;
@@ -270,7 +283,10 @@ pub fn list_by_author(input: ListByAuthorInput) -> ExternResult<Vec<EncryptedCon
         .into_iter()
         .filter_map(|link| link.target.into_action_hash())
         .collect();
-    get_many_encrypted_content(hashes)
+    Ok(apply_liveness(
+        get_many_encrypted_content(hashes)?,
+        input.include_liveness,
+    ))
 }
 
 // =============================================================================
