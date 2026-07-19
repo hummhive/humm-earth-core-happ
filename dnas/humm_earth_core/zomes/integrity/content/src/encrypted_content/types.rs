@@ -177,6 +177,11 @@ pub const HEADER_CONTENT_TYPE_MAX_CHARS: usize = 128;
 
 pub const HEADER_DISPLAY_HIVE_ID_MAX_CHARS: usize = 256;
 
+/// Payload ceiling on the unauthenticated-surface variants (`Public`,
+/// `OpenWrite`); sits well under the 4_000_000-byte conductor entry
+/// limit to bound hostile-writer DoS on the open write paths.
+pub const OPEN_WRITE_MAX_PAYLOAD_BYTES: usize = 1_000_000;
+
 /// Sentinel prefix on `content_type` marking a forward-migrated entry;
 /// the update-continuity gate permits stamping it exactly once.
 pub const MIGRATION_MARKER_CONTENT_TYPE_PREFIX: &str = "_migrated/";

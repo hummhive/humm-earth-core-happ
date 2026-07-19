@@ -221,3 +221,105 @@ fn author_mismatch_reports_before_bounds_violation() {
         other => panic!("expected bounds Invalid, got {other:?}"),
     }
 }
+
+// ---------------------------------------------------------------------
+// Pass-7 M2 — open-write payload caps
+// ---------------------------------------------------------------------
+
+fn content_with_bytes(acl_spec: AclSpec, public_key_acl: Acl, len: usize) -> EncryptedContent {
+    let mut content = content_with_spec(acl_spec, public_key_acl);
+    content.bytes = SerializedBytes::from(UnsafeBytes::from(vec![0u8; len]));
+    content
+}
+
+fn empty_acl() -> Acl {
+    Acl {
+        owner: String::new(),
+        admin: vec![],
+        writer: vec![],
+        reader: vec![],
+    }
+}
+
+#[test]
+fn open_write_payload_at_limit_is_accepted() {
+    let content = content_with_bytes(
+        AclSpec::OpenWrite {
+            target_hive_genesis_hash: None,
+        },
+        empty_acl(),
+        1_000_000,
+    );
+    let author = agent_pubkey(1);
+    let timestamp = Timestamp::from_micros(0);
+    assert!(matches!(
+        run_content_validators(&author, &timestamp, &content)
+            .expect("openwrite None is fetch-free"),
+        ValidateCallbackResult::Valid,
+    ));
+}
+
+#[test]
+fn open_write_payload_over_limit_rejects() {
+    let content = content_with_bytes(
+        AclSpec::OpenWrite {
+            target_hive_genesis_hash: None,
+        },
+        empty_acl(),
+        1_000_001,
+    );
+    let author = agent_pubkey(1);
+    let timestamp = Timestamp::from_micros(0);
+    match run_content_validators(&author, &timestamp, &content).expect("size guard is fetch-free") {
+        ValidateCallbackResult::Invalid(msg) => {
+            assert!(msg.contains("Public and OpenWrite payloads accept at most 1000000 bytes"));
+        }
+        other => panic!("expected size Invalid, got {other:?}"),
+    }
+}
+
+#[test]
+fn public_payload_over_limit_rejects_before_authority_fetch() {
+    let content = content_with_bytes(
+        AclSpec::Public {
+            hive_genesis_hash: action_hash(9),
+            author_membership_hash: None,
+        },
+        empty_acl(),
+        1_000_001,
+    );
+    let author = agent_pubkey(1);
+    let timestamp = Timestamp::from_micros(0);
+    match run_content_validators(&author, &timestamp, &content)
+        .expect("size guard fires before the hive-authority fetch")
+    {
+        ValidateCallbackResult::Invalid(msg) => {
+            assert!(msg.contains("Public and OpenWrite payloads accept at most 1000000 bytes"));
+        }
+        other => panic!("expected size Invalid, got {other:?}"),
+    }
+}
+
+#[test]
+fn oversized_direct_message_is_exempt_from_open_write_cap() {
+    let alice = agent_pubkey(1);
+    let bob = agent_pubkey(2);
+    let reader = vec![alice.to_string(), bob.to_string()];
+    let content = content_with_bytes(
+        AclSpec::DirectMessage {
+            recipients: vec![alice.clone(), bob],
+        },
+        Acl {
+            owner: String::new(),
+            admin: vec![],
+            writer: vec![],
+            reader,
+        },
+        2_000_000,
+    );
+    let timestamp = Timestamp::from_micros(0);
+    assert!(matches!(
+        run_content_validators(&alice, &timestamp, &content).expect("DM validation is fetch-free"),
+        ValidateCallbackResult::Valid,
+    ));
+}

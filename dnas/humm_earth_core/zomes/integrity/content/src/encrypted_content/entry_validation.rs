@@ -115,6 +115,14 @@ pub(super) fn validate_update_continuity(
     ValidateCallbackResult::Valid
 }
 
+fn validate_open_write_payload_size(content: &EncryptedContent) -> ValidateCallbackResult {
+    if content.bytes.bytes().len() > OPEN_WRITE_MAX_PAYLOAD_BYTES {
+        return ValidateCallbackResult::Invalid(format!(
+            "Public and OpenWrite payloads accept at most {OPEN_WRITE_MAX_PAYLOAD_BYTES} bytes"
+        ));
+    }
+    ValidateCallbackResult::Valid
+}
 /// Variant-dispatch entrypoint for create + update validation. Runs the
 /// pass-1 author-vs-header guard once, then delegates to the
 /// per-variant validator that carries the right authority contract.
@@ -131,6 +139,15 @@ pub(super) fn run_content_validators(
     let bounds_check = validate_header_bounds(&content.header);
     if !matches!(bounds_check, ValidateCallbackResult::Valid) {
         return Ok(bounds_check);
+    }
+    if matches!(
+        content.header.acl_spec,
+        AclSpec::Public { .. } | AclSpec::OpenWrite { .. }
+    ) {
+        let size_check = validate_open_write_payload_size(content);
+        if !matches!(size_check, ValidateCallbackResult::Valid) {
+            return Ok(size_check);
+        }
     }
     match &content.header.acl_spec {
         AclSpec::HiveGroup {
