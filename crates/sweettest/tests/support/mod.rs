@@ -39,6 +39,29 @@ pub async fn load_dna() -> DnaFile {
     dna
 }
 
+/// Expected DNA hash of the vendored pass-6 fixture (the lineage
+/// cross-test's prior generation).
+pub const PASS_6_EXPECTED_DNA_HASH: &str = "uhC0ksXsJOTlVvhUn3KWB0nN6j-II_9BxlsRiMqR9ajhFhYS7gSMz";
+
+/// Absolute path to the vendored pass-6 DNA fixture, resolved from this
+/// crate's manifest dir so integration tests are cwd-independent.
+pub fn pass_6_dna_path() -> std::path::PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("fixtures/pass-6-service-meter.dna")
+}
+
+pub async fn load_pass_6_dna() -> DnaFile {
+    let dna = SweetDnaFile::from_bundle(&pass_6_dna_path())
+        .await
+        .expect("load fixtures/pass-6-service-meter.dna (vendored at M0 from the v3.3.0 workdir build)");
+    let actual = dna.dna_hash().to_string();
+    assert_eq!(
+        actual, PASS_6_EXPECTED_DNA_HASH,
+        "Corrupt pass-6 fixture — loaded DNA hash {actual} but expected the held pass-6 generation {PASS_6_EXPECTED_DNA_HASH}. \
+         Re-vendor: `cp dnas/humm_earth_core/workdir/humm_earth_core.dna crates/sweettest/fixtures/pass-6-service-meter.dna` from a pristine v3.3.0 build."
+    );
+    dna
+}
+
 pub async fn setup_cells(agents: usize) -> (SweetConductorBatch, Vec<SweetCell>) {
     let dna = load_dna().await;
     let mut conductors = SweetConductorBatch::from_standard_config_rendezvous(agents).await;
