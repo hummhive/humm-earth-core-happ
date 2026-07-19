@@ -9,7 +9,7 @@
 | M3 (system-role GroupGenesis uniqueness) | a2350d7 | uhC0k8qyE7-0_OOmMw2beHEmaLTyksE1i6oVqj0EididK2Da2BEJ7 | 4f764c336eb280f8a764475dc1897ded3bd0afb5ec58547a069856492836a85d |
 | M4 (cross-generation lineage) | 9ba4244 | uhC0k7pbRFimR34Mc5CzgC_QTbh3Z-9rdIypgTf-2U0tur2ir7vSd | c27ccbe0a97498c0da9be90a6e378039c731ac12c9f11391eb64052399e29fd7 |
 | M5 (two-generation conductor proof) | 685b0dd | uhC0k7pbRFimR34Mc5CzgC_QTbh3Z-9rdIypgTf-2U0tur2ir7vSd (unchanged; test-only) | c27ccbe0a97498c0da9be90a6e378039c731ac12c9f11391eb64052399e29fd7 |
-| M6 (coordinator riders: reindex + include_liveness) | <fill> | uhC0k7pbRFimR34Mc5CzgC_QTbh3Z-9rdIypgTf-2U0tur2ir7vSd (UNCHANGED; coordinator-only) | c27ccbe0a97498c0da9be90a6e378039c731ac12c9f11391eb64052399e29fd7 |
+| M6 (coordinator riders: reindex + include_liveness) | 63c6ae2 | uhC0k7pbRFimR34Mc5CzgC_QTbh3Z-9rdIypgTf-2U0tur2ir7vSd (UNCHANGED; coordinator-only) | c27ccbe0a97498c0da9be90a6e378039c731ac12c9f11391eb64052399e29fd7 |
 
 ## New reject literals (accumulates the blessing-time BDD delta)
 | # | literal | validator fn | milestone |
@@ -59,3 +59,10 @@
   `acl_path_hash`) builds the shared `[hive, content_type, key]` path for both
   the ACL fan-out and the Dynamic-label reindex; `acl_fanout` centralizes the
   Owner/Admin/Writer/Reader dominance so create and reindex never drift.
+- **Review status (M7):** the independent serialized 5-lane reviewer loop
+  (rust → security → silent-failure → standards → DRY) is DEFERRED — the
+  reviewer subagent hit an account HTTP-429 rate limit (retry ~3.2h). An
+  orchestrator self-review found no blockers (clippy `-D warnings` clean, no
+  guest-path panics, deliberate tolerant-drops documented, DRY helpers
+  extracted). Re-run the 5 lanes over `git diff d30d4f1..HEAD -- dnas/` before
+  any blessing.
