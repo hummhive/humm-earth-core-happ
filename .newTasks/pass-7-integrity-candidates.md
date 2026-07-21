@@ -131,12 +131,12 @@ Shipped surface with zero adoption at `725ed49a` (only `latest_action_micros` is
 ## H. Wave-2 candidates (2026-07-21 mbox-derived; POST-M7 — supersede/extend M1–M7 where noted)
 
 - **Status:** OPEN — catalogue for the SECOND pass-7 build wave, on branch `feat-integrity-pass-7` (M0–M7 already built @ `9493169`). Same fork discipline: integrity items ride the SAME sanctioned fork as M1–M4 (batch into one DNA-hash move); coordinator items are the fresh pass-7 coordinator, no extra fork. NOTHING here is distributed or mentioned to humm-tauri.
-- **Origin:** this-session mbox arc — the crown-fix SharedSecret threads + the `find_or_create_group_genesis` security review + the role-K closure ruling (all replied+archived in `~/agent-mailbox/`, grounded in shipped pass-6). Thread substance is inlined per-item below; no external ref needed.
+- **Origin:** this-session mbox arc — the crown-fix SharedSecret threads + the `find_or_create_group_genesis` security review + the role-K closure ruling (all grounded in shipped pass-6). Thread substance is inlined per-item below; self-contained, no external ref.
 - **Anchor discipline (LOAD-BEARING):** every `file:line` below is the SHIPPED pass-6 baseline (main @ `63cba86`), the rationale source. M1–M4 already moved integrity code on this branch, so RE-GROUND every anchor against branch HEAD before building — same rule the M0–M7 plan carries.
 - **Supersession is expected (owner, 2026-07-21):** we are holding distribution precisely to get pass-7 as full/forward-looking/correct as possible. Where a Wave-2 item extends or supersedes an M1–M7 design (flagged per item), the newer learning wins; re-validate the affected milestone at scoping.
 
 ### H1. Inbox membership-index split — CRITICAL (humm-tauri G-#8)
-- **Class:** INTEGRITY (new append-only `LinkTypes` → wasm change → rides the fork). **Serves:** the `list_my_hives []` failure class (resume §7 thread 4) + durable membership enumeration.
+- **Class:** INTEGRITY (new append-only `LinkTypes` → wasm change → rides the fork). **Serves:** the `list_my_hives []` failure class (DM-sweep retracts the Inbox HiveInvite links that are the only joiner discovery path) + durable membership enumeration.
 - **Problem:** the `Inbox` link namespace does double duty — one-shot events (`HiveInvite`/`GroupInvite`, `crud.rs:82-88`, self-sent at `crud.rs:8-10`) AND the de-facto durable membership/join index that `list_my_hives` enumerates (`hive/queries.rs:191`). humm-tauri's DM-sweep RETRACTS `Inbox` `HiveInvite` links, erasing the only joiner-side discovery path; joined hives have no retraction-safe surface today (link = rebuildable cache).
 - **Sketch:** introduce dedicated integrity link types `HiveMembershipIndex` + `GroupMembershipIndex` (append-only, next indices after `Lineage=18`, i.e. 19/20 — doc the stable range per house convention). Durable, never swept; `Inbox` reverts to transient events only. Coordinator enumerates membership from the new index (retraction-safe) with the existing author-binding + entry-type-discriminator pattern (never shape-decode; `try_decode_hive_genesis` precedent).
 - **Relationship to M1–M7:** independent new milestone; no overlap.
@@ -150,7 +150,7 @@ Shipped surface with zero adoption at `725ed49a` (only `latest_action_micros` is
 - **Acceptance:** host unit tables per new reject literal + sweettest negatives; superset-only vs pass-6 reject strings (no literal removed).
 
 ### H3. Typed owner-attested squuid→role mapping — EXTENDS/supersedes M3 + the (ii) client steer
-- **Class:** INTEGRITY. **Serves:** the crown-fix identity decision (resume §7 thread 7 + §8).
+- **Class:** INTEGRITY. **Serves:** the crown-fix identity decision (the owner-attested squuid→role binding settled with humm-tauri: interim (ii) re-key by genesis action hash, this item is its DNA-level completion).
 - **Problem:** the shipped current-gen answer we gave humm-tauri is (ii) — re-key role SharedSecrets by the existing system-role `GroupGenesis` ACTION HASH (owner-attested singleton), with the display_id=squuid convention as the only other anchor. Both are conventions layered on `GroupGenesis` (`group/types.rs:32-38`); the binding is not a first-class VALIDATED construct.
 - **Sketch (DNA-strengthened, forward shape):** make squuid→role a validated owner-signed binding — either (1) an optional owner-only squuid field on the system-role `GroupGenesis` validated against the same owner-gate as `hive_wide_role` (`group/membership.rs:16-27`), or (2) a dedicated `RoleAnchor` entry type keyed `(hive, hive_wide_role, squuid)` with per-tuple uniqueness. Pick at scoping.
 - **Relationship to M1–M7:** **EXTENDS M3** (per-author system-role `GroupGenesis` uniqueness, `a2350d7`) — M3 already enforces the singleton (hive,role) that (ii) keys to, so this is the natural DNA-level completion. **This supersedes the display_id=squuid convention** with a validated construct; the (ii) client re-key remains the interim current-gen path until this ships.
@@ -163,7 +163,7 @@ Shipped surface with zero adoption at `725ed49a` (only `latest_action_micros` is
 - **Relationship to M1–M7:** direct complement to M6 (`63c6ae2`) — reuse `root_tombstoned`/`apply_liveness`.
 - **Acceptance:** sweettest — double-delete second call succeeds idempotently; unpaged list flags/excludes tombstoned per flag.
 
-### H5. Structurally-verified role-K closure enumeration — coordinator (role-K thread, resume §8)
+### H5. Structurally-verified role-K closure enumeration — coordinator
 - **Class:** COORDINATOR. **Serves:** the missed-tier silent discoverable-but-undecryptable failure class.
 - **Problem:** a role grant must distribute the FULL downward SharedSecret closure (Admin→{Admin K, Writer K, Reader K}); the client fan-out is manual and O(roles), so a missed tier fails SILENTLY (member discovers lower-role content via `acl_links` dominance but can't decrypt — `linking/acl_links.rs:94-108` is discovery-only, confers zero decrypt).
 - **Sketch:** coordinator extern enumerates the exact dominated role-SS set a grant must cover (genesis-anchored SS ids per the H3/(ii) identity) so the client reconciler can PROVE closure completeness. **KEEP independent per-role Ks** — explicitly NOT a deterministic HKDF-derived hierarchy (correction sent humm-tauri 2026-07-21T14-19-44: a derived chain makes down-tier revocation impossible without full-root rollover and breaks clean per-tier rotation — rotation-rigidity trade, not a win).
