@@ -18,9 +18,10 @@
 //!
 //! Discovery convention: every `create_group_genesis` and
 //! `create_group_membership` ALSO writes an `Inbox` link tagged
-//! `InboxEvent::GroupInvite` to the relevant agent (self for genesis;
-//! grantee for membership). `list_my_groups` walks these one byte
-//! at a time, exactly mirroring `list_my_hives`.
+//! `InboxEvent::GroupInvite` (transient notification; self for genesis,
+//! grantee for membership). `list_my_groups` reads founded groups from
+//! the self-Inbox links and granted groups from the durable
+//! `AgentToGroupMemberships` index.
 
 pub mod crud;
 pub mod queries;
@@ -34,5 +35,6 @@ pub use crud::{
 };
 pub use queries::{
     get_group_genesis, get_latest_group_membership, list_group_members, list_groups_in_hive,
-    list_my_groups, GetLatestGroupMembershipInput, ListedGroup,
+    list_my_groups, role_key_closure, GetLatestGroupMembershipInput, ListedGroup, RoleClosureEntry,
+    RoleKeyClosure, RoleKeyClosureInput,
 };

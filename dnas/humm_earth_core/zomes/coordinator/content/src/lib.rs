@@ -81,6 +81,7 @@ pub fn set_cap_tokens() -> ExternResult<()> {
     fns.insert((zome.clone(), "list_by_hive_link".into()));
     fns.insert((zome.clone(), "get_by_content_id_link".into()));
     fns.insert((zome.clone(), "list_by_acl_link".into()));
+    fns.insert((zome.clone(), "role_key_closure".into()));
     fns.insert((zome.clone(), "list_by_author".into()));
     fns.insert((zome.clone(), "count_links_by_hive".into()));
     fns.insert((zome.clone(), "fetch_pair_ss_with_hive_check".into()));

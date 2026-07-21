@@ -413,6 +413,79 @@ pub fn list_groups_in_hive(hive_genesis_hash: ActionHash) -> ExternResult<Vec<Li
 }
 
 // =============================================================================
+// role_key_closure
+// =============================================================================
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct RoleKeyClosureInput {
+    pub hive_genesis_hash: ActionHash,
+    pub granted_role: HiveRole,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct RoleClosureEntry {
+    pub role: HiveRole,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub group_genesis_hash: Option<ActionHash>,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct RoleKeyClosure {
+    pub entries: Vec<RoleClosureEntry>,
+}
+
+/// Owner⊇Admin⊇Writer⊇Reader, ordered highest→lowest. Exhaustive on
+/// purpose: a future role variant must force a compile error here.
+fn dominated_roles(granted: HiveRole) -> Vec<HiveRole> {
+    match granted {
+        HiveRole::Owner => vec![
+            HiveRole::Owner,
+            HiveRole::Admin,
+            HiveRole::Writer,
+            HiveRole::Reader,
+        ],
+        HiveRole::Admin => vec![HiveRole::Admin, HiveRole::Writer, HiveRole::Reader],
+        HiveRole::Writer => vec![HiveRole::Writer, HiveRole::Reader],
+        HiveRole::Reader => vec![HiveRole::Reader],
+    }
+}
+
+/// Downward role-K closure: the dominated role set for `granted_role`,
+/// each paired with the hive's canonical system-role `GroupGenesis`
+/// action hash (`None` = no system-role group for that role exists yet).
+/// Returns owner-attested IDENTITIES only — no key material: the client
+/// holds one INDEPENDENT SharedSecret per returned genesis; no role's K
+/// is ever derived from another's. Cross-agent duplicate system-role
+/// groups resolve deterministically to the lowest b64 action-hash STRING
+/// (the shared canonical-pick contract).
+#[hdk_extern]
+pub fn role_key_closure(input: RoleKeyClosureInput) -> ExternResult<RoleKeyClosure> {
+    let groups = list_groups_in_hive(input.hive_genesis_hash)?;
+    let entries = dominated_roles(input.granted_role)
+        .into_iter()
+        .map(|role| RoleClosureEntry {
+            role,
+            group_genesis_hash: canonical_role_group(&groups, role),
+        })
+        .collect();
+    Ok(RoleKeyClosure { entries })
+}
+
+/// Lowest-b64-STRING pick among the hive's groups carrying `role` (JS
+/// parity — the same contract as `canonical_lowest_hash`).
+fn canonical_role_group(groups: &[ListedGroup], role: HiveRole) -> Option<ActionHash> {
+    groups
+        .iter()
+        .filter(|g| g.hive_wide_role == Some(role))
+        .min_by(|a, b| {
+            a.group_genesis_hash
+                .to_string()
+                .cmp(&b.group_genesis_hash.to_string())
+        })
+        .map(|g| g.group_genesis_hash.clone())
+}
+
+// =============================================================================
 // get_group_genesis
 // =============================================================================
 
@@ -436,4 +509,69 @@ pub fn get_group_genesis(action_hash: ActionHash) -> ExternResult<Option<GroupGe
         genesis,
         hash: action_hash,
     }))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn listed_group(role: Option<HiveRole>, hash_byte: u8) -> ListedGroup {
+        ListedGroup {
+            group_genesis_hash: ActionHash::from_raw_36(vec![hash_byte; 36]),
+            hive_genesis_hash: ActionHash::from_raw_36(vec![9; 36]),
+            display_id: format!("group-{hash_byte}"),
+            hive_wide_role: role,
+            role: None,
+        }
+    }
+
+    #[test]
+    fn canonical_role_group_picks_lowest_b64_string() {
+        let first = listed_group(Some(HiveRole::Admin), 1);
+        let second = listed_group(Some(HiveRole::Admin), 2);
+        let expected = [
+            first.group_genesis_hash.to_string(),
+            second.group_genesis_hash.to_string(),
+        ]
+        .iter()
+        .min()
+        .cloned()
+        .expect("two candidates");
+        let picked = canonical_role_group(&[first, second], HiveRole::Admin)
+            .expect("a candidate matches the role");
+        assert_eq!(picked.to_string(), expected);
+    }
+
+    #[test]
+    fn canonical_role_group_ignores_other_roles_and_custom_groups() {
+        let admin = listed_group(Some(HiveRole::Admin), 3);
+        let custom = listed_group(None, 1);
+        assert_eq!(
+            canonical_role_group(&[custom.clone(), admin.clone()], HiveRole::Admin),
+            Some(admin.group_genesis_hash),
+        );
+        assert_eq!(canonical_role_group(&[custom], HiveRole::Writer), None);
+    }
+
+    #[test]
+    fn dominated_roles_encode_downward_closure_highest_first() {
+        assert_eq!(
+            dominated_roles(HiveRole::Owner),
+            vec![
+                HiveRole::Owner,
+                HiveRole::Admin,
+                HiveRole::Writer,
+                HiveRole::Reader,
+            ],
+        );
+        assert_eq!(
+            dominated_roles(HiveRole::Admin),
+            vec![HiveRole::Admin, HiveRole::Writer, HiveRole::Reader],
+        );
+        assert_eq!(
+            dominated_roles(HiveRole::Writer),
+            vec![HiveRole::Writer, HiveRole::Reader],
+        );
+        assert_eq!(dominated_roles(HiveRole::Reader), vec![HiveRole::Reader]);
+    }
 }

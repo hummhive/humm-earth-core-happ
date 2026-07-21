@@ -13,6 +13,7 @@
 | M8 (durable HiveMembershipIndex) | backfilled at M12 wrap | uhC0kO386QfCNoeQJZ36BbYj8ZFtqvaOjFIbUqZQK8DZo14KsS6o8 | 3edc1dfa021b23c81e1ee94ac1779ac102c386ce9fa9145d2a1e6858ce562ac1 |
 | M9 (load-bearing system-role display_id) | backfilled at M12 wrap | uhC0koUno-fuuCeAdMbEnkHqSWW2k1EHx76Rym8Dt9cyoB4djU_Bv | dff117981cac29f9a20ec14d0309d53d07b9d8dfbe64c1fc07f1cea886ec9891 |
 | M10 (idempotent delete + ACL liveness parity + paged inbox) | backfilled at M12 wrap | uhC0koUno-fuuCeAdMbEnkHqSWW2k1EHx76Rym8Dt9cyoB4djU_Bv (UNCHANGED; coordinator-only) | dff117981cac29f9a20ec14d0309d53d07b9d8dfbe64c1fc07f1cea886ec9891 |
+| M11 (role-K downward-closure enumeration) | backfilled at M12 wrap | uhC0koUno-fuuCeAdMbEnkHqSWW2k1EHx76Rym8Dt9cyoB4djU_Bv (UNCHANGED; coordinator-only) | dff117981cac29f9a20ec14d0309d53d07b9d8dfbe64c1fc07f1cea886ec9891 |
 
 ## New reject literals (accumulates the blessing-time BDD delta)
 | # | literal | validator fn | milestone |
@@ -126,3 +127,13 @@ sweettest therefore drives `create_group_genesis` directly.
   ONLY for `AclSpec::HiveGroup` content (`create_acl_links` hard-errors on other
   specs), keyed by GroupGenesis action-hash strings — an OpenWrite fixture can
   never appear in `list_by_acl_link`.
+- **M11 duplicate-pick coverage moved host-side (pre-registered for M12
+  lanes):** same-hive duplicate system-role groups can only arise from a
+  FORKED founder chain (M3's walk blocks same-chain duplicates and only the
+  founder may mint system-role groups), and sweettest cannot stage a chain
+  fork. The lowest-b64-STRING canonical pick is therefore proven by host unit
+  tests on `canonical_role_group` (+ `dominated_roles` exhaustive-order
+  tests); the conductor tests prove closure wiring, ordering, and `None` for
+  missing role groups. `role_key_closure` returns identities only — no key
+  material, no cross-role derivation (anti-HKDF per the role-K ruling) — and
+  is cap-granted beside the other public DHT-link readers.
