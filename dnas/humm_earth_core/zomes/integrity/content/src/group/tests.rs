@@ -337,3 +337,54 @@ fn tuple_custom_candidate_never_conflicts_with_system_role() {
     new.hive_wide_role = Some(Role::Owner);
     assert!(!genesis_tuple_conflicts(&existing, &new));
 }
+
+// ---------------------------------------------------------------------
+// Pass-7 M9 — load-bearing system-role display_id (squuid anchor)
+// ---------------------------------------------------------------------
+
+#[test]
+fn display_id_conflicts_on_same_hive_and_display_id() {
+    let mut existing = sample_group_genesis();
+    existing.hive_wide_role = Some(Role::Owner);
+    let mut new = sample_group_genesis();
+    new.hive_wide_role = Some(Role::Writer);
+    assert!(genesis_display_id_conflicts(&existing, &new));
+}
+
+#[test]
+fn display_id_no_conflict_on_different_hive() {
+    let mut existing = sample_group_genesis();
+    existing.hive_genesis_hash = action_hash(9);
+    let mut new = sample_group_genesis();
+    new.hive_genesis_hash = action_hash(10);
+    assert!(!genesis_display_id_conflicts(&existing, &new));
+}
+
+#[test]
+fn display_id_no_conflict_on_different_display_id() {
+    let existing = sample_group_genesis();
+    let mut new = sample_group_genesis();
+    new.display_id = "other-group".into();
+    assert!(!genesis_display_id_conflicts(&existing, &new));
+}
+
+#[test]
+fn display_id_bounds_accept_1_to_256_chars_only() {
+    assert!(matches!(
+        system_role_display_id_verdict(""),
+        ValidateCallbackResult::Invalid(_)
+    ));
+    assert!(matches!(
+        system_role_display_id_verdict("a"),
+        ValidateCallbackResult::Valid
+    ));
+    assert!(matches!(
+        system_role_display_id_verdict(&"x".repeat(256)),
+        ValidateCallbackResult::Valid
+    ));
+    let verdict = system_role_display_id_verdict(&"x".repeat(257));
+    let ValidateCallbackResult::Invalid(msg) = verdict else {
+        panic!("257 chars must be invalid; got {verdict:?}");
+    };
+    assert!(msg.contains("system-role GroupGenesis display_id must be 1-256 chars"));
+}

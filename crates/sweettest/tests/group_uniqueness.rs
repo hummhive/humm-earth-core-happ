@@ -15,6 +15,9 @@ use support::{create_hive, single_conductor_cell_app, GenesisResponse};
 
 const UNIQUENESS_REJECT: &str =
 	"a GroupGenesis for this hive and hive-wide role already exists on your chain";
+const DISPLAY_ID_REJECT: &str =
+	"a system-role GroupGenesis with this display_id already exists in this hive on your chain";
+const DISPLAY_ID_BOUNDS_REJECT: &str = "system-role GroupGenesis display_id must be 1-256 chars";
 const POLL_ATTEMPTS: usize = 200;
 const POLL_INTERVAL: Duration = Duration::from_millis(50);
 
@@ -38,9 +41,17 @@ struct ListedGroup {
 }
 
 fn system_role_group(hive: &ActionHash, role: &str) -> CreateGroupGenesisInput {
+	system_role_group_with_display(hive, role, &format!("{role}-group"))
+}
+
+fn system_role_group_with_display(
+	hive: &ActionHash,
+	role: &str,
+	display_id: &str,
+) -> CreateGroupGenesisInput {
 	CreateGroupGenesisInput {
 		hive_genesis_hash: hive.clone(),
-		display_id: format!("{role}-group"),
+		display_id: display_id.to_string(),
 		hive_wide_role: Some(role.to_string()),
 		creator_hive_membership_hash: None,
 	}
@@ -172,4 +183,96 @@ async fn find_or_create_system_role_converges() {
 		.await;
 	assert!(!second.was_created, "second find_or_create must find, not create");
 	assert_eq!(second.response.hash, first.response.hash);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn same_squuid_across_roles_rejects_in_one_hive() {
+	let (conductor, _cell, zome) = single_conductor_cell_app().await;
+	let hive = create_hive(&conductor, &zome, "squuid-hive").await;
+
+	let first: GenesisResponse = conductor
+		.call(
+			&zome,
+			"create_group_genesis",
+			system_role_group_with_display(&hive, "Admin", "shared-squuid"),
+		)
+		.await;
+	wait_for_group_visible(&conductor, &zome, &hive, &first.hash).await;
+
+	let second: Result<GenesisResponse, _> = conductor
+		.call_fallible(
+			&zome,
+			"create_group_genesis",
+			system_role_group_with_display(&hive, "Writer", "shared-squuid"),
+		)
+		.await;
+	let err = format!(
+		"{:?}",
+		second.expect_err("same-squuid system-role create must reject")
+	);
+	assert!(err.contains(DISPLAY_ID_REJECT), "unexpected error: {err}");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn distinct_squuids_across_roles_accept_in_one_hive() {
+	let (conductor, _cell, zome) = single_conductor_cell_app().await;
+	let hive = create_hive(&conductor, &zome, "squuid-distinct-hive").await;
+
+	let first: GenesisResponse = conductor
+		.call(
+			&zome,
+			"create_group_genesis",
+			system_role_group_with_display(&hive, "Admin", "squuid-a"),
+		)
+		.await;
+	wait_for_group_visible(&conductor, &zome, &hive, &first.hash).await;
+	let second: Result<GenesisResponse, _> = conductor
+		.call_fallible(
+			&zome,
+			"create_group_genesis",
+			system_role_group_with_display(&hive, "Writer", "squuid-b"),
+		)
+		.await;
+	assert!(
+		second.is_ok(),
+		"distinct squuids must both be accepted: {second:?}"
+	);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn custom_group_may_reuse_a_system_role_squuid() {
+	let (conductor, _cell, zome) = single_conductor_cell_app().await;
+	let hive = create_hive(&conductor, &zome, "squuid-custom-hive").await;
+
+	let first: GenesisResponse = conductor
+		.call(
+			&zome,
+			"create_group_genesis",
+			system_role_group_with_display(&hive, "Admin", "reused-squuid"),
+		)
+		.await;
+	wait_for_group_visible(&conductor, &zome, &hive, &first.hash).await;
+	let custom: Result<GenesisResponse, _> = conductor
+		.call_fallible(&zome, "create_group_genesis", custom_group(&hive, "reused-squuid"))
+		.await;
+	assert!(
+		custom.is_ok(),
+		"custom create skips the squuid walk: {custom:?}"
+	);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn empty_squuid_rejects_on_system_role_create() {
+	let (conductor, _cell, zome) = single_conductor_cell_app().await;
+	let hive = create_hive(&conductor, &zome, "squuid-empty-hive").await;
+
+	let rejected: Result<GenesisResponse, _> = conductor
+		.call_fallible(
+			&zome,
+			"create_group_genesis",
+			system_role_group_with_display(&hive, "Admin", ""),
+		)
+		.await;
+	let err = format!("{:?}", rejected.expect_err("empty squuid must reject"));
+	assert!(err.contains(DISPLAY_ID_BOUNDS_REJECT), "unexpected error: {err}");
 }

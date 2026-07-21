@@ -11,6 +11,7 @@
 | M5 (two-generation conductor proof) | 685b0dd | uhC0k7pbRFimR34Mc5CzgC_QTbh3Z-9rdIypgTf-2U0tur2ir7vSd (unchanged; test-only) | c27ccbe0a97498c0da9be90a6e378039c731ac12c9f11391eb64052399e29fd7 |
 | M6 (coordinator riders: reindex + include_liveness) | 63c6ae2 | uhC0k7pbRFimR34Mc5CzgC_QTbh3Z-9rdIypgTf-2U0tur2ir7vSd (UNCHANGED; coordinator-only) | c27ccbe0a97498c0da9be90a6e378039c731ac12c9f11391eb64052399e29fd7 |
 | M8 (durable HiveMembershipIndex) | backfilled at M12 wrap | uhC0kO386QfCNoeQJZ36BbYj8ZFtqvaOjFIbUqZQK8DZo14KsS6o8 | 3edc1dfa021b23c81e1ee94ac1779ac102c386ce9fa9145d2a1e6858ce562ac1 |
+| M9 (load-bearing system-role display_id) | backfilled at M12 wrap | uhC0koUno-fuuCeAdMbEnkHqSWW2k1EHx76Rym8Dt9cyoB4djU_Bv | dff117981cac29f9a20ec14d0309d53d07b9d8dfbe64c1fc07f1cea886ec9891 |
 
 ## New reject literals (accumulates the blessing-time BDD delta)
 | # | literal | validator fn | milestone |
@@ -44,6 +45,15 @@
 | — | `HiveMembershipIndex base must be the membership's for_agent` | `validate_create_link_hive_membership_index` | M8 |
 | — | `HiveMembershipIndex base must be the hive genesis author` | `validate_create_link_hive_membership_index` | M8 |
 | — | `HiveMembershipIndex link may only be deleted by its author (creator: …, attempted by: …)` | `validate_delete_link_hive_membership_index` | M8 |
+| L21 | `system-role GroupGenesis display_id must be 1-256 chars` | `system_role_display_id_verdict` (via `validate_create_group_genesis`) | M9 |
+| L22 | `a system-role GroupGenesis with this display_id already exists in this hive on your chain` | `validate_unique_system_role_on_chain` | M9 |
+
+`find_or_create_group_genesis` deliberately catches ONLY
+`GROUP_GENESIS_UNIQUENESS_REJECT` (L13) in its find-wins fallback; L22 propagates
+as a hard error. Correct: find-wins resolves by `(hive, role)` — a display_id
+conflict with a DIFFERENT role's group is a real client-visible conflict, never
+silently resolvable (and unreachable with globally-unique squuids). The L22
+sweettest therefore drives `create_group_genesis` directly.
 
 ## Decisions taken mid-build
 

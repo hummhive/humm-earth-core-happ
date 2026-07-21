@@ -3,7 +3,7 @@ use hdi::prelude::*;
 use std::collections::HashSet;
 
 use super::authority::{check_group_authority, fetch_group_genesis, fetch_group_membership};
-use super::types::{GroupGenesis, GroupMembership};
+use super::types::{GroupGenesis, GroupMembership, GROUP_DISPLAY_ID_MAX_CHARS};
 use crate::hive::{check_hive_authority, Role};
 
 /// A [`GroupGenesis`] create requires hive authority over the parent
@@ -11,6 +11,12 @@ use crate::hive::{check_hive_authority, Role};
 /// demands hive **Owner**; an ordinary custom group demands hive
 /// **Admin+**. `check_hive_authority` also enforces that
 /// `hive_genesis_hash` resolves to a real [`HiveGenesis`].
+///
+/// For system-role groups, `display_id` (the squuid) is load-bearing:
+/// present, bounded (1-256 chars), and unique per hive on the author's
+/// chain — the owner-attested anchor role-SS re-keying resolves by.
+/// Founder-only minting is retained. Cross-agent duplicates remain by
+/// construction; the canonical-pick (lowest b64 action hash) resolves.
 pub fn validate_create_group_genesis(
     action: EntryCreationAction,
     genesis: GroupGenesis,
@@ -30,7 +36,24 @@ pub fn validate_create_group_genesis(
     if !matches!(authority, ValidateCallbackResult::Valid) || genesis.hive_wide_role.is_none() {
         return Ok(authority);
     }
+    if let invalid @ ValidateCallbackResult::Invalid(_) =
+        system_role_display_id_verdict(&genesis.display_id)
+    {
+        return Ok(invalid);
+    }
     validate_unique_system_role_on_chain(&action, &genesis)
+}
+
+/// L21 — a system-role squuid must be present and bounded (chars, not
+/// bytes, matching the header-bounds precedent).
+pub(crate) fn system_role_display_id_verdict(display_id: &str) -> ValidateCallbackResult {
+    let chars = display_id.chars().count();
+    if chars == 0 || chars > GROUP_DISPLAY_ID_MAX_CHARS {
+        return ValidateCallbackResult::Invalid(
+            "system-role GroupGenesis display_id must be 1-256 chars".into(),
+        );
+    }
+    ValidateCallbackResult::Valid
 }
 
 /// Reject literal when an author's chain already carries a live
@@ -47,8 +70,16 @@ pub(crate) fn genesis_tuple_conflicts(candidate: &GroupGenesis, new: &GroupGenes
         && candidate.hive_wide_role == new.hive_wide_role
 }
 
+/// A system-role create also collides when any prior live `GroupGenesis`
+/// in the same hive already claims its `display_id` — the squuid must
+/// resolve to at most one group per hive on one chain.
+pub(crate) fn genesis_display_id_conflicts(candidate: &GroupGenesis, new: &GroupGenesis) -> bool {
+    candidate.hive_genesis_hash == new.hive_genesis_hash && candidate.display_id == new.display_id
+}
+
 /// Reject a second live system-role `GroupGenesis` for the same
-/// `(hive, role)` tuple already on the author's chain. Walks the author's
+/// `(hive, role)` tuple — or one claiming an already-claimed same-hive
+/// `display_id` — on the author's chain. Walks the author's
 /// activity to genesis (absence proofs need the full range), excluding
 /// Creates a later same-chain Delete tombstones — so deleting a
 /// mis-configured system-role group frees its slot. Cross-agent duplicates
@@ -86,6 +117,11 @@ fn validate_unique_system_role_on_chain(
         if genesis_tuple_conflicts(&existing, genesis) {
             return Ok(ValidateCallbackResult::Invalid(
                 GROUP_GENESIS_UNIQUENESS_REJECT.to_string(),
+            ));
+        }
+        if genesis_display_id_conflicts(&existing, genesis) {
+            return Ok(ValidateCallbackResult::Invalid(
+                "a system-role GroupGenesis with this display_id already exists in this hive on your chain".to_string(),
             ));
         }
     }

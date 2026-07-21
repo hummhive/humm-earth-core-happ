@@ -14,8 +14,11 @@ use crate::hive::Role;
 /// - `hive_genesis_hash` — the parent hive. Binds the group into a hive
 ///   trust domain so the hive owner is sovereign over it. MUST resolve
 ///   to a real [`HiveGenesis`].
-/// - `display_id` — human alias = the legacy humm-tauri group squuid
-///   (continuity). NEVER security-load-bearing; routing/display only.
+/// - `display_id` — the legacy humm-tauri group squuid. For a *system
+///   role group* this is LOAD-BEARING (pass-7): present (1-256 chars)
+///   and unique per hive on the author's chain — the owner-attested
+///   anchor that role-SS re-keying resolves a role by. For a custom
+///   group it stays routing/display only.
 /// - `hive_wide_role` — `Some(role)` marks a hive-wide *system role
 ///   group* (the admin/writer/reader groups created at hive setup);
 ///   `None` marks an ordinary custom group. Load-bearing: a system role
@@ -36,6 +39,10 @@ pub struct GroupGenesis {
     pub creator_hive_membership_hash: Option<ActionHash>,
     pub created_at_microseconds: i64,
 }
+
+/// Bounds for a system-role `GroupGenesis.display_id` (the squuid
+/// anchor); enforced only when `hive_wide_role.is_some()`.
+pub const GROUP_DISPLAY_ID_MAX_CHARS: usize = 256;
 
 /// A group role grant. Mirrors [`crate::hive::HiveMembership`] exactly,
 /// plus the parent-hive witness needed for the hive-sovereign grant
