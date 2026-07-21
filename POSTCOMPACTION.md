@@ -5,7 +5,37 @@
 
 ---
 
-## Latest arc (2026-07-17, evening): pass-6-service-meter shipped (v3.3.0)
+## Latest arc (2026-07-18..21): pass-7 integrity fork — scratch branch (NOT shipped)
+
+Branch `feat-integrity-pass-7` (scratch discipline: NEVER merge/tag/distribute,
+NEVER tell humm-tauri; blessing ritual parked). Wave-1 (M0–M7, through `022b7d8`)
+landed: vendored pass-6 DNA fixture + two-generation conductor proof, header
+bounds L1–L11, open-write payload cap L12, per-author system-role GroupGenesis
+uniqueness L13, cross-generation lineage L14–L20 (`LinkTypes::Lineage`=18),
+coordinator riders (liveness, reindex, find-wins canonical pick). Wave-2 in
+flight per the approved M8–M12 plan:
+
+- **M8 (`2b24605`, DNA `uhC0kO386…`)** — durable `HiveMembershipIndex` (=19):
+  author-bound create, author-ONLY delete (unlike Inbox); 4 hive readers +
+  `list_my_groups` granted-half rerouted off Inbox; hive/group discovery now
+  survives a full DM sweep (sweettest-proven). 5 new link reject literals.
+- **M9 (`7c3fbd4`, DNA `uhC0koUno…`)** — system-role `display_id` (the squuid)
+  is now load-bearing: present, 1-256 chars (L21), unique per hive per chain
+  (L22) — the owner-attested squuid→role anchor for role-SS re-keying.
+- Gates at M9: integrity host 112, content host 48, sweettest 55 passed +
+  1 ignored; clippy `-D warnings` + fmt clean. Ledger: `docs/PASS_7_SCRATCH.md`
+  (branch-only; commit hashes backfill at the M12 wrap).
+- Remaining: M10 (idempotent delete + `list_by_acl_link` liveness parity +
+  `probe_inbox_page`; coordinator, hash HELD), M11 (`role_key_closure`
+  downward-closure enumeration; coordinator, hash HELD), M12 wrap (5-lane
+  review, reject-literal superset check vs pass-6, ledger finalize, STOP).
+
+Also on `main` post-v3.3.0: B10 opt-in liveness rider (`6a3d428`), B11 declined
+zome-side (`16eac91`), meter doc §5.3 (`d30d4f1`); the mbox crown-fix arc closed
+(role-K FULL downward closure + owner-attested identity choice, both answered
+from the shipped pass-6 surface).
+
+## Arc (2026-07-17, evening): pass-6-service-meter shipped (v3.3.0)
 
 Coordinator-only generation on the HELD pass-6 DNA, merged `--no-ff` as
 `311e10c`, tag `v3.3.0` on the merge commit (local; owner pushes). Headline
@@ -259,7 +289,7 @@ DNA `uhC0k2dX`, happ `42dbf9df`) is what humm-tauri currently bundles and runs
   `nix develop --command hc dna pack dnas/humm_earth_core/workdir`, then
   `nix develop --command hc app pack workdir --recursive`; `hc dna hash …` MUST print
   `uhC0ksXs…` on `main` (v3.0.0/pass-6). Pass-5/v2.0.0 was `uhC0k2dX…`.
-- **Tests:** host `cargo test -p content --lib` (35) + `-p content_integrity --lib` (76).
+- **Tests:** host `cargo test -p content --lib` (48) + `-p content_integrity --lib` (76 on main; 112 on the pass-7 branch).
   Conductor: `crates/sweettest` (in-process, iroh). **Tryorama CANNOT boot on
   hc 0.6.x** — do not use it.
 
@@ -271,10 +301,13 @@ DNA `uhC0k2dX`, happ `42dbf9df`) is what humm-tauri currently bundles and runs
   devShell provides `openssl` + `pkg-config`; RustCrypto pinned to holochain's RCs.
 - Run: `cd crates/sweettest && nix develop ../.. --command bash -c 'export LIBCLANG_PATH=<nix clang lib dir>; cargo test -- --test-threads=1'`
   (`LIBCLANG_PATH` e.g. `/nix/store/…clang-18.1.8-lib/lib`).
-- **21/21 active green on the v3.1.0 build** (coordinator_cleanup 2,
-  coordinator_query_tolerance 2, owner_and_acl 4, migration_rescue 3 active +1
-  ignored, recipient_witnesses 1, pinned_hosts 9). Shared wire mirrors live in
-  `tests/support/mod.rs`. First compile slow (conductor + wasmer + iroh).
+- **37 passed + 1 ignored on `main` (v3.3.0); 55 passed + 1 ignored on the
+  pass-7 scratch branch** (12 test binaries; heavyweights: pinned_hosts 9,
+  service_records 9, owner_and_acl 4). Shared wire mirrors live in
+  `tests/support/mod.rs`; NEW mirrors go file-local (support/mod.rs is
+  textually included by every binary — editing it relinks all 12). First
+  compile slow (conductor + wasmer + iroh); use `cargo test -j 1` if linker
+  memory is tight.
 
 ## Other branches (committed; pass-6 now landed on main)
 
