@@ -127,3 +127,55 @@ Shipped surface with zero adoption at `725ed49a` (only `latest_action_micros` is
 - Endpoint-binding entry type for edge hosting: existing author-binding already gives the needed guarantee — an integrity entry type would be over-scoped fork spend.
 - `BlobApi.addWithoutDedup` (`03/02` "new earth-core zome call"): wrong — dedup is their app-side pre-check; fresh-squuid `add()` already creates distinct entries.
 - Legacy identity migration (`03/04`): pre-Holochain local key formats; no DNA angle.
+
+## H. Wave-2 candidates (2026-07-21 mbox-derived; POST-M7 — supersede/extend M1–M7 where noted)
+
+- **Status:** OPEN — catalogue for the SECOND pass-7 build wave, on branch `feat-integrity-pass-7` (M0–M7 already built @ `9493169`). Same fork discipline: integrity items ride the SAME sanctioned fork as M1–M4 (batch into one DNA-hash move); coordinator items are the fresh pass-7 coordinator, no extra fork. NOTHING here is distributed or mentioned to humm-tauri.
+- **Origin:** this-session mbox arc — the crown-fix SharedSecret threads + the `find_or_create_group_genesis` security review + the role-K closure ruling (all replied+archived, grounded in shipped pass-6). Full thread record: `local://pass7-resume-state.md` §§7–8.
+- **Anchor discipline (LOAD-BEARING):** every `file:line` below is the SHIPPED pass-6 baseline (main @ `63cba86`), the rationale source. M1–M4 already moved integrity code on this branch, so RE-GROUND every anchor against branch HEAD before building — same rule the M0–M7 plan carries.
+- **Supersession is expected (owner, 2026-07-21):** we are holding distribution precisely to get pass-7 as full/forward-looking/correct as possible. Where a Wave-2 item extends or supersedes an M1–M7 design (flagged per item), the newer learning wins; re-validate the affected milestone at scoping.
+
+### H1. Inbox membership-index split — CRITICAL (humm-tauri G-#8)
+- **Class:** INTEGRITY (new append-only `LinkTypes` → wasm change → rides the fork). **Serves:** the `list_my_hives []` failure class (resume §7 thread 4) + durable membership enumeration.
+- **Problem:** the `Inbox` link namespace does double duty — one-shot events (`HiveInvite`/`GroupInvite`, `crud.rs:82-88`, self-sent at `crud.rs:8-10`) AND the de-facto durable membership/join index that `list_my_hives` enumerates (`hive/queries.rs:191`). humm-tauri's DM-sweep RETRACTS `Inbox` `HiveInvite` links, erasing the only joiner-side discovery path; joined hives have no retraction-safe surface today (link = rebuildable cache).
+- **Sketch:** introduce dedicated integrity link types `HiveMembershipIndex` + `GroupMembershipIndex` (append-only, next indices after `Lineage=18`, i.e. 19/20 — doc the stable range per house convention). Durable, never swept; `Inbox` reverts to transient events only. Coordinator enumerates membership from the new index (retraction-safe) with the existing author-binding + entry-type-discriminator pattern (never shape-decode; `try_decode_hive_genesis` precedent).
+- **Relationship to M1–M7:** independent new milestone; no overlap.
+- **Acceptance:** sweettest — grant→retract-Inbox→membership still enumerates via the new index; joiner lists a granted hive after an Inbox sweep; link validator author-binds to the membership target.
+
+### H2. Per-entry-type ACL validators — anchor (humm-tauri G-#1)
+- **Class:** INTEGRITY. **Serves:** the ACL-validation gaps the crown-fix threads surfaced.
+- **Problem:** `validate_hivegroup_acl` (`entry_validation.rs:109-181`) + the G-6.2 recipient-witness machine (`:183-410`) are the only per-type ACL validators; invites/DMs/pair-SS get generic-or-none. Instances: **(a)** invite `max_uses`/HMAC binding is advisory-only (humm-tauri G-#2); **(b)** DM `pair_hash` pinning — the A3 residual: a payload counterpart claim is unverifiable, DNA can't read encrypted bytes; **(c)** pair-SS reader-ACL cross-check lives client-only (`sharedSecret/index.ts:352-363`, `pair_ss_reader_acl_missing`).
+- **Sketch:** per-variant validator arms (dispatched off `AclSpec`/entry type) that bind the ACL-relevant header fields at validation time; each is a pure header/link check (no DHT read in `validate()`). Exact entry set for (b) needs humm-tauri coordination at blessing (A3 is SKETCH-only in the M-plan) — build (a)/(c) first.
+- **Relationship to M1–M7:** complements M1 header bounds (`validate_header_bounds`); shares the bounds-helper spine.
+- **Acceptance:** host unit tables per new reject literal + sweettest negatives; superset-only vs pass-6 reject strings (no literal removed).
+
+### H3. Typed owner-attested squuid→role mapping — EXTENDS/supersedes M3 + the (ii) client steer
+- **Class:** INTEGRITY. **Serves:** the crown-fix identity decision (resume §7 thread 7 + §8).
+- **Problem:** the shipped current-gen answer we gave humm-tauri is (ii) — re-key role SharedSecrets by the existing system-role `GroupGenesis` ACTION HASH (owner-attested singleton), with the display_id=squuid convention as the only other anchor. Both are conventions layered on `GroupGenesis` (`group/types.rs:32-38`); the binding is not a first-class VALIDATED construct.
+- **Sketch (DNA-strengthened, forward shape):** make squuid→role a validated owner-signed binding — either (1) an optional owner-only squuid field on the system-role `GroupGenesis` validated against the same owner-gate as `hive_wide_role` (`group/membership.rs:16-27`), or (2) a dedicated `RoleAnchor` entry type keyed `(hive, hive_wide_role, squuid)` with per-tuple uniqueness. Pick at scoping.
+- **Relationship to M1–M7:** **EXTENDS M3** (per-author system-role `GroupGenesis` uniqueness, `a2350d7`) — M3 already enforces the singleton (hive,role) that (ii) keys to, so this is the natural DNA-level completion. **This supersedes the display_id=squuid convention** with a validated construct; the (ii) client re-key remains the interim current-gen path until this ships.
+- **Acceptance:** owner-only mint enforced (non-owner rejects); per-(hive,role,squuid) uniqueness (reuse M3's `must_get_agent_activity` tombstone-aware walk); classification resolves squuid→role from validated state with zero self-asserted field.
+
+### H4. Idempotent delete + tombstone-tolerant unpaged lists — coordinator (humm-tauri G-#6)
+- **Class:** COORDINATOR (hot-swap, DNA held). **Serves:** the delete/liveness contract; complements M6.
+- **Problem:** delete of already-deleted content surfaces the wire-stable `"Could not find the EncryptedContent"` (delete-not-found), forcing client Deleted-vs-AlreadyGone discrimination on a string; unpaged list reads have no tombstone tolerance (M6 added `include_liveness` on PAGED reads only).
+- **Sketch:** idempotent delete extern returns success on an already-tombstoned target (was_deleted:false, still-absent = ok); extend the M6 `include_liveness`/`tombstoned` rider to unpaged list surfaces. Coordinator-only, additive `#[serde(default)]`.
+- **Relationship to M1–M7:** direct complement to M6 (`63c6ae2`) — reuse `root_tombstoned`/`apply_liveness`.
+- **Acceptance:** sweettest — double-delete second call succeeds idempotently; unpaged list flags/excludes tombstoned per flag.
+
+### H5. Structurally-verified role-K closure enumeration — coordinator (role-K thread, resume §8)
+- **Class:** COORDINATOR. **Serves:** the missed-tier silent discoverable-but-undecryptable failure class.
+- **Problem:** a role grant must distribute the FULL downward SharedSecret closure (Admin→{Admin K, Writer K, Reader K}); the client fan-out is manual and O(roles), so a missed tier fails SILENTLY (member discovers lower-role content via `acl_links` dominance but can't decrypt — `linking/acl_links.rs:94-108` is discovery-only, confers zero decrypt).
+- **Sketch:** coordinator extern enumerates the exact dominated role-SS set a grant must cover (genesis-anchored SS ids per the H3/(ii) identity) so the client reconciler can PROVE closure completeness. **KEEP independent per-role Ks** — explicitly NOT a deterministic HKDF-derived hierarchy (correction sent humm-tauri 2026-07-21T14-19-44: a derived chain makes down-tier revocation impossible without full-root rollover and breaks clean per-tier rotation — rotation-rigidity trade, not a win).
+- **Relationship to M1–M7:** new; sits beside the shipped `acl_links` dominance fan-out.
+- **Acceptance:** extern returns the correct dominated-role-SS id set for a given (hive, granted role); reconciler test proves a missing tier is detected (not silently discoverable-but-undecryptable).
+
+### H6. `probe_inbox` since/cursor pagination — coordinator (genuine gap)
+- **Class:** COORDINATOR. **Serves:** bounded inbox reads.
+- **Problem:** `probe_inbox` has `event_filter` (`#[serde(default)]`) but NO since/cursor — an unbounded read as the inbox grows.
+- **Sketch:** add the composite exclusive cursor the shipped `list_by_*_page` family uses (`BoundedLinkPage`, `paging.rs:186-196`; `(since_ts, source_after_action_hash)`), additive `#[serde(default)]`.
+- **Relationship to M1–M7:** independent; mirrors shipped paging.
+- **Acceptance:** sweettest — page cursor round-trips exclusively-ascending; limit clamp; back-compat when cursor omitted.
+
+### Wave-2 build ordering (for the /plan)
+Integrity items (H1, H2, H3) batch into the SAME fork as M1–M4 — one DNA-hash move, re-pin `EXPECTED_DNA_HASH` + ledger row per integrity milestone. Coordinator items (H4, H5, H6) ride the fresh pass-7 coordinator (DNA held). Suggested milestone lanes: **M8 = H1**, **M9 = H2**, **M10 = H3** (integrity, hash moves each); **M11 = H4+H6**, **M12 = H5** (coordinator, hash held). Re-ground all anchors against branch HEAD first; per-milestone gate ladder + 5-lane review per `local://pass-7-plan.md`.
