@@ -12,6 +12,7 @@
 | M6 (coordinator riders: reindex + include_liveness) | 63c6ae2 | uhC0k7pbRFimR34Mc5CzgC_QTbh3Z-9rdIypgTf-2U0tur2ir7vSd (UNCHANGED; coordinator-only) | c27ccbe0a97498c0da9be90a6e378039c731ac12c9f11391eb64052399e29fd7 |
 | M8 (durable HiveMembershipIndex) | backfilled at M12 wrap | uhC0kO386QfCNoeQJZ36BbYj8ZFtqvaOjFIbUqZQK8DZo14KsS6o8 | 3edc1dfa021b23c81e1ee94ac1779ac102c386ce9fa9145d2a1e6858ce562ac1 |
 | M9 (load-bearing system-role display_id) | backfilled at M12 wrap | uhC0koUno-fuuCeAdMbEnkHqSWW2k1EHx76Rym8Dt9cyoB4djU_Bv | dff117981cac29f9a20ec14d0309d53d07b9d8dfbe64c1fc07f1cea886ec9891 |
+| M10 (idempotent delete + ACL liveness parity + paged inbox) | backfilled at M12 wrap | uhC0koUno-fuuCeAdMbEnkHqSWW2k1EHx76Rym8Dt9cyoB4djU_Bv (UNCHANGED; coordinator-only) | dff117981cac29f9a20ec14d0309d53d07b9d8dfbe64c1fc07f1cea886ec9891 |
 
 ## New reject literals (accumulates the blessing-time BDD delta)
 | # | literal | validator fn | milestone |
@@ -102,3 +103,26 @@ sweettest therefore drives `create_group_genesis` directly.
   `create_discovery_links` helper at blessing, not in this scratch branch.
   VERDICT: APPROVE, no blockers. An independent subagent second opinion remains
   nice-to-have when the account limit resets; it is not a gate on the branch.
+- **M10 idempotent delete (clean cutover):** `delete_encrypted_content` returns
+  `DeleteContentResponse { was_deleted, delete_action_hash }`; an already-absent
+  target is a no-op success, gated on the two wire-stable absent literals
+  (`no Record found at given hash` / `Could not find the EncryptedContent`) via
+  `is_absent_content_error` — any other error still propagates. Every caller
+  migrated (remediation now reports "original already tombstoned" instead of a
+  spurious failure detail on re-runs; three sweettest callsites assert
+  `was_deleted`). No alias extern: nothing consuming pass-7 is distributed.
+- **M10 paging engine reuse:** `probe_inbox_page` rides the content page engine —
+  `page_links` / `resolve_page_limit` promoted `pub(crate)` and the cursor
+  pairing check extracted into shared `decode_paired_cursor`, so the inbox page
+  and the three content `*_page` externs emit byte-identical cursor/limit
+  literals from one source. Legacy `probe_inbox` wire-unchanged.
+- **M10 ACL liveness scope (pre-registered for M12 lanes):** the
+  `list_by_acl_link` rider test proves the deterministic single-node contract —
+  flag off → `tombstoned` absent, flag on → live root `Some(false)`, deleted →
+  absent. The dead-duplicate-root `Some(true)` + live-sibling discrimination
+  remains production-only observable (the M6 in-process limitation above: a
+  single conductor marks the shared entry Dead, so the dead root DROPS rather
+  than resolving). Fixture gotcha worth keeping: `HummContent*` ACL links exist
+  ONLY for `AclSpec::HiveGroup` content (`create_acl_links` hard-errors on other
+  specs), keyed by GroupGenesis action-hash strings — an OpenWrite fixture can
+  never appear in `list_by_acl_link`.

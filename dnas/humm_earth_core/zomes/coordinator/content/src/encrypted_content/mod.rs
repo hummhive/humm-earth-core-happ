@@ -112,7 +112,7 @@ pub struct UpdateEncryptedContentInput {
 pub use crud::{
     create_encrypted_content, delete_encrypted_content, find_or_create_encrypted_content,
     get_encrypted_content, get_many_encrypted_content, update_encrypted_content,
-    FindOrCreateContentResponse,
+    DeleteContentResponse, FindOrCreateContentResponse,
 };
 pub use lineage::{
     create_encrypted_content_with_lineage, resolve_by_prior_generation, CreateWithLineageInput,
@@ -124,6 +124,7 @@ pub use migration::{
     MigrationMarkerV1, MigrationMarkerV2, MIGRATION_MARKER_CONTENT_TYPE_PREFIX,
     MIGRATION_MARKER_SCHEMA_TAG,
 };
+pub(crate) use paging::{decode_paired_cursor, page_links, resolve_page_limit};
 pub use paging::{
     get_my_content_by_id_link, list_by_author_page, list_by_dynamic_link_page,
     list_by_hive_link_page, AuthorLinkPageInput, BoundedLinkPage, DynamicLinkPageInput,

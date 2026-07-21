@@ -31,6 +31,11 @@ struct GetMessagesSinceInput {
     since_seq: u32,
 }
 
+#[derive(Debug, serde::Deserialize)]
+struct DeleteResponse {
+    was_deleted: bool,
+}
+
 #[tokio::test(flavor = "multi_thread")]
 async fn delete_encrypted_content_cleans_up_discovery_links() {
     holochain_trace::test_run();
@@ -116,9 +121,10 @@ async fn delete_encrypted_content_cleans_up_discovery_links() {
     // validators pass; the local-chain sweep finds and removes them).
     let content_ah = ActionHash::try_from(created_hash.as_str())
         .expect("create response hash parses as an ActionHash");
-    let _deleted: ActionHash = conductor
+    let deleted: DeleteResponse = conductor
         .call(&zome, "delete_encrypted_content", content_ah)
         .await;
+    assert!(deleted.was_deleted, "existing target must be really deleted");
 
     await_consistency_s(30, [&cell]).await.unwrap();
 

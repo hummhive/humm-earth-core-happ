@@ -160,7 +160,8 @@ fn remediate_item(
 
     let created = create_encrypted_content(item.corrected)?;
     let detail = match delete_encrypted_content(item.original_action_hash) {
-        Ok(_) => None,
+        Ok(deleted) if deleted.was_deleted => None,
+        Ok(_) => Some(String::from("original already tombstoned")),
         Err(err) => Some(format!(
             "original delete failed (re-run remediates): {err:?}"
         )),
@@ -196,7 +197,8 @@ fn retry_original_tombstone(
         return Ok(None);
     }
     Ok(Some(match delete_encrypted_content(original.clone()) {
-        Ok(_) => String::from("original tombstoned on retry"),
+        Ok(deleted) if deleted.was_deleted => String::from("original tombstoned on retry"),
+        Ok(_) => String::from("original already tombstoned"),
         Err(err) => format!("original delete retry failed: {err:?}"),
     }))
 }

@@ -431,11 +431,31 @@ fn reindex_acl_links(
     Ok(())
 }
 
+#[derive(Serialize, Deserialize, Debug)]
+pub struct DeleteContentResponse {
+    pub was_deleted: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub delete_action_hash: Option<ActionHash>,
+}
+
+/// Idempotent tombstone: deleting an already-deleted or absent target is
+/// a no-op success (`was_deleted: false`), so client retry loops and
+/// remediation re-runs never error on an already-met goal. Any error
+/// other than the two wire-stable absent literals still propagates.
 #[hdk_extern]
 pub fn delete_encrypted_content(
     original_encrypted_content_hash: ActionHash,
-) -> ExternResult<ActionHash> {
-    let record = get_encrypted_content(original_encrypted_content_hash.clone())?;
+) -> ExternResult<DeleteContentResponse> {
+    let record = match get_encrypted_content(original_encrypted_content_hash.clone()) {
+        Ok(record) => record,
+        Err(e) if is_absent_content_error(&e) => {
+            return Ok(DeleteContentResponse {
+                was_deleted: false,
+                delete_action_hash: None,
+            });
+        }
+        Err(e) => return Err(e),
+    };
     let ah = delete_entry(original_encrypted_content_hash.clone())?;
     emit_signal(EncryptedContentSignal {
         action_type: EncryptedContentSignalType::Delete,
@@ -454,5 +474,16 @@ pub fn delete_encrypted_content(
 
     crate::delete_own_links_targeting(AnyLinkableHash::from(original_encrypted_content_hash))?;
 
-    Ok(ah)
+    Ok(DeleteContentResponse {
+        was_deleted: true,
+        delete_action_hash: Some(ah),
+    })
+}
+
+/// The two wire-stable "target already absent" reject literals
+/// (`get_eh` / `get_encrypted_content`); anything else is a real failure.
+fn is_absent_content_error(e: &WasmError) -> bool {
+    let msg = format!("{e:?}");
+    msg.contains("no Record found at given hash")
+        || msg.contains("Could not find the EncryptedContent")
 }

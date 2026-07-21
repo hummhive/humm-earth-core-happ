@@ -134,6 +134,11 @@ async fn liveness_flag_marks_live_roots_and_defaults_off() {
 	);
 }
 
+#[derive(Debug, serde::Deserialize)]
+struct DeleteResponse {
+	was_deleted: bool,
+}
+
 #[tokio::test(flavor = "multi_thread")]
 async fn deleted_content_is_absent_not_flagged_tombstoned() {
 	let (conductor, _cell, zome) = single_conductor_cell_app().await;
@@ -141,13 +146,14 @@ async fn deleted_content_is_absent_not_flagged_tombstoned() {
 	let author = zome.cell_id().agent_pubkey().to_string();
 	let doomed = create_fixed_bytes(&conductor, &zome, &hive, "doomed", vec![2u8, 2], None).await;
 
-	let _: ActionHash = conductor
+	let deleted: DeleteResponse = conductor
 		.call(
 			&zome,
 			"delete_encrypted_content",
 			ActionHash::try_from(doomed.as_str()).unwrap(),
 		)
 		.await;
+	assert!(deleted.was_deleted, "existing target must be really deleted");
 
 	let flagged: Vec<LivenessRecord> = conductor
 		.call(

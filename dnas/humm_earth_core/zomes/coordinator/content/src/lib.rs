@@ -178,6 +178,7 @@ pub fn set_cap_tokens() -> ExternResult<()> {
     // (`probed_at_microseconds` + `last_processed_inbox_link_hash`).
     // Matches the `get_messages_since` treatment (Rule 2 above).
     fns.insert((zome.clone(), "probe_inbox".into()));
+    fns.insert((zome.clone(), "probe_inbox_page".into()));
 
     // `recv_remote_signal` — required by the HDK cap check; see the
     // doc-comment opener for the rationale.

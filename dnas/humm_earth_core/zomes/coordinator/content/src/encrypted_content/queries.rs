@@ -207,6 +207,8 @@ pub struct ListByAclInput {
     /// string for wire stability.
     pub acl_role: String,
     pub entity_id: String,
+    #[serde(default)]
+    pub include_liveness: bool,
 }
 
 #[hdk_extern]
@@ -245,7 +247,10 @@ pub fn list_by_acl_link(input: ListByAclInput) -> ExternResult<Vec<EncryptedCont
         .into_iter()
         .filter_map(|link| link.target.into_action_hash())
         .collect();
-    get_many_encrypted_content(hashes)
+    Ok(apply_liveness(
+        get_many_encrypted_content(hashes)?,
+        input.include_liveness,
+    ))
 }
 
 #[derive(Debug, Serialize, Deserialize)]

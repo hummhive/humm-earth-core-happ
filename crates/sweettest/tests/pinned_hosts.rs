@@ -22,6 +22,11 @@ use support::{
 
 const BLOB_PROVIDER_CONTENT_TYPE: &str = "hummhive-core-blob-provider-v1";
 
+#[derive(Debug, serde::Deserialize)]
+struct DeleteResponse {
+    was_deleted: bool,
+}
+
 async fn hive_page(
     conductor: &SweetConductor,
     zome: &SweetZome,
@@ -175,9 +180,10 @@ async fn deleted_entry_drops_from_page_records_and_positions() {
     wait_for_count_links_by_hive_to(&conductor, &zome, &hive, content_type, 3).await;
 
     let middle = ActionHash::try_from(created[1].as_str()).expect("hash parses");
-    let _deleted: ActionHash = conductor
+    let deleted: DeleteResponse = conductor
         .call(&zome, "delete_encrypted_content", middle.clone())
         .await;
+    assert!(deleted.was_deleted, "existing target must be really deleted");
     await_consistency_s(30, [&cell]).await.unwrap();
     wait_for_count_links_by_hive_to(&conductor, &zome, &hive, content_type, 2).await;
     wait_until_tombstoned(&conductor, &zome, middle).await;

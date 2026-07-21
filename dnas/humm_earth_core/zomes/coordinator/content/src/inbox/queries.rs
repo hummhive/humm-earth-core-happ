@@ -3,6 +3,10 @@
 use content_integrity::*;
 use hdk::prelude::*;
 
+use crate::encrypted_content::{
+    decode_paired_cursor, page_links, resolve_page_limit, SourcePosition,
+};
+
 #[derive(Serialize, Deserialize, Debug)]
 pub struct ProbeInboxInput {
     /// Optional event-type filter. When `None`, every inbox event for
@@ -43,42 +47,112 @@ pub struct InboxItem {
 /// `get` the target on demand and ignore if unparseable).
 #[hdk_extern]
 pub fn probe_inbox(input: ProbeInboxInput) -> ExternResult<Vec<InboxItem>> {
-    let my_pubkey = agent_info()?.agent_initial_pubkey;
-    let links = get_links(
-        LinkQuery::try_new(AnyLinkableHash::from(my_pubkey), LinkTypes::Inbox)?,
-        GetStrategy::Network,
-    )?;
-
-    let mut items: Vec<InboxItem> = Vec::with_capacity(links.len());
-    for link in links {
-        let decoded = link
-            .tag
-            .0
-            .first()
-            .and_then(|b| InboxEvent::from_byte(*b).ok());
-        if let Some(filter) = input.event_filter {
-            // Filter mode: only include links whose decoded byte matches.
-            if decoded != Some(filter) {
-                continue;
-            }
-        }
-        let Some(target_ah) = link.target.into_action_hash() else {
-            continue;
-        };
-        items.push(InboxItem {
-            link_action_hash: link.create_link_hash,
-            target: target_ah,
-            event: decoded,
-            created_at: link.timestamp,
-            sender: link.author,
-        });
-    }
-
+    let mut items: Vec<InboxItem> = my_inbox_links()?
+        .into_iter()
+        .filter(|link| admits_event_filter(link, input.event_filter))
+        .filter_map(inbox_item_from_link)
+        .collect();
     // Oldest-first ordering matches the watermark-sweep convention
     // shared by list_by_hive_link: callers can pin a cursor on
     // the highest returned timestamp without skipping older items.
     items.sort_by_key(|i| i.created_at);
     Ok(items)
+}
+
+fn my_inbox_links() -> ExternResult<Vec<Link>> {
+    let my_pubkey = agent_info()?.agent_initial_pubkey;
+    get_links(
+        LinkQuery::try_new(AnyLinkableHash::from(my_pubkey), LinkTypes::Inbox)?,
+        GetStrategy::Network,
+    )
+}
+
+fn admits_event_filter(link: &Link, filter: Option<InboxEvent>) -> bool {
+    match filter {
+        None => true,
+        Some(wanted) => {
+            link.tag
+                .0
+                .first()
+                .and_then(|b| InboxEvent::from_byte(*b).ok())
+                == Some(wanted)
+        }
+    }
+}
+
+/// `None` only for a non-action-hash target (malformed writer); the tag
+/// byte decodes to `None` gracefully rather than failing the whole read.
+fn inbox_item_from_link(link: Link) -> Option<InboxItem> {
+    let event = link
+        .tag
+        .0
+        .first()
+        .and_then(|b| InboxEvent::from_byte(*b).ok());
+    let target = link.target.into_action_hash()?;
+    Some(InboxItem {
+        link_action_hash: link.create_link_hash,
+        target,
+        event,
+        created_at: link.timestamp,
+        sender: link.author,
+    })
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct ProbeInboxPageInput {
+    #[serde(default)]
+    pub event_filter: Option<InboxEvent>,
+    #[serde(default)]
+    pub since_ts: Option<Timestamp>,
+    #[serde(default)]
+    pub limit: Option<usize>,
+    #[serde(default)]
+    pub source_after_action_hash: Option<String>,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct InboxPage {
+    pub items: Vec<InboxItem>,
+    pub source_count: usize,
+    pub source_positions: Vec<SourcePosition>,
+    pub truncated: bool,
+}
+
+/// Paged twin of [`probe_inbox`]: same event-byte filter, plus the
+/// composite source cursor shared with the content `*_page` externs
+/// (`since_ts` alone inclusive; the full pair strictly exclusive; limit
+/// default 100 / cap 256). `source_positions` are SOURCE truth — one per
+/// selected link even when its target is malformed — so callers cursor
+/// past poison rows.
+#[hdk_extern]
+pub fn probe_inbox_page(input: ProbeInboxPageInput) -> ExternResult<InboxPage> {
+    let limit = resolve_page_limit(input.limit)?;
+    let after_hash = decode_paired_cursor(
+        input.source_after_action_hash.as_deref(),
+        input.since_ts.as_ref(),
+    )?;
+    let filtered: Vec<Link> = my_inbox_links()?
+        .into_iter()
+        .filter(|link| admits_event_filter(link, input.event_filter))
+        .collect();
+    let (selected, truncated) = page_links(filtered, input.since_ts, after_hash, limit);
+    let source_positions: Vec<SourcePosition> = selected
+        .iter()
+        .map(|link| SourcePosition {
+            timestamp_micros: link.timestamp.as_micros(),
+            action_hash: link.create_link_hash.to_string(),
+        })
+        .collect();
+    let items: Vec<InboxItem> = selected
+        .into_iter()
+        .filter_map(inbox_item_from_link)
+        .collect();
+    Ok(InboxPage {
+        items,
+        source_count: source_positions.len(),
+        source_positions,
+        truncated,
+    })
 }
 
 /// Return the most-recent [`DmProbeLog`] entry the caller has committed,
