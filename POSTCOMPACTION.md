@@ -12,8 +12,8 @@ NEVER tell humm-tauri; blessing ritual parked). Wave-1 (M0–M7, through `022b7d
 landed: vendored pass-6 DNA fixture + two-generation conductor proof, header
 bounds L1–L11, open-write payload cap L12, per-author system-role GroupGenesis
 uniqueness L13, cross-generation lineage L14–L20 (`LinkTypes::Lineage`=18),
-coordinator riders (liveness, reindex, find-wins canonical pick). Wave-2 in
-flight per the approved M8–M12 plan:
+coordinator riders (liveness, reindex, find-wins canonical pick). Wave-2
+COMPLETE per the approved M8–M12 plan:
 
 - **M8 (`2b24605`, DNA `uhC0kO386…`)** — durable `HiveMembershipIndex` (=19):
   author-bound create, author-ONLY delete (unlike Inbox); 4 hive readers +
@@ -22,18 +22,33 @@ flight per the approved M8–M12 plan:
 - **M9 (`7c3fbd4`, DNA `uhC0koUno…`)** — system-role `display_id` (the squuid)
   is now load-bearing: present, 1-256 chars (L21), unique per hive per chain
   (L22) — the owner-attested squuid→role anchor for role-SS re-keying.
-- Gates at M9: integrity host 112, content host 48, sweettest 55 passed +
-  1 ignored; clippy `-D warnings` + fmt clean. Ledger: `docs/PASS_7_SCRATCH.md`
-  (branch-only; commit hashes backfill at the M12 wrap).
-- Remaining: M10 (idempotent delete + `list_by_acl_link` liveness parity +
-  `probe_inbox_page`; coordinator, hash HELD), M11 (`role_key_closure`
-  downward-closure enumeration; coordinator, hash HELD), M12 wrap (5-lane
-  review, reject-literal superset check vs pass-6, ledger finalize, STOP).
+- **M10 (`97602f5`, hash HELD)** — idempotent `delete_encrypted_content`
+  (`DeleteContentResponse { was_deleted, delete_action_hash }`; absent target =
+  no-op success), `list_by_acl_link` `include_liveness` rider, `probe_inbox_page`
+  (composite source cursor riding the content page engine; cap-granted).
+- **M11 (`34cad93`, hash HELD)** — `role_key_closure(hive, granted_role)`:
+  dominated role set (Owner⊇Admin⊇Writer⊇Reader) paired with each role's
+  canonical system-role genesis (lowest-b64 pick; identities only, no key
+  material; cap-granted).
+- **M12 (`74d52ea` + wrap)** — five review lanes (rust/security/silent/
+  standards/DRY) ALL APPROVE, fix-now findings applied, deferrals + security
+  dispositions ledgered; targeted DRY sweep (shared sweettest mirrors +
+  `source_positions_of`); reject-literal superset vs pass-6 verified (adds =
+  exactly the ledger's M8/M9 rows). Build-cycle chore (`01c19e1`): sweettest
+  thin debuginfo + runtime DNA-hash pin (`fixtures/expected-dna-hash.txt`).
+- Final gates: integrity host 112, content host 51, clippy `-D warnings` + fmt
+  clean, DNA hash frozen at the M9 pin `uhC0koUno…`. Ledger:
+  `docs/PASS_7_SCRATCH.md` (branch-only; commit hashes backfilled, H2 sketch
+  recorded). Branch PARKED for blessing — NO merge/tag/distribution/mbox.
 
 Also on `main` post-v3.3.0: B10 opt-in liveness rider (`6a3d428`), B11 declined
 zome-side (`16eac91`), meter doc §5.3 (`d30d4f1`); the mbox crown-fix arc closed
 (role-K FULL downward closure + owner-attested identity choice, both answered
-from the shipped pass-6 surface).
+from the shipped pass-6 surface). 2026-07-21 mbox: SharedSecret remote-signal
+trust thread answered (receiver-side `from_agent` stamp confirmed, floor =
+client's own conductor, C1 `c326e62`, v1.0.0+); their fetch-hint proposal
+captured as **B12** in `.newTasks/pass-7-integrity-candidates.md` §B — branch
+copy only, MIRROR to main's copy at the next main-side session.
 
 ## Arc (2026-07-17, evening): pass-6-service-meter shipped (v3.3.0)
 
@@ -301,13 +316,15 @@ DNA `uhC0k2dX`, happ `42dbf9df`) is what humm-tauri currently bundles and runs
   devShell provides `openssl` + `pkg-config`; RustCrypto pinned to holochain's RCs.
 - Run: `cd crates/sweettest && nix develop ../.. --command bash -c 'export LIBCLANG_PATH=<nix clang lib dir>; cargo test -- --test-threads=1'`
   (`LIBCLANG_PATH` e.g. `/nix/store/…clang-18.1.8-lib/lib`).
-- **37 passed + 1 ignored on `main` (v3.3.0); 55 passed + 1 ignored on the
-  pass-7 scratch branch** (12 test binaries; heavyweights: pinned_hosts 9,
-  service_records 9, owner_and_acl 4). Shared wire mirrors live in
-  `tests/support/mod.rs`; NEW mirrors go file-local (support/mod.rs is
-  textually included by every binary — editing it relinks all 12). First
-  compile slow (conductor + wasmer + iroh); use `cargo test -j 1` if linker
-  memory is tight.
+- **37 passed + 1 ignored on `main` (v3.3.0); 61 passed + 1 ignored on the
+  pass-7 scratch branch** (14 test binaries; heavyweights: pinned_hosts 9,
+  service_records 9). Wire-mirror rule: a mirror used by 2+ test files lives in
+  `tests/support/mod.rs` (single source of truth); a mirror used by exactly ONE
+  file stays file-local — support/mod.rs is textually included by every binary,
+  so editing it relinks all 14. `EXPECTED_DNA_HASH` is read at runtime from
+  `fixtures/expected-dna-hash.txt` (re-pin = data edit, zero relinks). Test
+  profile uses `debug = "line-tables-only"` (linker OOM fix); `-j 1` no longer
+  required but harmless.
 
 ## Other branches (committed; pass-6 now landed on main)
 

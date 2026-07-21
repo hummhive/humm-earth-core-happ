@@ -10,10 +10,11 @@
 | M4 (cross-generation lineage) | 9ba4244 | uhC0k7pbRFimR34Mc5CzgC_QTbh3Z-9rdIypgTf-2U0tur2ir7vSd | c27ccbe0a97498c0da9be90a6e378039c731ac12c9f11391eb64052399e29fd7 |
 | M5 (two-generation conductor proof) | 685b0dd | uhC0k7pbRFimR34Mc5CzgC_QTbh3Z-9rdIypgTf-2U0tur2ir7vSd (unchanged; test-only) | c27ccbe0a97498c0da9be90a6e378039c731ac12c9f11391eb64052399e29fd7 |
 | M6 (coordinator riders: reindex + include_liveness) | 63c6ae2 | uhC0k7pbRFimR34Mc5CzgC_QTbh3Z-9rdIypgTf-2U0tur2ir7vSd (UNCHANGED; coordinator-only) | c27ccbe0a97498c0da9be90a6e378039c731ac12c9f11391eb64052399e29fd7 |
-| M8 (durable HiveMembershipIndex) | backfilled at M12 wrap | uhC0kO386QfCNoeQJZ36BbYj8ZFtqvaOjFIbUqZQK8DZo14KsS6o8 | 3edc1dfa021b23c81e1ee94ac1779ac102c386ce9fa9145d2a1e6858ce562ac1 |
-| M9 (load-bearing system-role display_id) | backfilled at M12 wrap | uhC0koUno-fuuCeAdMbEnkHqSWW2k1EHx76Rym8Dt9cyoB4djU_Bv | dff117981cac29f9a20ec14d0309d53d07b9d8dfbe64c1fc07f1cea886ec9891 |
-| M10 (idempotent delete + ACL liveness parity + paged inbox) | backfilled at M12 wrap | uhC0koUno-fuuCeAdMbEnkHqSWW2k1EHx76Rym8Dt9cyoB4djU_Bv (UNCHANGED; coordinator-only) | dff117981cac29f9a20ec14d0309d53d07b9d8dfbe64c1fc07f1cea886ec9891 |
-| M11 (role-K downward-closure enumeration) | backfilled at M12 wrap | uhC0koUno-fuuCeAdMbEnkHqSWW2k1EHx76Rym8Dt9cyoB4djU_Bv (UNCHANGED; coordinator-only) | dff117981cac29f9a20ec14d0309d53d07b9d8dfbe64c1fc07f1cea886ec9891 |
+| M8 (durable HiveMembershipIndex) | 2b24605 | uhC0kO386QfCNoeQJZ36BbYj8ZFtqvaOjFIbUqZQK8DZo14KsS6o8 | 3edc1dfa021b23c81e1ee94ac1779ac102c386ce9fa9145d2a1e6858ce562ac1 |
+| M9 (load-bearing system-role display_id) | 7c3fbd4 | uhC0koUno-fuuCeAdMbEnkHqSWW2k1EHx76Rym8Dt9cyoB4djU_Bv | dff117981cac29f9a20ec14d0309d53d07b9d8dfbe64c1fc07f1cea886ec9891 |
+| M10 (idempotent delete + ACL liveness parity + paged inbox) | 97602f5 | uhC0koUno-fuuCeAdMbEnkHqSWW2k1EHx76Rym8Dt9cyoB4djU_Bv (UNCHANGED; coordinator-only) | dff117981cac29f9a20ec14d0309d53d07b9d8dfbe64c1fc07f1cea886ec9891 |
+| M11 (role-K downward-closure enumeration) | 34cad93 | uhC0koUno-fuuCeAdMbEnkHqSWW2k1EHx76Rym8Dt9cyoB4djU_Bv (UNCHANGED; coordinator-only) | dff117981cac29f9a20ec14d0309d53d07b9d8dfbe64c1fc07f1cea886ec9891 |
+| M12 (review-lane fixes + DRY sweep) | 74d52ea | uhC0koUno-fuuCeAdMbEnkHqSWW2k1EHx76Rym8Dt9cyoB4djU_Bv (UNCHANGED; coordinator docs/nits + test-only) | dff117981cac29f9a20ec14d0309d53d07b9d8dfbe64c1fc07f1cea886ec9891 |
 
 ## New reject literals (accumulates the blessing-time BDD delta)
 | # | literal | validator fn | milestone |
@@ -156,3 +157,22 @@ sweettest therefore drives `create_group_genesis` directly.
   deferred to blessing: the integrity-side `membership.for_agent.clone()`
   allocation nit in `hive/links.rs` (rust lane) — dropping it would move the
   frozen DNA hash.
+
+## DEFERRED — H2 sketch (per-entry-type ACL validators; blessing-time co-design)
+
+H2's targets (invite `max_uses`/HMAC/expiry, DM `pair_hash`, pair-SS reader
+binding) live inside encrypted `EncryptedContent.bytes` the guest never
+decodes. Zome-side validation therefore requires EITHER cleartext header
+fields — which leaks DM-edge confirmation to the DHT (an attacker probing a
+`pair_hash` learns "these two agents have a DM edge") and changes the
+humm-tauri wire shape — OR new typed entries humm-tauri must populate. Both
+need their co-design; neither is buildable zome-only. Also structurally
+unavailable: `max_uses` cannot be made authoritative by counting redemption
+links inside a pure entry validator (links are not part of the entry's
+validation package). The one genuine zome-only ACL gap found while scoping —
+`group_acl` bucket-disjointness enforcement — is a candidate for the NEXT
+sanctioned integrity fork, alongside the deferred hygiene items above
+(Err-vs-Invalid normalization, L21 const interpolation, the
+`membership.for_agent` clone). The DM-existence validator that ships today
+(`validate_directmessage_acl`) plus Public/OpenWrite dispatch remain the
+enforced surface.
