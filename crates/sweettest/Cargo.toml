@@ -32,3 +32,10 @@ holochain_zome_types = { git = "https://github.com/holochain/holochain", rev = "
 tokio = { version = "1.36.0", features = ["full"] }
 serde = { version = "1", features = ["derive"] }
 holochain_trace = { git = "https://github.com/holochain/holochain", rev = "3bdeaccd1c54fa351e76f7347601dfbc061d5bd4" }
+
+# Test binaries statically link the whole conductor stack (holochain +
+# wasmer + iroh); full debuginfo made each of the 12 links slow and
+# memory-hungry enough to OOM the linker. Line tables keep usable
+# backtraces at a fraction of the object size.
+[profile.dev]
+debug = "line-tables-only"

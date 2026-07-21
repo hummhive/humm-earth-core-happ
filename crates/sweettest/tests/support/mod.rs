@@ -16,8 +16,17 @@ use serde::{Deserialize, Serialize};
 /// against (moves at every integrity-touching pass-7 milestone).
 ///
 /// Stale workdir bundles silently mask coordinator and integrity behavior; this
-/// hash gate keeps conductor tests on the intended DNA generation.
-pub const EXPECTED_DNA_HASH: &str = "uhC0koUno-fuuCeAdMbEnkHqSWW2k1EHx76Rym8Dt9cyoB4djU_Bv";
+/// hash gate keeps conductor tests on the intended DNA generation. Read at
+/// RUNTIME from `fixtures/expected-dna-hash.txt`: every test binary textually
+/// includes this module (`mod support;`), so a source-constant re-pin would
+/// recompile + relink all of them; a data-file re-pin relinks none.
+pub fn expected_dna_hash() -> String {
+    let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("fixtures/expected-dna-hash.txt");
+    std::fs::read_to_string(&path)
+        .unwrap_or_else(|e| panic!("read {}: {e}", path.display()))
+        .trim()
+        .to_string()
+}
 
 /// Absolute path to the pre-built DNA, resolved from this crate's manifest dir
 /// so integration tests are cwd-independent.
@@ -31,9 +40,10 @@ pub async fn load_dna() -> DnaFile {
         "load humm_earth_core.dna (build: npm run build:zomes && hc dna pack dnas/humm_earth_core/workdir)",
     );
     let actual = dna.dna_hash().to_string();
+    let expected = expected_dna_hash();
     assert_eq!(
-        actual, EXPECTED_DNA_HASH,
-        "Stale workdir/humm_earth_core.dna — loaded DNA hash {actual} but expected the pass-7 scratch pin {EXPECTED_DNA_HASH}. \
+        actual, expected,
+        "Stale workdir/humm_earth_core.dna — loaded DNA hash {actual} but expected the pass-7 scratch pin {expected}. \
          Rebuild: `nix develop --command bash -c 'npm run build:zomes && hc dna pack dnas/humm_earth_core/workdir'`."
     );
     dna
