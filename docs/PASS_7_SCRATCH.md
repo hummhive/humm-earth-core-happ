@@ -70,7 +70,7 @@
   forged-index poisoning; probe raises 3 distinct hard errors with no unprobed
   downgrade; only `resolve_by_prior_generation` cap-granted; GroupGenesis
   absence proof is per-author ToGenesis; zero swallowed errors in added non-test
-  code. Findings: `local://review-p7-rustsec.md` + `local://review-p7-selfreview.md`.
+  code. The five-lane findings above ARE the review record (no external report).
   ONE MINOR (pre-existing): `create_encrypted_content` is 95 lines — extract a
   `create_discovery_links` helper at blessing, not in this scratch branch.
   VERDICT: APPROVE, no blockers. An independent subagent second opinion remains
