@@ -452,7 +452,9 @@ fn dominated_roles(granted: HiveRole) -> Vec<HiveRole> {
 
 /// Downward role-K closure: the dominated role set for `granted_role`,
 /// each paired with the hive's canonical system-role `GroupGenesis`
-/// action hash (`None` = no system-role group for that role exists yet).
+/// action hash (`None` = no system-role group for that role is visible
+/// from this node yet — the walk is eventually consistent; a premature
+/// duplicate mint is absorbed by the canonical-pick contract).
 /// Returns owner-attested IDENTITIES only — no key material: the client
 /// holds one INDEPENDENT SharedSecret per returned genesis; no role's K
 /// is ever derived from another's. Cross-agent duplicate system-role
@@ -477,11 +479,7 @@ fn canonical_role_group(groups: &[ListedGroup], role: HiveRole) -> Option<Action
     groups
         .iter()
         .filter(|g| g.hive_wide_role == Some(role))
-        .min_by(|a, b| {
-            a.group_genesis_hash
-                .to_string()
-                .cmp(&b.group_genesis_hash.to_string())
-        })
+        .min_by_key(|g| g.group_genesis_hash.to_string())
         .map(|g| g.group_genesis_hash.clone())
 }
 

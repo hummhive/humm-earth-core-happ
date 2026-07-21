@@ -15,17 +15,12 @@ use holochain_zome_types::prelude::ExternIO;
 use support::{
     create_hive, create_open_write_content, my_content, setup_cells, single_conductor_cell_app,
     wait_for_count_links_by_hive_to, wait_for_own_content_id_count, AclSpec, AuthorLinkPageInput,
-    BlobPinHint, BlobPinSignal, BoundedLinkPage, ContentRecord, DynamicLinkPageInput,
-    EncryptedContent, EncryptedContentHeader, HiveLinkPageInput, ListByHiveInput,
-    SendBlobPinSignalInput, UpdateEncryptedContentInput,
+    BlobPinHint, BlobPinSignal, BoundedLinkPage, ContentRecord, DeleteContentResponse,
+    DynamicLinkPageInput, EncryptedContent, EncryptedContentHeader, HiveLinkPageInput,
+    ListByHiveInput, SendBlobPinSignalInput, UpdateEncryptedContentInput,
 };
 
 const BLOB_PROVIDER_CONTENT_TYPE: &str = "hummhive-core-blob-provider-v1";
-
-#[derive(Debug, serde::Deserialize)]
-struct DeleteResponse {
-    was_deleted: bool,
-}
 
 async fn hive_page(
     conductor: &SweetConductor,
@@ -180,7 +175,7 @@ async fn deleted_entry_drops_from_page_records_and_positions() {
     wait_for_count_links_by_hive_to(&conductor, &zome, &hive, content_type, 3).await;
 
     let middle = ActionHash::try_from(created[1].as_str()).expect("hash parses");
-    let deleted: DeleteResponse = conductor
+    let deleted: DeleteContentResponse = conductor
         .call(&zome, "delete_encrypted_content", middle.clone())
         .await;
     assert!(deleted.was_deleted, "existing target must be really deleted");

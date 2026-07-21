@@ -124,7 +124,9 @@ pub use migration::{
     MigrationMarkerV1, MigrationMarkerV2, MIGRATION_MARKER_CONTENT_TYPE_PREFIX,
     MIGRATION_MARKER_SCHEMA_TAG,
 };
-pub(crate) use paging::{decode_paired_cursor, page_links, resolve_page_limit};
+pub(crate) use paging::{
+    decode_paired_cursor, page_links, resolve_page_limit, source_positions_of,
+};
 pub use paging::{
     get_my_content_by_id_link, list_by_author_page, list_by_dynamic_link_page,
     list_by_hive_link_page, AuthorLinkPageInput, BoundedLinkPage, DynamicLinkPageInput,

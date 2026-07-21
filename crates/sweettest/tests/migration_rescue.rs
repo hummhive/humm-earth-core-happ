@@ -14,8 +14,8 @@ use holochain::sweettest::{await_consistency_s, SweetConductor, SweetZome};
 use serde::de::IgnoredAny;
 use serde::Serialize;
 use support::{
-    create_hive, grant_hive_membership, setup_cells, single_conductor_app, GenesisResponse,
-    ListedHive,
+    create_hive, grant_hive_membership, setup_cells, single_conductor_app,
+    CreateGroupGenesisInput, GenesisResponse, ListedHive,
 };
 
 #[derive(Debug, Serialize)]
@@ -47,14 +47,6 @@ fn dummy_v2_marker() -> MigrationMarkerV2 {
         new_hive_genesis_hash_base64: None,
         new_hive_genesis_display_id: None,
     }
-}
-
-#[derive(Debug, Serialize)]
-struct CreateGroupGenesisInput {
-    hive_genesis_hash: ActionHash,
-    display_id: String,
-    hive_wide_role: Option<String>,
-    creator_hive_membership_hash: Option<ActionHash>,
 }
 
 async fn create_group(

@@ -11,7 +11,7 @@ use holochain_types::prelude::UnsafeBytes;
 use serde::{Deserialize, Serialize};
 use support::{
 	create_hive, owner_only_acl, single_conductor_cell_app, AclSpec, CreateEncryptedContentInput,
-	CreateResponse, EncryptedContent, EncryptedContentHeader,
+	CreateResponse, DeleteContentResponse, EncryptedContent, EncryptedContentHeader,
 };
 
 const POLL_ATTEMPTS: usize = 200;
@@ -134,11 +134,6 @@ async fn liveness_flag_marks_live_roots_and_defaults_off() {
 	);
 }
 
-#[derive(Debug, serde::Deserialize)]
-struct DeleteResponse {
-	was_deleted: bool,
-}
-
 #[tokio::test(flavor = "multi_thread")]
 async fn deleted_content_is_absent_not_flagged_tombstoned() {
 	let (conductor, _cell, zome) = single_conductor_cell_app().await;
@@ -146,7 +141,7 @@ async fn deleted_content_is_absent_not_flagged_tombstoned() {
 	let author = zome.cell_id().agent_pubkey().to_string();
 	let doomed = create_fixed_bytes(&conductor, &zome, &hive, "doomed", vec![2u8, 2], None).await;
 
-	let deleted: DeleteResponse = conductor
+	let deleted: DeleteContentResponse = conductor
 		.call(
 			&zome,
 			"delete_encrypted_content",

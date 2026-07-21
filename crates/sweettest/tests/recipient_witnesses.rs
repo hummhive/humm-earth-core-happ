@@ -1,32 +1,12 @@
 mod support;
 
-use holo_hash::{ActionHash, AgentPubKey};
 use holochain::sweettest::await_consistency_s;
 use holochain_types::prelude::UnsafeBytes;
-use serde::Serialize;
 use support::{
     create_hive, setup_cells, Acl, AclBucket, AclByGroupGenesis, AclSpec,
-    CreateEncryptedContentInput, CreateResponse, GenesisResponse, MembershipResponse,
-    RecipientWitness,
+    CreateEncryptedContentInput, CreateGroupGenesisInput, CreateGroupMembershipInput,
+    CreateResponse, GenesisResponse, MembershipResponse, RecipientWitness,
 };
-
-#[derive(Debug, Serialize)]
-struct CreateGroupGenesisInput {
-    hive_genesis_hash: ActionHash,
-    display_id: String,
-    hive_wide_role: Option<String>,
-    creator_hive_membership_hash: Option<ActionHash>,
-}
-
-#[derive(Debug, Serialize)]
-struct CreateGroupMembershipInput {
-    group_genesis_hash: ActionHash,
-    for_agent: AgentPubKey,
-    role: String,
-    grantor_membership_hash: Option<ActionHash>,
-    grantor_hive_membership_hash: Option<ActionHash>,
-    expiry: Option<i64>,
-}
 
 #[tokio::test(flavor = "multi_thread")]
 async fn hivegroup_recipient_witness_accepts_real_group_membership() {

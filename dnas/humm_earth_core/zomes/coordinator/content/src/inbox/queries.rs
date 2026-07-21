@@ -4,7 +4,7 @@ use content_integrity::*;
 use hdk::prelude::*;
 
 use crate::encrypted_content::{
-    decode_paired_cursor, page_links, resolve_page_limit, SourcePosition,
+    decode_paired_cursor, page_links, resolve_page_limit, source_positions_of, SourcePosition,
 };
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -136,13 +136,7 @@ pub fn probe_inbox_page(input: ProbeInboxPageInput) -> ExternResult<InboxPage> {
         .filter(|link| admits_event_filter(link, input.event_filter))
         .collect();
     let (selected, truncated) = page_links(filtered, input.since_ts, after_hash, limit);
-    let source_positions: Vec<SourcePosition> = selected
-        .iter()
-        .map(|link| SourcePosition {
-            timestamp_micros: link.timestamp.as_micros(),
-            action_hash: link.create_link_hash.to_string(),
-        })
-        .collect();
+    let source_positions = source_positions_of(&selected);
     let items: Vec<InboxItem> = selected
         .into_iter()
         .filter_map(inbox_item_from_link)

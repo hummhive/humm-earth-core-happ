@@ -137,3 +137,22 @@ sweettest therefore drives `create_group_genesis` directly.
   missing role groups. `role_key_closure` returns identities only — no key
   material, no cross-role derivation (anti-HKDF per the role-K ruling) — and
   is cap-granted beside the other public DHT-link readers.
+- **M12 security-lane dispositions (verdict APPROVE; every finding closed):**
+  S-1 `was_deleted:false` conflates "already tombstoned" with "target
+  unresolvable from this node" — FIXED by doc-contract on the extern (callers
+  deleting cross-author content re-probe rather than treat it as terminal); a
+  behavioral fix is impossible single-node (network `get` cannot disambiguate)
+  and remediation only ever deletes self-authored originals, which resolve
+  locally. S-2 unsolicited `create_hive_membership` grants permanently
+  populate the grantee's `HiveMembershipIndex` base with rows only the
+  grantor can retract — ACCEPTED residual inherent to the author-only-delete
+  design (UI griefing only; zero privilege escalation); mitigation is
+  client-side (hide-list keyed on genesis hash) or a future
+  grantee-acknowledgement pass; humm-tauri owns the suppression UX at
+  blessing handoff. S-3 M8 create validator hard-errors (validation-retry
+  limbo) instead of `Invalid` on malformed link targets — DEFERRED: identical
+  to the pre-existing `group/links.rs` pattern; normalize codebase-wide at a
+  future sanctioned pass (this branch's hash is frozen post-M9). Also
+  deferred to blessing: the integrity-side `membership.for_agent.clone()`
+  allocation nit in `hive/links.rs` (rust lane) — dropping it would move the
+  frozen DNA hash.

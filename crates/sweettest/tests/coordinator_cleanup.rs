@@ -15,8 +15,8 @@ use serde::de::IgnoredAny;
 use serde::Serialize;
 use support::{
     create_open_write_content, single_conductor_app, single_conductor_cell_app,
-    wait_for_count_links_by_hive_to, CountByHiveInput, CreateHiveGenesisInput, GenesisResponse,
-    ListByHiveInput,
+    wait_for_count_links_by_hive_to, CountByHiveInput, CreateHiveGenesisInput,
+    DeleteContentResponse, GenesisResponse, ListByHiveInput,
 };
 
 #[derive(Debug, Serialize)]
@@ -29,11 +29,6 @@ struct ListByDynamicLinkInput {
 #[derive(Debug, Serialize)]
 struct GetMessagesSinceInput {
     since_seq: u32,
-}
-
-#[derive(Debug, serde::Deserialize)]
-struct DeleteResponse {
-    was_deleted: bool,
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -121,7 +116,7 @@ async fn delete_encrypted_content_cleans_up_discovery_links() {
     // validators pass; the local-chain sweep finds and removes them).
     let content_ah = ActionHash::try_from(created_hash.as_str())
         .expect("create response hash parses as an ActionHash");
-    let deleted: DeleteResponse = conductor
+    let deleted: DeleteContentResponse = conductor
         .call(&zome, "delete_encrypted_content", content_ah)
         .await;
     assert!(deleted.was_deleted, "existing target must be really deleted");

@@ -253,19 +253,25 @@ fn link_page(
         GetStrategy::Network,
     )?;
     let (selected, truncated) = page_links(links, since_ts, after_hash, limit);
-    let source_positions: Vec<SourcePosition> = selected
-        .iter()
-        .map(|link| SourcePosition {
-            timestamp_micros: link.timestamp.as_micros(),
-            action_hash: link.create_link_hash.to_string(),
-        })
-        .collect();
+    let source_positions = source_positions_of(&selected);
     Ok(BoundedLinkPage {
         source_count: source_positions.len(),
         source_positions,
         records: apply_liveness(resolve_targets(selected), include_liveness),
         truncated,
     })
+}
+
+/// One SOURCE-truth position per selected link (present even when the
+/// target never resolves, so callers cursor past poison rows).
+pub(crate) fn source_positions_of(links: &[Link]) -> Vec<SourcePosition> {
+    links
+        .iter()
+        .map(|link| SourcePosition {
+            timestamp_micros: link.timestamp.as_micros(),
+            action_hash: link.create_link_hash.to_string(),
+        })
+        .collect()
 }
 
 pub(crate) fn resolve_page_limit(limit: Option<usize>) -> ExternResult<usize> {

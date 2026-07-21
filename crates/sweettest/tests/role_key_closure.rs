@@ -9,18 +9,10 @@ use std::time::Duration;
 use holo_hash::ActionHash;
 use holochain::sweettest::{SweetConductor, SweetZome};
 use serde::{Deserialize, Serialize};
-use support::{create_hive, single_conductor_cell_app, GenesisResponse};
+use support::{create_hive, single_conductor_cell_app, CreateGroupGenesisInput, GenesisResponse};
 
 const POLL_ATTEMPTS: usize = 200;
 const POLL_INTERVAL: Duration = Duration::from_millis(50);
-
-#[derive(Debug, Serialize)]
-struct CreateGroupGenesisInput {
-    hive_genesis_hash: ActionHash,
-    display_id: String,
-    hive_wide_role: Option<String>,
-    creator_hive_membership_hash: Option<ActionHash>,
-}
 
 #[derive(Debug, Serialize)]
 struct RoleKeyClosureInput {

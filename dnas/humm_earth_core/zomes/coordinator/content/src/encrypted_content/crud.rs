@@ -442,6 +442,11 @@ pub struct DeleteContentResponse {
 /// a no-op success (`was_deleted: false`), so client retry loops and
 /// remediation re-runs never error on an already-met goal. Any error
 /// other than the two wire-stable absent literals still propagates.
+///
+/// Contract: a network `get` cannot distinguish tombstoned from
+/// not-yet-propagated, so `was_deleted: false` means "goal met OR target
+/// currently unresolvable from this node" — callers deleting content they
+/// did not author SHOULD re-probe later rather than treat it as terminal.
 #[hdk_extern]
 pub fn delete_encrypted_content(
     original_encrypted_content_hash: ActionHash,

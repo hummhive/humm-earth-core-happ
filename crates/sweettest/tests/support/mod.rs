@@ -178,6 +178,69 @@ pub async fn grant_hive_membership(
     response.hash
 }
 
+/// Mirror of the coordinator `DeleteContentResponse`.
+#[derive(Debug, Deserialize)]
+pub struct DeleteContentResponse {
+    pub was_deleted: bool,
+    #[serde(default)]
+    pub delete_action_hash: Option<ActionHash>,
+}
+
+/// Mirror of the coordinator `CreateGroupGenesisInput`.
+#[derive(Debug, Serialize)]
+pub struct CreateGroupGenesisInput {
+    pub hive_genesis_hash: ActionHash,
+    pub display_id: String,
+    pub hive_wide_role: Option<String>,
+    pub creator_hive_membership_hash: Option<ActionHash>,
+}
+
+/// Mirror of the coordinator `CreateGroupMembershipInput`.
+#[derive(Debug, Serialize)]
+pub struct CreateGroupMembershipInput {
+    pub group_genesis_hash: ActionHash,
+    pub for_agent: AgentPubKey,
+    pub role: String,
+    pub grantor_membership_hash: Option<ActionHash>,
+    pub grantor_hive_membership_hash: Option<ActionHash>,
+    pub expiry: Option<i64>,
+}
+
+/// Mirror of the coordinator `FindOrCreateGroupGenesisResponse` subset.
+#[derive(Debug, Deserialize)]
+pub struct FindOrCreateGenesisResponse {
+    pub response: GenesisResponse,
+    pub was_created: bool,
+}
+
+const GROUP_VISIBILITY_POLL_ATTEMPTS: usize = 200;
+const GROUP_VISIBILITY_POLL_INTERVAL: Duration = Duration::from_millis(50);
+
+#[derive(Debug, Deserialize)]
+struct ListedGroupRow {
+    group_genesis_hash: ActionHash,
+}
+
+/// Poll until `group` appears in `list_groups_in_hive(hive)` — HiveToGroups
+/// links integrate on the cascade's own cadence after commit.
+pub async fn wait_for_group_visible(
+    conductor: &SweetConductor,
+    zome: &SweetZome,
+    hive: &ActionHash,
+    group: &ActionHash,
+) {
+    for _ in 0..GROUP_VISIBILITY_POLL_ATTEMPTS {
+        let groups: Vec<ListedGroupRow> = conductor
+            .call(zome, "list_groups_in_hive", hive.clone())
+            .await;
+        if groups.iter().any(|g| &g.group_genesis_hash == group) {
+            return;
+        }
+        tokio::time::sleep(GROUP_VISIBILITY_POLL_INTERVAL).await;
+    }
+    panic!("group {group} never became visible in hive {hive}");
+}
+
 // --- Encrypted-content wire mirrors (shared by conductor tests) --------------
 
 #[derive(Debug, Serialize)]

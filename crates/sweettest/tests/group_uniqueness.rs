@@ -5,40 +5,17 @@
 
 mod support;
 
-use std::time::Duration;
-
 use holo_hash::ActionHash;
-use holochain::sweettest::SweetConductor;
-use holochain::sweettest::SweetZome;
-use serde::{Deserialize, Serialize};
-use support::{create_hive, single_conductor_cell_app, GenesisResponse};
+use support::{
+	create_hive, single_conductor_cell_app, wait_for_group_visible, CreateGroupGenesisInput,
+	FindOrCreateGenesisResponse, GenesisResponse,
+};
 
 const UNIQUENESS_REJECT: &str =
 	"a GroupGenesis for this hive and hive-wide role already exists on your chain";
 const DISPLAY_ID_REJECT: &str =
 	"a system-role GroupGenesis with this display_id already exists in this hive on your chain";
 const DISPLAY_ID_BOUNDS_REJECT: &str = "system-role GroupGenesis display_id must be 1-256 chars";
-const POLL_ATTEMPTS: usize = 200;
-const POLL_INTERVAL: Duration = Duration::from_millis(50);
-
-#[derive(Debug, Serialize)]
-struct CreateGroupGenesisInput {
-	hive_genesis_hash: ActionHash,
-	display_id: String,
-	hive_wide_role: Option<String>,
-	creator_hive_membership_hash: Option<ActionHash>,
-}
-
-#[derive(Debug, Deserialize)]
-struct FindOrCreateGenesisResponse {
-	response: GenesisResponse,
-	was_created: bool,
-}
-
-#[derive(Debug, Deserialize)]
-struct ListedGroup {
-	group_genesis_hash: ActionHash,
-}
 
 fn system_role_group(hive: &ActionHash, role: &str) -> CreateGroupGenesisInput {
 	system_role_group_with_display(hive, role, &format!("{role}-group"))
@@ -66,23 +43,6 @@ fn custom_group(hive: &ActionHash, display_id: &str) -> CreateGroupGenesisInput 
 	}
 }
 
-async fn wait_for_group_visible(
-	conductor: &SweetConductor,
-	zome: &SweetZome,
-	hive: &ActionHash,
-	group: &ActionHash,
-) {
-	for _ in 0..POLL_ATTEMPTS {
-		let groups: Vec<ListedGroup> = conductor
-			.call(zome, "list_groups_in_hive", hive.clone())
-			.await;
-		if groups.iter().any(|g| &g.group_genesis_hash == group) {
-			return;
-		}
-		tokio::time::sleep(POLL_INTERVAL).await;
-	}
-	panic!("group {group} never became visible in hive {hive}");
-}
 
 #[tokio::test(flavor = "multi_thread")]
 async fn duplicate_system_role_genesis_rejects_on_one_chain() {

@@ -15,8 +15,9 @@ use serde::de::IgnoredAny;
 use serde::{Deserialize, Serialize};
 use support::{
     create_hive, create_open_write_content, owner_only_acl, setup_cells, single_conductor_cell_app,
-    wait_for_count_links_by_hive_to, wait_for_own_content_id_count, AclSpec,
-    CreateEncryptedContentInput, CreateResponse, GenesisResponse, MembershipResponse,
+    wait_for_count_links_by_hive_to, wait_for_group_visible, wait_for_own_content_id_count,
+    AclSpec, CreateEncryptedContentInput, CreateGroupGenesisInput, CreateGroupMembershipInput,
+    CreateResponse, FindOrCreateGenesisResponse, GenesisResponse, MembershipResponse,
 };
 
 const SS_CONTENT_TYPE: &str = "hummhive-elemental-secrets-v1";
@@ -32,33 +33,9 @@ struct FindOrCreateContentResponse {
 }
 
 #[derive(Debug, Deserialize)]
-struct FindOrCreateGenesisResponse {
-    response: GenesisResponse,
-    was_created: bool,
-}
-
-#[derive(Debug, Deserialize)]
 struct FindOrCreateMembershipResponse {
     response: MembershipResponse,
     was_created: bool,
-}
-
-#[derive(Debug, Serialize)]
-struct CreateGroupGenesisInput {
-    hive_genesis_hash: ActionHash,
-    display_id: String,
-    hive_wide_role: Option<String>,
-    creator_hive_membership_hash: Option<ActionHash>,
-}
-
-#[derive(Debug, Serialize)]
-struct CreateGroupMembershipInput {
-    group_genesis_hash: ActionHash,
-    for_agent: AgentPubKey,
-    role: String,
-    grantor_membership_hash: Option<ActionHash>,
-    grantor_hive_membership_hash: Option<ActionHash>,
-    expiry: Option<i64>,
 }
 
 #[derive(Debug, Serialize)]
@@ -374,29 +351,6 @@ async fn find_or_create_group_genesis_and_membership_idempotent() {
         role_change.was_created,
         "a different role is a legitimate new grant"
     );
-}
-
-#[derive(Debug, Deserialize)]
-struct ListedGroup {
-    group_genesis_hash: ActionHash,
-}
-
-async fn wait_for_group_visible(
-    conductor: &SweetConductor,
-    zome: &SweetZome,
-    hive: &ActionHash,
-    group: &ActionHash,
-) {
-    for _ in 0..POLL_ATTEMPTS {
-        let groups: Vec<ListedGroup> = conductor
-            .call(zome, "list_groups_in_hive", hive.clone())
-            .await;
-        if groups.iter().any(|g| &g.group_genesis_hash == group) {
-            return;
-        }
-        tokio::time::sleep(POLL_INTERVAL).await;
-    }
-    panic!("group {group} never became visible in hive listing");
 }
 
 async fn wait_for_membership_visible(

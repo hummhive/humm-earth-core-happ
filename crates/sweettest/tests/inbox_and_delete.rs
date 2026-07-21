@@ -12,18 +12,12 @@ use holochain_types::prelude::UnsafeBytes;
 use serde::{Deserialize, Serialize};
 use support::{
     create_hive, create_open_write_content, single_conductor_cell_app, Acl, AclByGroupGenesis,
-    AclSpec, CreateEncryptedContentInput, CreateResponse, GenesisResponse, SourcePosition,
+    AclSpec, CreateEncryptedContentInput, CreateGroupGenesisInput, CreateResponse,
+    DeleteContentResponse, GenesisResponse, SourcePosition,
 };
 
 const POLL_ATTEMPTS: usize = 200;
 const POLL_INTERVAL: Duration = Duration::from_millis(50);
-
-#[derive(Debug, Deserialize)]
-struct DeleteResponse {
-    was_deleted: bool,
-    #[serde(default)]
-    delete_action_hash: Option<ActionHash>,
-}
 
 #[derive(Debug, Serialize)]
 struct ListByAclInput {
@@ -74,18 +68,10 @@ async fn delete_content(
     conductor: &SweetConductor,
     zome: &SweetZome,
     hash: &ActionHash,
-) -> DeleteResponse {
+) -> DeleteContentResponse {
     conductor
         .call(zome, "delete_encrypted_content", hash.clone())
         .await
-}
-
-#[derive(Debug, Serialize)]
-struct CreateGroupGenesisInput {
-    hive_genesis_hash: ActionHash,
-    display_id: String,
-    hive_wide_role: Option<String>,
-    creator_hive_membership_hash: Option<ActionHash>,
 }
 
 /// HiveGroup content is the ONLY AclSpec that writes `HummContent*` links;
