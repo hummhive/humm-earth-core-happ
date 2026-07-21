@@ -11,8 +11,8 @@
 //!   unexpired membership. Replaces the forgeable
 //!   `GroupMemberList`-keyed roster lookups in humm-tauri.
 //! - [`list_my_groups`] enumerates every group the local agent
-//!   founded or holds a membership in, derived from the agent's
-//!   `Inbox::GroupInvite` link set — exactly mirroring `list_my_hives`.
+//!   founded (self-Inbox `GroupInvite` links) or holds a membership
+//!   in (durable `AgentToGroupMemberships` index).
 //! - [`list_groups_in_hive`] enumerates every group in a hive, derived
 //!   from the `HiveToGroups` link set on the hive genesis.
 //! - [`get_group_genesis`] resolves a `GroupGenesis` by action hash for
@@ -212,15 +212,15 @@ pub struct ListedGroup {
 /// (still-valid) membership in. Mirrors `list_my_hives` one level down
 /// the sovereignty hierarchy.
 ///
-/// Walks `Inbox` links tagged `InboxEvent::GroupInvite` on the local
-/// agent's pubkey; for each:
-/// - target = `GroupGenesis` ⇒ agent founded that group (`role: None`),
-///   gated by an author guard (see [`resolve_genesis_invite`]).
-/// - target = `GroupMembership` with `for_agent == me` and unexpired ⇒
-///   surface group genesis + role.
+/// Founded groups come from the agent's self-Inbox `GroupInvite` links
+/// (author-guarded; see [`resolve_genesis_invite`]). Granted groups come
+/// from the durable `AgentToGroupMemberships` index (pass-7: rerouted
+/// from Inbox `GroupInvite` so a swept or retracted inbox no longer
+/// erases group discovery); each unexpired membership for the caller
+/// surfaces its group genesis + role.
 ///
 /// **Dedup contract.** When a member's role changes, each
-/// `create_group_membership` writes a fresh `Inbox::GroupInvite` link,
+/// `create_group_membership` writes a fresh `AgentToGroupMemberships` link,
 /// so the same `group_genesis_hash` may appear multiple times in the
 /// output (one entry per membership issuance). humm-tauri SHOULD
 /// deduplicate on `group_genesis_hash` callsite-side and pair with
@@ -230,15 +230,16 @@ pub struct ListedGroup {
 pub fn list_my_groups(_: ()) -> ExternResult<Vec<ListedGroup>> {
     let my_pubkey = agent_info()?.agent_initial_pubkey;
     let invite_byte = InboxEvent::GroupInvite.as_byte();
-    let links = get_links(
-        LinkQuery::try_new(AnyLinkableHash::from(my_pubkey.clone()), LinkTypes::Inbox)?,
-        GetStrategy::Network,
-    )?;
-
     let now = sys_time()?;
     let mut out: Vec<ListedGroup> = Vec::new();
 
-    for link in links {
+    // Founded rows stay Inbox-based (Wave-2 residual): the shipped sweep
+    // consumes only DmCreate, and a founder re-derives from their own chain.
+    let invite_links = get_links(
+        LinkQuery::try_new(AnyLinkableHash::from(my_pubkey.clone()), LinkTypes::Inbox)?,
+        GetStrategy::Network,
+    )?;
+    for link in invite_links {
         if link.tag.0.first().copied() != Some(invite_byte) {
             continue;
         }
@@ -250,8 +251,23 @@ pub fn list_my_groups(_: ()) -> ExternResult<Vec<ListedGroup>> {
         };
         if let Some(listed) = resolve_genesis_invite(&record, &target_ah, &my_pubkey)? {
             out.push(listed);
-            continue;
         }
+    }
+
+    let membership_links = get_links(
+        LinkQuery::try_new(
+            AnyLinkableHash::from(my_pubkey.clone()),
+            LinkTypes::AgentToGroupMemberships,
+        )?,
+        GetStrategy::Network,
+    )?;
+    for link in membership_links {
+        let Some(target_ah) = link.target.into_action_hash() else {
+            continue;
+        };
+        let Some(record) = get(target_ah, GetOptions::network())? else {
+            continue;
+        };
         if let Some(listed) = resolve_membership_invite(&record, &my_pubkey, &now)? {
             out.push(listed);
         }

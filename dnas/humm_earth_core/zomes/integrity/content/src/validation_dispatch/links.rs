@@ -46,6 +46,9 @@ pub(super) fn dispatch_create_link(
             validate_create_link_invite_to_redemptions(action, base, target, tag)
         }
         LinkTypes::Lineage => validate_create_link_lineage(action, base, target, tag),
+        LinkTypes::HiveMembershipIndex => {
+            validate_create_link_hive_membership_index(action, base, target, tag)
+        }
         LinkTypes::OriginalHashPointer => {
             validate_create_link_original_hash_pointer(action, base, target, tag)
         }
@@ -129,6 +132,9 @@ pub(super) fn dispatch_delete_link(
         }
         LinkTypes::Lineage => {
             validate_delete_link_lineage(action, original_action, base, target, tag)
+        }
+        LinkTypes::HiveMembershipIndex => {
+            validate_delete_link_hive_membership_index(action, original_action)
         }
         LinkTypes::OriginalHashPointer => {
             validate_delete_link_original_hash_pointer(action, original_action, base, target, tag)

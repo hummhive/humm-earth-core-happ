@@ -10,6 +10,7 @@
 | M4 (cross-generation lineage) | 9ba4244 | uhC0k7pbRFimR34Mc5CzgC_QTbh3Z-9rdIypgTf-2U0tur2ir7vSd | c27ccbe0a97498c0da9be90a6e378039c731ac12c9f11391eb64052399e29fd7 |
 | M5 (two-generation conductor proof) | 685b0dd | uhC0k7pbRFimR34Mc5CzgC_QTbh3Z-9rdIypgTf-2U0tur2ir7vSd (unchanged; test-only) | c27ccbe0a97498c0da9be90a6e378039c731ac12c9f11391eb64052399e29fd7 |
 | M6 (coordinator riders: reindex + include_liveness) | 63c6ae2 | uhC0k7pbRFimR34Mc5CzgC_QTbh3Z-9rdIypgTf-2U0tur2ir7vSd (UNCHANGED; coordinator-only) | c27ccbe0a97498c0da9be90a6e378039c731ac12c9f11391eb64052399e29fd7 |
+| M8 (durable HiveMembershipIndex) | backfilled at M12 wrap | uhC0kO386QfCNoeQJZ36BbYj8ZFtqvaOjFIbUqZQK8DZo14KsS6o8 | 3edc1dfa021b23c81e1ee94ac1779ac102c386ce9fa9145d2a1e6858ce562ac1 |
 
 ## New reject literals (accumulates the blessing-time BDD delta)
 | # | literal | validator fn | milestone |
@@ -38,6 +39,11 @@
 | — | `Lineage link base does not match the target's lineage claim` | `validate_create_link_lineage` | M4 |
 | — | `Lineage link target has no lineage claim in its header` | `validate_create_link_lineage` | M4 |
 | — | `Lineage link delete must be authored by the link creator` | `validate_delete_link_lineage` | M4 |
+| — | `HiveMembershipIndex tag must be empty` | `validate_create_link_hive_membership_index` | M8 |
+| — | `HiveMembershipIndex target must be a HiveMembership or HiveGenesis` | `validate_create_link_hive_membership_index` | M8 |
+| — | `HiveMembershipIndex base must be the membership's for_agent` | `validate_create_link_hive_membership_index` | M8 |
+| — | `HiveMembershipIndex base must be the hive genesis author` | `validate_create_link_hive_membership_index` | M8 |
+| — | `HiveMembershipIndex link may only be deleted by its author (creator: …, attempted by: …)` | `validate_delete_link_hive_membership_index` | M8 |
 
 ## Decisions taken mid-build
 
@@ -59,6 +65,17 @@
   `acl_path_hash`) builds the shared `[hive, content_type, key]` path for both
   the ACL fan-out and the Dynamic-label reindex; `acl_fanout` centralizes the
   Owner/Admin/Writer/Reader dominance so create and reindex never drift.
+- **M8 discovery split (durable index vs inbox):** hive discovery (4 hive
+  readers) + `list_my_groups` granted-half rerouted to the durable, author-bound,
+  author-only-deletable indexes (`HiveMembershipIndex`, `AgentToGroupMemberships`);
+  Inbox `HiveInvite`/`GroupInvite` writes stay as transient notifications.
+  Founded-GROUP discovery stays self-Inbox — accepted Wave-2 residual: the shipped
+  humm-tauri sweep consumes only `DmCreate`, and a founder re-derives founded
+  groups from their own source chain.
+- **M8 author-equality literal reuse:** the index create validator's
+  link-author-must-equal-target-author gate reuses `require_link_author_is`'s
+  existing generic literal, so it is deliberately absent from the new-literal
+  table (no new wire literal minted).
 - **Review status (M7):** the independent `reviewer` subagent could not run —
   five dispatch attempts hit an account HTTP-429 rate limit with a fixed ~2h
   reset window (retry-after held ~7200s across ~15 min of attempts). Per owner

@@ -70,6 +70,10 @@ pub enum LinkTypes {
     /// Pass-7 lineage reverse-lookup. Appended at the END to keep
     /// existing link-type indices (0..=17) stable.
     Lineage,
+    /// Pass-7 durable hive-membership index (author-bound create,
+    /// author-only delete). Appended at the END to keep existing
+    /// link-type indices (0..=18) stable.
+    HiveMembershipIndex,
 }
 
 #[hdk_extern]

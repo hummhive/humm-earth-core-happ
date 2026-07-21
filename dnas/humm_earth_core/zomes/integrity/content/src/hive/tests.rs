@@ -314,3 +314,67 @@ fn hive_grant_window_unconstrained_for_permanent_new_grant_when_no_witness() {
         "expected Valid, got {result:?}",
     );
 }
+
+// ---------------------------------------------------------------------
+// Pass-7 M8 — durable HiveMembershipIndex link validators
+// ---------------------------------------------------------------------
+
+fn make_index_create_link(author: AgentPubKey) -> CreateLink {
+    CreateLink {
+        author,
+        timestamp: Timestamp(0),
+        action_seq: 1,
+        prev_action: action_hash(0),
+        base_address: AnyLinkableHash::from(agent_pubkey(1)),
+        target_address: AnyLinkableHash::from(action_hash(5)),
+        zome_index: 0.into(),
+        link_type: 19.into(),
+        tag: LinkTag::new(vec![]),
+        weight: Default::default(),
+    }
+}
+
+#[test]
+fn membership_index_create_rejects_nonempty_tag() {
+    let alice = agent_pubkey(1);
+    let verdict = validate_create_link_hive_membership_index(
+        make_index_create_link(alice.clone()),
+        AnyLinkableHash::from(alice),
+        AnyLinkableHash::from(action_hash(5)),
+        LinkTag::new(vec![7]),
+    )
+    .expect("tag check precedes any record fetch");
+    let ValidateCallbackResult::Invalid(msg) = verdict else {
+        panic!("non-empty tag must be invalid; got {verdict:?}");
+    };
+    assert!(msg.contains("HiveMembershipIndex tag must be empty"));
+}
+
+fn make_index_delete_link(author: AgentPubKey) -> DeleteLink {
+    DeleteLink {
+        author,
+        timestamp: Timestamp(0),
+        action_seq: 2,
+        prev_action: action_hash(0),
+        base_address: AnyLinkableHash::from(agent_pubkey(1)),
+        link_add_address: action_hash(1),
+    }
+}
+
+#[test]
+fn membership_index_delete_is_author_only() {
+    let alice = agent_pubkey(1);
+    let bob = agent_pubkey(2);
+    let create = make_index_create_link(alice.clone());
+    assert!(matches!(
+        validate_delete_link_hive_membership_index(make_index_delete_link(alice), create.clone())
+            .expect("pure path"),
+        ValidateCallbackResult::Valid
+    ));
+    let verdict = validate_delete_link_hive_membership_index(make_index_delete_link(bob), create)
+        .expect("pure path");
+    let ValidateCallbackResult::Invalid(msg) = verdict else {
+        panic!("foreign-author delete must be invalid; got {verdict:?}");
+    };
+    assert!(msg.contains("HiveMembershipIndex link may only be deleted by its author"));
+}

@@ -5,13 +5,13 @@
 //!   by coordinator writes to stamp `author_membership_hash` into
 //!   `EncryptedContentHeader`.
 //! - [`list_my_hives`] enumerates every hive the local agent founded
-//!   or holds a membership in, derived from the agent's Inbox
-//!   `HiveInvite` link set.
+//!   or holds a membership in, derived from the agent's durable
+//!   `HiveMembershipIndex` link set.
 //!
-//! Both queries walk Inbox links tagged `InboxEvent::HiveInvite`,
-//! resolve the link targets to either `HiveGenesis` (self-founded) or
-//! `HiveMembership` (granted), and project the result. This keeps the
-//! discovery layer uniform with the I-C inbox infrastructure.
+//! Both queries walk `HiveMembershipIndex` links (pass-7: rerouted from
+//! Inbox `HiveInvite`, which a DM sweep could retract), resolve the
+//! targets to either `HiveGenesis` (self-founded) or `HiveMembership`
+//! (granted), and project the result.
 
 use content_integrity::*;
 use hdk::prelude::*;
@@ -89,19 +89,17 @@ pub struct GetLatestMembershipInput {
 pub fn get_latest_membership(
     input: GetLatestMembershipInput,
 ) -> ExternResult<Option<HiveMembershipResponse>> {
-    let invite_byte = InboxEvent::HiveInvite.as_byte();
     let links = get_links(
-        LinkQuery::try_new(AnyLinkableHash::from(input.agent.clone()), LinkTypes::Inbox)?,
+        LinkQuery::try_new(
+            AnyLinkableHash::from(input.agent.clone()),
+            LinkTypes::HiveMembershipIndex,
+        )?,
         GetStrategy::Network,
     )?;
     let now = sys_time()?;
 
     let mut best: Option<(Timestamp, HiveMembership, ActionHash)> = None;
     for link in links {
-        // Filter by tag byte.
-        if link.tag.0.first().copied() != Some(invite_byte) {
-            continue;
-        }
         let Some(target_ah) = link.target.into_action_hash() else {
             continue;
         };
@@ -157,18 +155,17 @@ pub fn get_latest_membership(
 pub fn get_latest_membership_local(
     input: GetLatestMembershipInput,
 ) -> ExternResult<Option<HiveMembershipResponse>> {
-    let invite_byte = InboxEvent::HiveInvite.as_byte();
     let links = get_links(
-        LinkQuery::try_new(AnyLinkableHash::from(input.agent.clone()), LinkTypes::Inbox)?,
+        LinkQuery::try_new(
+            AnyLinkableHash::from(input.agent.clone()),
+            LinkTypes::HiveMembershipIndex,
+        )?,
         GetStrategy::Local,
     )?;
     let now = sys_time()?;
 
     let mut best: Option<(Timestamp, HiveMembership, ActionHash)> = None;
     for link in links {
-        if link.tag.0.first().copied() != Some(invite_byte) {
-            continue;
-        }
         let Some(target_ah) = link.target.into_action_hash() else {
             continue;
         };
@@ -219,24 +216,27 @@ pub struct ListedHive {
 }
 
 /// Enumerate every hive the local agent participates in, derived from
-/// the agent's Inbox `HiveInvite` link set.
+/// the agent's durable `HiveMembershipIndex` link set (pass-7: rerouted
+/// from Inbox `HiveInvite` so a DM sweep or invite retraction no longer
+/// erases hive discovery; Inbox links remain as transient notifications).
 ///
-/// For each `HiveInvite` link:
+/// For each index link:
 /// - If the target is a `HiveGenesis` entry, the agent founded that
 ///   hive → `role: None` (implicit Owner).
 /// - If the target is a `HiveMembership` entry whose `for_agent`
 ///   matches the local agent, surface the genesis hash + role.
 ///
 /// Memberships pointing to other agents are filtered out (defensive —
-/// shouldn't happen with well-behaved coordinators, but a modified
-/// peer could in principle write a HiveInvite link with a foreign
-/// target).
+/// the index validator pins base = `for_agent`, so a mismatch implies
+/// a link that should never have validated).
 #[hdk_extern]
 pub fn list_my_hives(_: ()) -> ExternResult<Vec<ListedHive>> {
     let my_pubkey = agent_info()?.agent_initial_pubkey;
-    let invite_byte = InboxEvent::HiveInvite.as_byte();
     let links = get_links(
-        LinkQuery::try_new(AnyLinkableHash::from(my_pubkey.clone()), LinkTypes::Inbox)?,
+        LinkQuery::try_new(
+            AnyLinkableHash::from(my_pubkey.clone()),
+            LinkTypes::HiveMembershipIndex,
+        )?,
         GetStrategy::Network,
     )?;
 
@@ -244,23 +244,14 @@ pub fn list_my_hives(_: ()) -> ExternResult<Vec<ListedHive>> {
     let mut out: Vec<ListedHive> = Vec::new();
 
     for link in links {
-        if link.tag.0.first().copied() != Some(invite_byte) {
-            continue;
-        }
         let Some(target_ah) = link.target.into_action_hash() else {
             continue;
         };
         let Some(record) = get(target_ah.clone(), GetOptions::network())? else {
             continue;
         };
-        // Try HiveGenesis first. The Inbox is open-write by design (any
-        // peer can publish a HiveInvite link at any pubkey), so we MUST
-        // verify the local agent actually authored the genesis before
-        // surfacing it as "I founded this hive". Without this check, a
-        // hostile peer can pollute the local agent's hive list with
-        // arbitrary `role: None` entries (UI confusion / griefing; no
-        // privilege escalation since integrity validators still gate
-        // every action against the real author identity).
+        // Defense in depth: the index validator pins base = genesis author,
+        // but a foreign-authored row must never surface as "I founded this".
         if let Some(genesis) = try_decode_hive_genesis(&record) {
             if record.action().author() != &my_pubkey {
                 continue;
@@ -322,10 +313,10 @@ pub fn list_my_hives(_: ()) -> ExternResult<Vec<ListedHive>> {
 /// was self-authored → `role: None`. `HiveGenesis` is immutable, so no
 /// liveness filtering is needed.
 ///
-/// Joiner branch (best-effort): walks the local Inbox link store with
-/// `GetStrategy::Local` / `GetOptions::local()`. The agent is an
-/// authority for its own pubkey base, so its Inbox links + targets
-/// integrate locally while online. A grant that never reached the
+/// Joiner branch (best-effort): walks the local `HiveMembershipIndex`
+/// link store with `GetStrategy::Local` / `GetOptions::local()`. The
+/// agent is an authority for its own pubkey base, so its index links +
+/// targets integrate locally while online. A grant that never reached the
 /// local store before dormancy is invisible here — that is correct
 /// "best-effort" semantics and is documented in the rescue handoff.
 #[hdk_extern]
@@ -348,23 +339,19 @@ pub fn list_my_hives_local(_: ()) -> ExternResult<Vec<ListedHive>> {
         });
     }
 
-    // Joiner hives: granted memberships in the local DHT store. The
-    // agent is an authority for its own pubkey base, so its Inbox
-    // links were integrated locally while online; GetStrategy::Local
-    // reads them with NO network call (dormancy-proof). Best-effort:
-    // a joined hive is recovered only if its membership link + entry
-    // integrated locally before the cell went dormant.
+    // Joiner hives: granted memberships in the local DHT store. The agent
+    // is an authority for its own pubkey base, so its HiveMembershipIndex
+    // links integrated locally while online (dormancy-proof, best-effort).
     let my_pubkey = agent_info()?.agent_initial_pubkey;
-    let invite_byte = InboxEvent::HiveInvite.as_byte();
     let now = sys_time()?;
     let links = get_links(
-        LinkQuery::try_new(AnyLinkableHash::from(my_pubkey.clone()), LinkTypes::Inbox)?,
+        LinkQuery::try_new(
+            AnyLinkableHash::from(my_pubkey.clone()),
+            LinkTypes::HiveMembershipIndex,
+        )?,
         GetStrategy::Local,
     )?;
     for link in links {
-        if link.tag.0.first().copied() != Some(invite_byte) {
-            continue;
-        }
         let Some(target_ah) = link.target.into_action_hash() else {
             continue;
         };

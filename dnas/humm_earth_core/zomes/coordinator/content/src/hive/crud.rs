@@ -2,10 +2,10 @@
 //!
 //! Each create:
 //! 1. Commits the integrity entry.
-//! 2. Publishes an `Inbox` link tagged `InboxEvent::HiveInvite` to the
-//!    target agent (self for HiveGenesis; the grantee for
-//!    HiveMembership). The recipient discovers their hives by walking
-//!    `get_links(my_pubkey, Inbox, ...)` filtered by tag byte 2.
+//! 2. Publishes an `Inbox` link tagged `InboxEvent::HiveInvite` (transient
+//!    notification) AND a durable `HiveMembershipIndex` link (discovery;
+//!    author-only delete, so a DM sweep cannot erase it). Readers walk
+//!    `get_links(my_pubkey, HiveMembershipIndex, ...)`.
 //!
 //! The integrity validator already enforces all of:
 //! - `HiveGenesis`: any author (permissionless).
@@ -35,8 +35,9 @@ pub struct HiveGenesisResponse {
 }
 
 /// Commit a new [`HiveGenesis`] entry and surface the action hash to
-/// the caller. Also writes a self-tagged `Inbox` link so the founding
-/// agent can enumerate this hive in `list_my_hives`.
+/// the caller. Also writes a self `Inbox` HiveInvite link (notification)
+/// and a durable `HiveMembershipIndex` self-link so the founding agent
+/// enumerates this hive in `list_my_hives` sweep-proof.
 ///
 /// Permissionless: any agent on the DNA may call this. The integrity
 /// validator returns `Valid` for every author.
@@ -49,15 +50,8 @@ pub fn create_hive_genesis(input: CreateHiveGenesisInput) -> ExternResult<HiveGe
     };
     let hash = create_entry(&EntryTypes::HiveGenesis(genesis.clone()))?;
 
-    // Self-write an Inbox HiveInvite link so list_my_hives surfaces
-    // this hive without a chain replay.
     let my_pubkey = agent_info()?.agent_initial_pubkey;
-    create_link(
-        AnyLinkableHash::from(my_pubkey),
-        AnyLinkableHash::from(hash.clone()),
-        LinkTypes::Inbox,
-        LinkTag::new(vec![InboxEvent::HiveInvite.as_byte()]),
-    )?;
+    write_hive_discovery_links(my_pubkey, &hash)?;
 
     Ok(HiveGenesisResponse { genesis, hash })
 }
@@ -82,7 +76,8 @@ pub struct HiveMembershipResponse {
     pub hash: ActionHash,
 }
 
-/// Commit a [`HiveMembership`] grant + the grantee's `Inbox` discovery link.
+/// Commit a [`HiveMembership`] grant + the grantee's `Inbox` notification
+/// link + the durable `HiveMembershipIndex` discovery link.
 #[hdk_extern]
 pub fn create_hive_membership(
     input: CreateHiveMembershipInput,
@@ -106,12 +101,7 @@ pub fn create_hive_membership(
     };
     let hash = create_entry(&EntryTypes::HiveMembership(membership.clone()))?;
 
-    create_link(
-        AnyLinkableHash::from(input.for_agent),
-        AnyLinkableHash::from(hash.clone()),
-        LinkTypes::Inbox,
-        LinkTag::new(vec![InboxEvent::HiveInvite.as_byte()]),
-    )?;
+    write_hive_discovery_links(input.for_agent, &hash)?;
 
     Ok(HiveMembershipResponse { membership, hash })
 }
@@ -151,4 +141,23 @@ pub fn revoke_hive_membership(
         grantor_owner_accept_hash: input.grantor_owner_accept_hash,
         expiry: Some(input.new_expiry),
     })
+}
+
+/// Notification (`Inbox` HiveInvite, recipient-consumable) + durable
+/// discovery (`HiveMembershipIndex`, author-only delete) link pair every
+/// hive create publishes for `member`.
+fn write_hive_discovery_links(member: AgentPubKey, target: &ActionHash) -> ExternResult<()> {
+    create_link(
+        AnyLinkableHash::from(member.clone()),
+        AnyLinkableHash::from(target.clone()),
+        LinkTypes::Inbox,
+        LinkTag::new(vec![InboxEvent::HiveInvite.as_byte()]),
+    )?;
+    create_link(
+        AnyLinkableHash::from(member),
+        AnyLinkableHash::from(target.clone()),
+        LinkTypes::HiveMembershipIndex,
+        LinkTag::new(vec![]),
+    )?;
+    Ok(())
 }
