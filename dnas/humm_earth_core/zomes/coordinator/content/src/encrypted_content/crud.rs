@@ -46,25 +46,42 @@ pub fn create_encrypted_content(
         tombstoned: None,
     };
 
-    // Local emit (every variant) + best-effort cross-host fan-out to
-    // every agent in public_key_acl.reader. For DirectMessage the
-    // reader bucket IS the validated recipient list; for HiveGroup +
-    // Public it is the routing hint; for OpenWrite it is typically
-    // empty (the entry is its own announcement).
+    emit_create_signals(&response, &encrypted_content.header.public_key_acl)?;
+    publish_create_links(&encrypted_content, &action_hash, input.dynamic_links)?;
+
+    Ok(response)
+}
+
+/// Local self-emit + best-effort cross-host fan-out to public_key_acl.reader.
+/// `from_agent` stays None on both; the receiver stamps conductor provenance.
+fn emit_create_signals(
+    response: &EncryptedContentResponse,
+    public_key_acl: &Acl,
+) -> ExternResult<()> {
     emit_signal(EncryptedContentSignal {
         action_type: EncryptedContentSignalType::Create,
         data: response.clone(),
         from_agent: None,
     })?;
     remote_signal_acl_readers(
-        &encrypted_content.header.public_key_acl,
+        public_key_acl,
         EncryptedContentSignal {
             action_type: EncryptedContentSignalType::Create,
             data: response.clone(),
             from_agent: None,
         },
     );
+    Ok(())
+}
 
+/// Publish every discovery/index link a create earns: the self-pointer +
+/// author-shape Hive link (all variants), plus the hive-scoped bundle,
+/// group ACL links, and lineage link when the header carries that context.
+fn publish_create_links(
+    encrypted_content: &EncryptedContent,
+    action_hash: &ActionHash,
+    dynamic_links: Option<Vec<String>>,
+) -> ExternResult<()> {
     // OriginalHashPointer (self-link) — every entry.
     create_link(
         action_hash.clone(),
@@ -78,7 +95,7 @@ pub fn create_encrypted_content(
     let my_agent_pub_key = agent_info()?.agent_initial_pubkey;
     let author_link_path = Path::from(vec![
         Component::from(my_agent_pub_key.to_string()),
-        Component::from(input.content_type),
+        Component::from(encrypted_content.header.content_type.clone()),
     ]);
     create_link(
         author_link_path.path_entry_hash()?,
@@ -95,7 +112,7 @@ pub fn create_encrypted_content(
     if encrypted_content.header.hive_context().is_some() {
         create_hive_link(encrypted_content.clone(), action_hash.clone())?;
         create_humm_content_id_link(encrypted_content.clone(), action_hash.clone())?;
-        if let Some(dynamic_links) = input.dynamic_links {
+        if let Some(dynamic_links) = dynamic_links {
             create_dynamic_links(
                 encrypted_content.clone(),
                 action_hash.clone(),
@@ -124,7 +141,7 @@ pub fn create_encrypted_content(
         )?;
     }
 
-    Ok(response)
+    Ok(())
 }
 
 /// Assemble the integrity [`EncryptedContentHeader`] from a create

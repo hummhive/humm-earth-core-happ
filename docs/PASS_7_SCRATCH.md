@@ -16,6 +16,7 @@
 | M11 (role-K downward-closure enumeration) | 34cad93 | uhC0koUno-fuuCeAdMbEnkHqSWW2k1EHx76Rym8Dt9cyoB4djU_Bv (UNCHANGED; coordinator-only) | dff117981cac29f9a20ec14d0309d53d07b9d8dfbe64c1fc07f1cea886ec9891 |
 | M12 (review-lane fixes + DRY sweep) | 74d52ea | uhC0koUno-fuuCeAdMbEnkHqSWW2k1EHx76Rym8Dt9cyoB4djU_Bv (UNCHANGED; coordinator docs/nits + test-only) | dff117981cac29f9a20ec14d0309d53d07b9d8dfbe64c1fc07f1cea886ec9891 |
 | M13 (group_acl bucket disjointness + deterministic link-validator rejects) | (backfill@M15) | uhC0kbz8DhCkYWaLeihsumn8V726s3ZzWcTsAqLNcFBWIEVaWVPnB | 7a4cd2e03328ed4c23e2329dff5ccf23b42e1a16f0a5ce137f13b7f11434e2ad |
+| M14 (create-link publication + membership twin extraction) | (backfill@M15) | uhC0kbz8DhCkYWaLeihsumn8V726s3ZzWcTsAqLNcFBWIEVaWVPnB (UNCHANGED; coordinator-only refactor) | 7a4cd2e03328ed4c23e2329dff5ccf23b42e1a16f0a5ce137f13b7f11434e2ad |
 
 ## New reject literals (accumulates the blessing-time BDD delta)
 | # | literal | validator fn | milestone |

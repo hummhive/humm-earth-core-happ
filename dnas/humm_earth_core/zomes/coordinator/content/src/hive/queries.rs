@@ -68,33 +68,22 @@ pub struct GetLatestMembershipInput {
     pub hive_genesis_hash: ActionHash,
 }
 
-/// Return the most-recent valid (unexpired) [`HiveMembership`] for
-/// `agent` in the named hive, or `None` if no such membership exists.
-///
-/// "Most recent" is decided by the membership entry's action timestamp
-/// (later wins). Expiry is checked against `sys_time()` at call time.
-///
-/// Caller workflow:
-/// 1. Before any `create_encrypted_content` write into hive H, the
-///    coordinator (or upstream UI) calls this to fetch the local
-///    agent's latest membership.
-/// 2. The returned `hash` is stamped into
-///    `EncryptedContentHeader.author_membership_hash` so the integrity
-///    validator can verify `action.author` actually holds Writer+ in H.
-/// 3. If `None`, the caller MUST either acquire a fresh membership
-///    or fail the write — committing without a membership when the
-///    author is not the genesis author will be rejected by the
-///    integrity layer.
-#[hdk_extern]
-pub fn get_latest_membership(
+/// Shared walk behind both membership twins: enumerate the caller's
+/// HiveMembershipIndex links, decode targets as HiveMembership (skip
+/// non-memberships), filter to the (hive, agent) unexpired at now, and
+/// return the newest by action timestamp. `strategy`/`options` select the
+/// network vs local-store read.
+fn latest_membership_via(
     input: GetLatestMembershipInput,
+    strategy: GetStrategy,
+    options: GetOptions,
 ) -> ExternResult<Option<HiveMembershipResponse>> {
     let links = get_links(
         LinkQuery::try_new(
             AnyLinkableHash::from(input.agent.clone()),
             LinkTypes::HiveMembershipIndex,
         )?,
-        GetStrategy::Network,
+        strategy,
     )?;
     let now = sys_time()?;
 
@@ -103,7 +92,7 @@ pub fn get_latest_membership(
         let Some(target_ah) = link.target.into_action_hash() else {
             continue;
         };
-        let Some(record) = get(target_ah.clone(), GetOptions::network())? else {
+        let Some(record) = get(target_ah.clone(), options.clone())? else {
             continue;
         };
         // Targets are either HiveGenesis or HiveMembership; only
@@ -141,6 +130,30 @@ pub fn get_latest_membership(
     Ok(best.map(|(_, membership, hash)| HiveMembershipResponse { membership, hash }))
 }
 
+/// Return the most-recent valid (unexpired) [`HiveMembership`] for
+/// `agent` in the named hive, or `None` if no such membership exists.
+///
+/// "Most recent" is decided by the membership entry's action timestamp
+/// (later wins). Expiry is checked against `sys_time()` at call time.
+///
+/// Caller workflow:
+/// 1. Before any `create_encrypted_content` write into hive H, the
+///    coordinator (or upstream UI) calls this to fetch the local
+///    agent's latest membership.
+/// 2. The returned `hash` is stamped into
+///    `EncryptedContentHeader.author_membership_hash` so the integrity
+///    validator can verify `action.author` actually holds Writer+ in H.
+/// 3. If `None`, the caller MUST either acquire a fresh membership
+///    or fail the write — committing without a membership when the
+///    author is not the genesis author will be rejected by the
+///    integrity layer.
+#[hdk_extern]
+pub fn get_latest_membership(
+    input: GetLatestMembershipInput,
+) -> ExternResult<Option<HiveMembershipResponse>> {
+    latest_membership_via(input, GetStrategy::Network, GetOptions::network())
+}
+
 /// Dormancy-proof twin of [`get_latest_membership`]: reads the caller's
 /// granted membership from the local DHT store only
 /// (`GetStrategy::Local` / `GetOptions::local()`), so the non-owner
@@ -155,53 +168,7 @@ pub fn get_latest_membership(
 pub fn get_latest_membership_local(
     input: GetLatestMembershipInput,
 ) -> ExternResult<Option<HiveMembershipResponse>> {
-    let links = get_links(
-        LinkQuery::try_new(
-            AnyLinkableHash::from(input.agent.clone()),
-            LinkTypes::HiveMembershipIndex,
-        )?,
-        GetStrategy::Local,
-    )?;
-    let now = sys_time()?;
-
-    let mut best: Option<(Timestamp, HiveMembership, ActionHash)> = None;
-    for link in links {
-        let Some(target_ah) = link.target.into_action_hash() else {
-            continue;
-        };
-        let Some(record) = get(target_ah.clone(), GetOptions::local())? else {
-            continue;
-        };
-        let Some(membership) = record
-            .entry()
-            .to_app_option::<HiveMembership>()
-            .ok()
-            .flatten()
-        else {
-            continue;
-        };
-        if membership.hive_genesis_hash != input.hive_genesis_hash {
-            continue;
-        }
-        if membership.for_agent != input.agent {
-            continue;
-        }
-        if let Some(expiry) = membership.expiry {
-            if expiry < now {
-                continue;
-            }
-        }
-        let ts = record.action().timestamp();
-        if best
-            .as_ref()
-            .map(|(prev_ts, _, _)| ts > *prev_ts)
-            .unwrap_or(true)
-        {
-            best = Some((ts, membership, target_ah));
-        }
-    }
-
-    Ok(best.map(|(_, membership, hash)| HiveMembershipResponse { membership, hash }))
+    latest_membership_via(input, GetStrategy::Local, GetOptions::local())
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
