@@ -18,6 +18,8 @@
 //! - [`get_group_genesis`] resolves a `GroupGenesis` by action hash for
 //!   UI consumption.
 
+use std::collections::{hash_map::Entry, HashMap};
+
 use content_integrity::*;
 use hdk::prelude::*;
 
@@ -62,23 +64,16 @@ pub fn get_latest_group_membership(
         GetStrategy::Network,
     )?;
     let now = sys_time()?;
+    let options = GetOptions::network();
 
     let mut best: Option<(Timestamp, GroupMembership, ActionHash)> = None;
     for link in links {
         let Some(target_ah) = link.target.into_action_hash() else {
             continue;
         };
-        let Some(record) = get(target_ah.clone(), GetOptions::network())? else {
-            continue;
-        };
-        // Tolerate an undecodable target instead of failing the whole
-        // query (defensive; AgentToGroupMemberships targets are
-        // homogeneous by design, but a foreign/corrupt one must skip).
-        let Some(membership) = record
-            .entry()
-            .to_app_option::<GroupMembership>()
-            .ok()
-            .flatten()
+        // Foreign or corrupt heterogeneous targets must not fail the entire query.
+        let Some((membership, ts)) =
+            crate::get_typed_entry_with_timestamp::<GroupMembership>(&target_ah, options.clone())?
         else {
             continue;
         };
@@ -93,7 +88,6 @@ pub fn get_latest_group_membership(
                 continue;
             }
         }
-        let ts = record.action().timestamp();
         if best
             .as_ref()
             .map(|(prev_ts, _, _)| ts > *prev_ts)
@@ -232,6 +226,7 @@ pub fn list_my_groups(_: ()) -> ExternResult<Vec<ListedGroup>> {
     let invite_byte = InboxEvent::GroupInvite.as_byte();
     let now = sys_time()?;
     let mut out: Vec<ListedGroup> = Vec::new();
+    let mut group_genesis_cache: HashMap<ActionHash, Option<GroupGenesis>> = HashMap::new();
 
     // Founded rows stay Inbox-based (Wave-2 residual): the shipped sweep
     // consumes only DmCreate, and a founder re-derives from their own chain.
@@ -268,7 +263,9 @@ pub fn list_my_groups(_: ()) -> ExternResult<Vec<ListedGroup>> {
         let Some(record) = get(target_ah, GetOptions::network())? else {
             continue;
         };
-        if let Some(listed) = resolve_membership_invite(&record, &my_pubkey, &now)? {
+        if let Some(listed) =
+            resolve_membership_invite(&record, &my_pubkey, &now, &mut group_genesis_cache)?
+        {
             out.push(listed);
         }
     }
@@ -313,6 +310,27 @@ fn resolve_genesis_invite(
     }))
 }
 
+fn cached_group_genesis<'a>(
+    cache: &'a mut HashMap<ActionHash, Option<GroupGenesis>>,
+    group_genesis_hash: &ActionHash,
+) -> ExternResult<Option<&'a GroupGenesis>> {
+    let cached = match cache.entry(group_genesis_hash.clone()) {
+        Entry::Occupied(entry) => entry.into_mut(),
+        Entry::Vacant(entry) => {
+            let genesis = match get(group_genesis_hash.clone(), GetOptions::network())? {
+                Some(record) => record
+                    .entry()
+                    .to_app_option::<GroupGenesis>()
+                    .ok()
+                    .flatten(),
+                None => None,
+            };
+            entry.insert(genesis)
+        }
+    };
+    Ok(cached.as_ref())
+}
+
 /// Decode `record` as a [`GroupMembership`]; if it grants `my_pubkey` a
 /// currently-unexpired role, fetch the referenced `GroupGenesis` for
 /// the display fields and return a populated [`ListedGroup`]. Returns
@@ -323,6 +341,7 @@ fn resolve_membership_invite(
     record: &Record,
     my_pubkey: &AgentPubKey,
     now: &Timestamp,
+    group_genesis_cache: &mut HashMap<ActionHash, Option<GroupGenesis>>,
 ) -> ExternResult<Option<ListedGroup>> {
     let Some(membership) = record
         .entry()
@@ -340,22 +359,14 @@ fn resolve_membership_invite(
             return Ok(None);
         }
     }
-    let Some(genesis_record) = get(membership.group_genesis_hash.clone(), GetOptions::network())?
-    else {
-        return Ok(None);
-    };
-    let Some(genesis) = genesis_record
-        .entry()
-        .to_app_option::<GroupGenesis>()
-        .ok()
-        .flatten()
+    let Some(genesis) = cached_group_genesis(group_genesis_cache, &membership.group_genesis_hash)?
     else {
         return Ok(None);
     };
     Ok(Some(ListedGroup {
         group_genesis_hash: membership.group_genesis_hash,
-        hive_genesis_hash: genesis.hive_genesis_hash,
-        display_id: genesis.display_id,
+        hive_genesis_hash: genesis.hive_genesis_hash.clone(),
+        display_id: genesis.display_id.clone(),
         hive_wide_role: genesis.hive_wide_role,
         role: Some(membership.role),
     }))

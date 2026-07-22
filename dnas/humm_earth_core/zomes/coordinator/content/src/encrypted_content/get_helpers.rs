@@ -56,21 +56,27 @@ pub fn get_latest_typed_from_eh<T: TryFrom<SerializedBytes, Error = SerializedBy
     if details.entry_dht_status != EntryDhtStatus::Live {
         return Ok(None);
     }
-    let latest_ah = match details.updates.len() {
-        // pass out the action associated with this entry
-        0 => sah_to_ah(details.actions.first().unwrap().to_owned()),
+    // No update: the create's entry is already in `details`; rebuild the
+    // record locally instead of re-fetching the same address. An update
+    // points at a distinct, updated entry, so fetch that one.
+    let record = match details.updates.len() {
+        0 => {
+            let Some(create) = details.actions.first() else {
+                return Ok(None);
+            };
+            Record::new(create.to_owned(), Some(details.entry.clone()))
+        }
         _ => {
             let mut sortlist = details.updates.to_vec();
-            // unix timestamp should work for sorting
             sortlist.sort_by_key(|update| update.action().timestamp().as_micros());
-            // sorts in ascending order, so take the last Record
-            let last = sortlist.last().unwrap().to_owned();
-            sah_to_ah(last)
+            let Some(last) = sortlist.last() else {
+                return Ok(None);
+            };
+            let Some(record) = get(sah_to_ah(last.to_owned()), GetOptions::network())? else {
+                return Ok(None);
+            };
+            record
         }
-    };
-    // Second, go and get that Record, and return its entry and action_address
-    let Some(record) = get(latest_ah, GetOptions::network())? else {
-        return Ok(None);
     };
     let maybe_maybe_typed_entry = record.entry().to_app_option::<T>();
     if let Err(e) = maybe_maybe_typed_entry {

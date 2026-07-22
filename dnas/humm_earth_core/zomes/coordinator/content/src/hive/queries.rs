@@ -13,6 +13,8 @@
 //! targets to either `HiveGenesis` (self-founded) or `HiveMembership`
 //! (granted), and project the result.
 
+use std::collections::{HashMap, HashSet};
+
 use content_integrity::*;
 use hdk::prelude::*;
 
@@ -92,17 +94,11 @@ fn latest_membership_via(
         let Some(target_ah) = link.target.into_action_hash() else {
             continue;
         };
-        let Some(record) = get(target_ah.clone(), options.clone())? else {
-            continue;
-        };
         // Targets are either HiveGenesis or HiveMembership; only
         // HiveMembership concerns this query. Decode-as-membership and
         // skip on failure.
-        let Some(membership) = record
-            .entry()
-            .to_app_option::<HiveMembership>()
-            .ok()
-            .flatten()
+        let Some((membership, ts)) =
+            crate::get_typed_entry_with_timestamp::<HiveMembership>(&target_ah, options.clone())?
         else {
             continue;
         };
@@ -117,7 +113,6 @@ fn latest_membership_via(
                 continue;
             }
         }
-        let ts = record.action().timestamp();
         if best
             .as_ref()
             .map(|(prev_ts, _, _)| ts > *prev_ts)
@@ -182,6 +177,81 @@ pub struct ListedHive {
     pub role: Option<HiveRole>,
 }
 
+fn genesis_resolves_as_hive(
+    hive_genesis_hash: &ActionHash,
+    cache: &mut HashMap<ActionHash, bool>,
+) -> ExternResult<bool> {
+    if let Some(known) = cache.get(hive_genesis_hash) {
+        return Ok(*known);
+    }
+    let resolved = match get(hive_genesis_hash.clone(), GetOptions::network())? {
+        Some(record) => try_decode_hive_genesis(&record).is_some(),
+        None => false,
+    };
+    cache.insert(hive_genesis_hash.clone(), resolved);
+    Ok(resolved)
+}
+
+/// Return the distinct valid hive ids represented by the caller's
+/// network-visible membership index without resolving display metadata.
+pub(crate) fn my_hive_ids_network() -> ExternResult<Vec<ActionHash>> {
+    let my_pubkey = agent_info()?.agent_initial_pubkey;
+    let links = get_links(
+        LinkQuery::try_new(
+            AnyLinkableHash::from(my_pubkey.clone()),
+            LinkTypes::HiveMembershipIndex,
+        )?,
+        GetStrategy::Network,
+    )?;
+    let now = sys_time()?;
+    let mut seen = HashSet::new();
+    let mut hive_ids = Vec::new();
+    let mut genesis_resolvable: HashMap<ActionHash, bool> = HashMap::new();
+
+    for link in links {
+        let Some(target_ah) = link.target.into_action_hash() else {
+            continue;
+        };
+        let Some(record) = get(target_ah.clone(), GetOptions::network())? else {
+            continue;
+        };
+        if try_decode_hive_genesis(&record).is_some() {
+            if record.action().author() != &my_pubkey {
+                continue;
+            }
+            if seen.insert(target_ah.clone()) {
+                hive_ids.push(target_ah);
+            }
+            continue;
+        }
+        let Some(membership) = record
+            .entry()
+            .to_app_option::<HiveMembership>()
+            .ok()
+            .flatten()
+        else {
+            continue;
+        };
+        if membership.for_agent != my_pubkey {
+            continue;
+        }
+        if let Some(expiry) = membership.expiry {
+            if expiry < now {
+                continue;
+            }
+        }
+        let hive_genesis_hash = membership.hive_genesis_hash;
+        if !genesis_resolves_as_hive(&hive_genesis_hash, &mut genesis_resolvable)? {
+            continue;
+        }
+        if seen.insert(hive_genesis_hash.clone()) {
+            hive_ids.push(hive_genesis_hash);
+        }
+    }
+
+    Ok(hive_ids)
+}
+
 /// Enumerate every hive the local agent participates in, derived from
 /// the agent's durable `HiveMembershipIndex` link set (pass-7: rerouted
 /// from Inbox `HiveInvite` so a DM sweep or invite retraction no longer
@@ -209,6 +279,7 @@ pub fn list_my_hives(_: ()) -> ExternResult<Vec<ListedHive>> {
 
     let now = sys_time()?;
     let mut out: Vec<ListedHive> = Vec::new();
+    let mut display_cache: HashMap<ActionHash, Option<String>> = HashMap::new();
 
     for link in links {
         let Some(target_ah) = link.target.into_action_hash() else {
@@ -245,22 +316,32 @@ pub fn list_my_hives(_: ()) -> ExternResult<Vec<ListedHive>> {
                     continue;
                 }
             }
-            // Resolve the genesis to get the display_id.
-            let Some(genesis_record) =
-                get(membership.hive_genesis_hash.clone(), GetOptions::network())?
-            else {
-                continue;
+            let hive_genesis_hash = membership.hive_genesis_hash.clone();
+            let display_id = if let Some(cached) = display_cache.get(&hive_genesis_hash) {
+                cached.clone()
+            } else {
+                let resolved = match get(hive_genesis_hash.clone(), GetOptions::network())? {
+                    Some(genesis_record) => match try_decode_hive_genesis(&genesis_record) {
+                        Some(genesis) => Some(genesis.display_id),
+                        None => {
+                            warn!(
+                                "list_my_hives: hash {} for a valid membership is not a HiveGenesis entry; skipping (DHT corruption or membership grantor authored a foreign type?)",
+                                hive_genesis_hash
+                            );
+                            None
+                        }
+                    },
+                    None => None,
+                };
+                display_cache.insert(hive_genesis_hash, resolved.clone());
+                resolved
             };
-            let Some(genesis) = try_decode_hive_genesis(&genesis_record) else {
-                warn!(
-                    "list_my_hives: hash {} for a valid membership is not a HiveGenesis entry; skipping (DHT corruption or membership grantor authored a foreign type?)",
-                    membership.hive_genesis_hash
-                );
+            let Some(display_id) = display_id else {
                 continue;
             };
             out.push(ListedHive {
                 hive_genesis_hash: membership.hive_genesis_hash,
-                display_id: genesis.display_id,
+                display_id,
                 role: Some(membership.role),
             });
         }
@@ -318,18 +399,13 @@ pub fn list_my_hives_local(_: ()) -> ExternResult<Vec<ListedHive>> {
         )?,
         GetStrategy::Local,
     )?;
+    let options = GetOptions::local();
     for link in links {
         let Some(target_ah) = link.target.into_action_hash() else {
             continue;
         };
-        let Some(record) = get(target_ah, GetOptions::local())? else {
-            continue;
-        };
-        let Some(membership) = record
-            .entry()
-            .to_app_option::<HiveMembership>()
-            .ok()
-            .flatten()
+        let Some((membership, _)) =
+            crate::get_typed_entry_with_timestamp::<HiveMembership>(&target_ah, options.clone())?
         else {
             // Founder self-link (HiveGenesis target) or undecodable → skip.
             continue;

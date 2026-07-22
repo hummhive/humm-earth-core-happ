@@ -19,6 +19,7 @@
 | M14 (create-link publication + membership twin extraction) | 6ae396a | uhC0kbz8DhCkYWaLeihsumn8V726s3ZzWcTsAqLNcFBWIEVaWVPnB (UNCHANGED; coordinator-only refactor) | 7a4cd2e03328ed4c23e2329dff5ccf23b42e1a16f0a5ce137f13b7f11434e2ad |
 | M15 (complete link-validator normalization + review doc fixes) | ee47e74 | uhC0kemuLaIzdw19cQwOLB1JB7o7-5ZFXNIwcOYlBpNFfL_8Uicl6 | 39062286742a11836822ab8cf5fcfde2ed6e92321b90106a4ed5de38eb8e92f0 |
 | M16 (integrity DRY: shared typed fetch + bucket iterator + expiry containment) | (backfill) | uhC0k-HAqM4zW2rCWrKSujEKDZcqybE_ATUjKxkRy2BmRjURYddxP | ec11ba8f9518cee6aee5d9e1df4fc1f7449f42584213abb4f8636cdceb90fcdd |
+| M17 (coordinator resolve-path perf: record reuse + immutable-entity caches) | (backfill) | uhC0k-HAqM4zW2rCWrKSujEKDZcqybE_ATUjKxkRy2BmRjURYddxP (UNCHANGED; coordinator-only) | ec11ba8f9518cee6aee5d9e1df4fc1f7449f42584213abb4f8636cdceb90fcdd |
 
 ## New reject literals (accumulates the blessing-time BDD delta)
 | # | literal | validator fn | milestone |
@@ -222,6 +223,19 @@ sweettest therefore drives `create_group_genesis` directly.
   containment tail out of the hive and group validators; each caller keeps its own
   guard + permanent-grantor short-circuit. Four pure host tests pin the helper. The
   Err-vs-Invalid normalization of those same fetchers stays the deferred H2 residual.
+- **M17 (coordinator resolve-path perf; hash HELD):** wire-identical internal
+  refactors, no new reject literal. P1: `get_latest_typed_from_eh` reuses the
+  `get_details` entry for the no-update case (rebuilds the record locally, 3->2
+  reads/item); `get_many_encrypted_content` memoizes resolution by input hash (rows
+  never deduplicated). P2: `resolve_update_base` fetches the predecessor once via a
+  shared `get_encrypted_content_chain_action` (was fetched twice). D1:
+  `get_typed_entry_with_timestamp` in `lib.rs`, adopted in the hive + group membership
+  walks. P4: `my_hive_ids_network` for the pair-SS None arm mirrors `list_my_hives`'
+  inclusion set (genesis-resolvability gate preserved) minus the discarded display
+  strings; `list_my_hives`/`list_my_groups` gain per-call genesis caches (multiplicity
+  preserved). P8: owner-offer fetch skipped once resolved. P9: hoisted the
+  loop-invariant `hive_b64` in `content_summary`. New sweettest
+  `batch_reads::list_my_groups_returns_one_row_per_grant` guards the P5 cache.
 
 ## DEFERRED — H2 sketch (per-entry-type ACL validators; blessing-time co-design)
 

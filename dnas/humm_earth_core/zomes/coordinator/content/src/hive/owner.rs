@@ -132,14 +132,17 @@ fn resolve_owner_state(hive_genesis_hash: &ActionHash) -> ExternResult<(AgentPub
         let Some(accept) = get_typed_entry::<HiveOwnerHandoffAccept>(&accept_hash)? else {
             continue;
         };
-        let Some(offer) = get_typed_entry::<HiveOwnerHandoffOffer>(&accept.offer_hash)? else {
-            continue;
-        };
-        if &offer.hive_genesis_hash != hive_genesis_hash {
-            continue;
+        let offer_hash = accept.offer_hash;
+        if !accepted_offers.contains_key(&offer_hash) {
+            let Some(offer) = get_typed_entry::<HiveOwnerHandoffOffer>(&offer_hash)? else {
+                continue;
+            };
+            if &offer.hive_genesis_hash != hive_genesis_hash {
+                continue;
+            }
+            accepted_offers.insert(offer_hash.clone(), offer);
         }
-        accept_to_offer.insert(accept_hash, accept.offer_hash.clone());
-        accepted_offers.entry(accept.offer_hash).or_insert(offer);
+        accept_to_offer.insert(accept_hash, offer_hash);
     }
 
     Ok(fold_current_owner(

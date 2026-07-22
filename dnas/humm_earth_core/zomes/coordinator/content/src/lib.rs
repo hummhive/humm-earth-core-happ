@@ -23,6 +23,26 @@ pub(crate) fn get_typed_entry<T: TryFrom<SerializedBytes, Error = SerializedByte
         .and_then(|record| record.entry().to_app_option::<T>().ok().flatten()))
 }
 
+/// Like [`get_typed_entry`] but returns the fetched action's timestamp too and
+/// takes an explicit [`GetOptions`] (network vs local store). Same tolerance:
+/// absent or wrong-shape targets resolve to `None`.
+pub(crate) fn get_typed_entry_with_timestamp<
+    T: TryFrom<SerializedBytes, Error = SerializedBytesError>,
+>(
+    action_hash: &ActionHash,
+    options: GetOptions,
+) -> ExternResult<Option<(T, Timestamp)>> {
+    Ok(get(action_hash.clone(), options)?.and_then(|record| {
+        let ts = record.action().timestamp();
+        record
+            .entry()
+            .to_app_option::<T>()
+            .ok()
+            .flatten()
+            .map(|entry| (entry, ts))
+    }))
+}
+
 /// Delete every `CreateLink` on the caller's OWN source chain whose target is
 /// `target`. Self-scoping: a foreign caller authored none of these links, so a
 /// cross-author call is a harmless no-op (the link-delete validators require

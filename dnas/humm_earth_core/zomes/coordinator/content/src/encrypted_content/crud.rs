@@ -14,7 +14,7 @@ use content_integrity::*;
 use hdi::hash_path::path::Component;
 use hdk::prelude::*;
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 use crate::linking::acl_links::{acl_fanout, create_acl_link, discovery_path_hash};
 use crate::{
@@ -22,7 +22,7 @@ use crate::{
     humm_content_id_link::create_humm_content_id_link, linking::acl_links::create_acl_links,
 };
 
-use super::get_helpers::{decode_encrypted_content, get_eh, get_latest_typed_from_eh};
+use super::get_helpers::{get_eh, get_latest_typed_from_eh};
 use super::paging::{canonical_lowest_hash, content_id_records_by_author};
 use super::signals::{
     remote_signal_acl_readers, EncryptedContentSignal, EncryptedContentSignalType,
@@ -239,10 +239,44 @@ pub fn get_encrypted_content(content_hash: ActionHash) -> ExternResult<Encrypted
 pub fn get_many_encrypted_content(
     ahs: Vec<ActionHash>,
 ) -> ExternResult<Vec<EncryptedContentResponse>> {
-    Ok(ahs
-        .into_iter()
-        .filter_map(|ah| get_encrypted_content(ah).ok())
-        .collect())
+    let mut resolved: HashMap<ActionHash, Option<EncryptedContentResponse>> = HashMap::new();
+    let mut out = Vec::with_capacity(ahs.len());
+    for ah in ahs {
+        let response = match resolved.get(&ah) {
+            Some(cached) => cached.clone(),
+            None => {
+                let response = get_encrypted_content(ah.clone()).ok();
+                resolved.insert(ah, response.clone());
+                response
+            }
+        };
+        if let Some(response) = response {
+            out.push(response);
+        }
+    }
+    Ok(out)
+}
+
+/// Fetch an update-chain action's record and its decoded `EncryptedContent`,
+/// erroring if the action is unresolvable or references a different entry type.
+fn get_encrypted_content_chain_action(
+    action_hash: &ActionHash,
+) -> ExternResult<(Record, EncryptedContent)> {
+    let record = get(action_hash.clone(), GetOptions::network())?.ok_or_else(|| {
+        wasm_error!(WasmErrorInner::Guest(
+            "Could not resolve EncryptedContent update-chain action".into(),
+        ))
+    })?;
+    let content: EncryptedContent = record
+        .entry()
+        .to_app_option()
+        .map_err(|e| wasm_error!(e))?
+        .ok_or_else(|| {
+            wasm_error!(WasmErrorInner::Guest(
+                "Update-chain action does not reference an EncryptedContent".into(),
+            ))
+        })?;
+    Ok((record, content))
 }
 
 /// Resolve the root `EncryptedContent` action by walking native update metadata.
@@ -253,20 +287,7 @@ pub fn get_many_encrypted_content(
 /// selection. The action chain is the authoritative root.
 fn encrypted_content_root_hash(mut action_hash: ActionHash) -> ExternResult<ActionHash> {
     loop {
-        let record = get(action_hash.clone(), GetOptions::network())?.ok_or_else(|| {
-            wasm_error!(WasmErrorInner::Guest(
-                "Could not resolve EncryptedContent update-chain action".into(),
-            ))
-        })?;
-        let _: EncryptedContent = record
-            .entry()
-            .to_app_option()
-            .map_err(|e| wasm_error!(e))?
-            .ok_or_else(|| {
-                wasm_error!(WasmErrorInner::Guest(
-                    "Update-chain action does not reference an EncryptedContent".into(),
-                ))
-            })?;
+        let (record, _) = get_encrypted_content_chain_action(&action_hash)?;
         match record.action() {
             Action::Create(_) => return Ok(action_hash),
             Action::Update(update) => action_hash = update.original_action_address.clone(),
@@ -279,18 +300,31 @@ fn encrypted_content_root_hash(mut action_hash: ActionHash) -> ExternResult<Acti
     }
 }
 
+/// Fetch `previous` once, returning the update-chain ROOT action hash and
+/// `previous`'s decoded header. One fetch replaces the prior walk-then-refetch
+/// over the same predecessor.
+fn resolve_update_base(previous: ActionHash) -> ExternResult<(ActionHash, EncryptedContentHeader)> {
+    let (record, content) = get_encrypted_content_chain_action(&previous)?;
+    let root = match record.action() {
+        Action::Create(_) => previous,
+        Action::Update(update) => {
+            encrypted_content_root_hash(update.original_action_address.clone())?
+        }
+        _ => {
+            return Err(wasm_error!(WasmErrorInner::Guest(
+                "EncryptedContent update-chain action must be a Create or Update".into(),
+            )));
+        }
+    };
+    Ok((root, content.header))
+}
+
 #[hdk_extern]
 pub fn update_encrypted_content(
     input: UpdateEncryptedContentInput,
 ) -> ExternResult<EncryptedContentResponse> {
-    let original_content_hash =
-        encrypted_content_root_hash(input.previous_encrypted_content_hash.clone())?;
-    let prior_header = get(
-        input.previous_encrypted_content_hash.clone(),
-        GetOptions::network(),
-    )?
-    .and_then(|record| decode_encrypted_content(&record))
-    .map(|content| content.header);
+    let (original_content_hash, prior_header) =
+        resolve_update_base(input.previous_encrypted_content_hash.clone())?;
     let updated_encrypted_content_hash = update_entry(
         input.previous_encrypted_content_hash.clone(),
         &input.updated_encrypted_content,
@@ -314,13 +348,11 @@ pub fn update_encrypted_content(
         input.dynamic_links,
         input.remove_dynamic_links,
     )?;
-    if let Some(prior_header) = prior_header {
-        reindex_acl_links(
-            &prior_header,
-            &input.updated_encrypted_content,
-            &updated_encrypted_content_hash,
-        )?;
-    }
+    reindex_acl_links(
+        &prior_header,
+        &input.updated_encrypted_content,
+        &updated_encrypted_content_hash,
+    )?;
 
     let record = get_encrypted_content(updated_encrypted_content_hash.clone())?;
 

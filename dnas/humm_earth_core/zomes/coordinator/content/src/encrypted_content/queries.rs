@@ -405,14 +405,7 @@ pub fn fetch_pair_ss_with_hive_check(
 
     let hive_genesis_hashes: Vec<ActionHash> = match input.active_hive_genesis_hash {
         Some(hive) => vec![hive],
-        None => {
-            let mut seen: HashSet<ActionHash> = HashSet::new();
-            crate::hive::queries::list_my_hives(())?
-                .into_iter()
-                .map(|hive| hive.hive_genesis_hash)
-                .filter(|hash| seen.insert(hash.clone()))
-                .collect()
-        }
+        None => crate::hive::queries::my_hive_ids_network()?,
     };
 
     let mut intersection: HashSet<ActionHash> = HashSet::new();
@@ -496,9 +489,10 @@ pub struct ContentTypeSummary {
 #[hdk_extern]
 pub fn content_summary(input: ContentSummaryInput) -> ExternResult<Vec<ContentTypeSummary>> {
     let mut summaries = Vec::with_capacity(input.content_types.len());
+    let hive_b64 = input.hive_genesis_hash.to_string();
     for content_type in input.content_types {
         let path = Path::from(vec![
-            Component::from(input.hive_genesis_hash.to_string()),
+            Component::from(hive_b64.as_str()),
             Component::from(content_type.clone()),
         ]);
         let links = get_links(
