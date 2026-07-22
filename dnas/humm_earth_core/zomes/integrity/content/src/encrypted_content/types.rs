@@ -70,6 +70,17 @@ pub struct AclByGroupGenesis {
     pub reader: Vec<ActionHash>,
 }
 
+impl AclByGroupGenesis {
+    /// Every group hash across the four buckets, owner first then bucket
+    /// order — the shared surface for disjointness + per-group walks.
+    pub(crate) fn groups(&self) -> impl Iterator<Item = &ActionHash> {
+        std::iter::once(&self.owner)
+            .chain(self.admin.iter())
+            .chain(self.writer.iter())
+            .chain(self.reader.iter())
+    }
+}
+
 /// ACL bucket discriminator for [`RecipientWitness`] and the
 /// bucket-dominance rule in [`validate_hivegroup_acl`].
 ///

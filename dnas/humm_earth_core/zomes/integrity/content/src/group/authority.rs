@@ -3,42 +3,23 @@ use hdi::prelude::*;
 use super::types::{GroupGenesis, GroupMembership};
 use crate::hive::{check_hive_authority, role_satisfies, Role};
 
-/// Fetch and decode a [`GroupGenesis`] by action hash, returning
-/// `(group_author, group)`. Mirrors [`crate::hive::fetch_genesis`].
+/// `(group_author, group)` for a [`GroupGenesis`] action hash. Mirrors
+/// [`crate::hive::fetch_genesis`].
 pub fn fetch_group_genesis(
     group_genesis_hash: &ActionHash,
 ) -> ExternResult<(AgentPubKey, GroupGenesis)> {
-    let record = must_get_valid_record(group_genesis_hash.clone())?;
-    let author = record.action().author().clone();
-    let entry: GroupGenesis = record
-        .entry()
-        .to_app_option()
-        .map_err(|e| wasm_error!(e))?
-        .ok_or_else(|| {
-            wasm_error!(WasmErrorInner::Guest(format!(
-                "group_genesis_hash {group_genesis_hash} does not reference a GroupGenesis entry",
-            )))
-        })?;
-    Ok((author, entry))
+    crate::hive::fetch_authored_entry(group_genesis_hash, || {
+        format!("group_genesis_hash {group_genesis_hash} does not reference a GroupGenesis entry")
+    })
 }
 
-/// Fetch and decode a [`GroupMembership`] by action hash, returning
-/// `(membership_author, membership)`.
+/// `(membership_author, membership)` for a [`GroupMembership`] action hash.
 pub fn fetch_group_membership(
     membership_hash: &ActionHash,
 ) -> ExternResult<(AgentPubKey, GroupMembership)> {
-    let record = must_get_valid_record(membership_hash.clone())?;
-    let author = record.action().author().clone();
-    let entry: GroupMembership = record
-        .entry()
-        .to_app_option()
-        .map_err(|e| wasm_error!(e))?
-        .ok_or_else(|| {
-            wasm_error!(WasmErrorInner::Guest(format!(
-                "membership_hash {membership_hash} does not reference a GroupMembership entry",
-            )))
-        })?;
-    Ok((author, entry))
+    crate::hive::fetch_authored_entry(membership_hash, || {
+        format!("membership_hash {membership_hash} does not reference a GroupMembership entry")
+    })
 }
 
 /// Verify `agent` holds at least `required_role` in the group at

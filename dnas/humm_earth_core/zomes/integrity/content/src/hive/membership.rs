@@ -195,19 +195,10 @@ pub(super) fn enforce_hive_grant_window(
         // Permanent Path-2 authority — unconstrained.
         return Ok(ValidateCallbackResult::Valid);
     };
-    match membership.expiry {
-        Some(new_expiry) if new_expiry <= grantor_expiry => Ok(ValidateCallbackResult::Valid),
-        Some(new_expiry) => Ok(ValidateCallbackResult::Invalid(format!(
-            "granted expiry {new_expiry:?} exceeds the grantor membership's \
-             expiry {grantor_expiry:?}; an expiring grantor may not extend \
-             the delegation window",
-        ))),
-        None => Ok(ValidateCallbackResult::Invalid(
-            "an expiring grantor may not mint a permanent (no-expiry) \
-             membership"
-                .into(),
-        )),
-    }
+    Ok(crate::globals::validate_expiry_containment(
+        membership.expiry,
+        grantor_expiry,
+    ))
 }
 
 /// HiveMembership entries are immutable. Role changes happen by issuing

@@ -18,6 +18,7 @@
 | M13 (group_acl bucket disjointness + deterministic link-validator rejects) | 5476cb6 | uhC0kbz8DhCkYWaLeihsumn8V726s3ZzWcTsAqLNcFBWIEVaWVPnB | 7a4cd2e03328ed4c23e2329dff5ccf23b42e1a16f0a5ce137f13b7f11434e2ad |
 | M14 (create-link publication + membership twin extraction) | 6ae396a | uhC0kbz8DhCkYWaLeihsumn8V726s3ZzWcTsAqLNcFBWIEVaWVPnB (UNCHANGED; coordinator-only refactor) | 7a4cd2e03328ed4c23e2329dff5ccf23b42e1a16f0a5ce137f13b7f11434e2ad |
 | M15 (complete link-validator normalization + review doc fixes) | ee47e74 | uhC0kemuLaIzdw19cQwOLB1JB7o7-5ZFXNIwcOYlBpNFfL_8Uicl6 | 39062286742a11836822ab8cf5fcfde2ed6e92321b90106a4ed5de38eb8e92f0 |
+| M16 (integrity DRY: shared typed fetch + bucket iterator + expiry containment) | (backfill) | uhC0k-HAqM4zW2rCWrKSujEKDZcqybE_ATUjKxkRy2BmRjURYddxP | ec11ba8f9518cee6aee5d9e1df4fc1f7449f42584213abb4f8636cdceb90fcdd |
 
 ## New reject literals (accumulates the blessing-time BDD delta)
 | # | literal | validator fn | milestone |
@@ -208,6 +209,19 @@ sweettest therefore drives `create_group_genesis` directly.
   folded the disjointness bullet into ladder step 1 (fixes a rustdoc `1.5.`
   list-marker quirk), restored the per-variant `public_key_acl.reader` doc on
   `emit_create_signals`.
+- **M16 (integrity DRY; hash moved to `uhC0k-HA…`):** three pure-refactor helpers,
+  every rendered reject literal byte-preserved (no new literal; superset holds).
+  (a) `fetch_authored_entry` now takes a caller-supplied not-found message closure and
+  is `pub(crate)`, so the two `group/authority.rs` fetchers share its fetch/decode
+  skeleton — each group literal (incl. its `group_genesis_hash`/`membership_hash`
+  prefix) stays verbatim; the hive/owner callers inline their concrete label
+  (interpolation-shape source churn, byte-identical render, L21 precedent).
+  (b) `AclByGroupGenesis::groups()` centralizes the owner-first four-bucket walk
+  (`first_duplicate_group` + the Step-3 per-group authority loop). (c)
+  `validate_expiry_containment` in `globals.rs` hoists the identical grant-window
+  containment tail out of the hive and group validators; each caller keeps its own
+  guard + permanent-grantor short-circuit. Four pure host tests pin the helper. The
+  Err-vs-Invalid normalization of those same fetchers stays the deferred H2 residual.
 
 ## DEFERRED — H2 sketch (per-entry-type ACL validators; blessing-time co-design)
 

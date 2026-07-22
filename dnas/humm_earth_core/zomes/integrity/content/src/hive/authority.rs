@@ -19,37 +19,42 @@ pub fn role_satisfies(held: Role, required: Role) -> bool {
     rank(held) >= rank(required)
 }
 
-/// Fetch + decode an entry by action hash into `(author, entry)`, with an
-/// explicit "wrong entry type" message (`type_label`) rather than a bare
-/// deserialization error. Shared by the typed fetchers below.
-pub(super) fn fetch_authored_entry<T: TryFrom<SerializedBytes, Error = SerializedBytesError>>(
+/// Fetch + decode an entry by action hash into `(author, entry)`. The
+/// caller supplies the mis-typed-entry message via `not_found_msg`
+/// (evaluated only on the missing branch) so each fetcher keeps its own
+/// diagnostic wording while sharing this fetch/decode skeleton.
+pub(crate) fn fetch_authored_entry<T, F>(
     action_hash: &ActionHash,
-    type_label: &str,
-) -> ExternResult<(AgentPubKey, T)> {
+    not_found_msg: F,
+) -> ExternResult<(AgentPubKey, T)>
+where
+    T: TryFrom<SerializedBytes, Error = SerializedBytesError>,
+    F: FnOnce() -> String,
+{
     let record = must_get_valid_record(action_hash.clone())?;
     let author = record.action().author().clone();
     let entry = record
         .entry()
         .to_app_option()
         .map_err(|e| wasm_error!(e))?
-        .ok_or_else(|| {
-            wasm_error!(WasmErrorInner::Guest(format!(
-                "{action_hash} does not reference a {type_label} entry"
-            )))
-        })?;
+        .ok_or_else(|| wasm_error!(WasmErrorInner::Guest(not_found_msg())))?;
     Ok((author, entry))
 }
 
 /// `(genesis_author, genesis_entry)` for a [`HiveGenesis`] action hash.
 pub fn fetch_genesis(genesis_hash: &ActionHash) -> ExternResult<(AgentPubKey, HiveGenesis)> {
-    fetch_authored_entry(genesis_hash, "HiveGenesis")
+    fetch_authored_entry(genesis_hash, || {
+        format!("{genesis_hash} does not reference a HiveGenesis entry")
+    })
 }
 
 /// `(membership_author, membership_entry)` for a [`HiveMembership`] action hash.
 pub fn fetch_membership(
     membership_hash: &ActionHash,
 ) -> ExternResult<(AgentPubKey, HiveMembership)> {
-    fetch_authored_entry(membership_hash, "HiveMembership")
+    fetch_authored_entry(membership_hash, || {
+        format!("{membership_hash} does not reference a HiveMembership entry")
+    })
 }
 
 /// Verify `agent` holds at least `required_role` for `genesis_hash` at

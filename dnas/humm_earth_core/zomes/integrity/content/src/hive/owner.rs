@@ -7,13 +7,17 @@ use crate::group::link_authors_target_entry;
 fn fetch_owner_handoff_offer(
     offer_hash: &ActionHash,
 ) -> ExternResult<(AgentPubKey, HiveOwnerHandoffOffer)> {
-    fetch_authored_entry(offer_hash, "HiveOwnerHandoffOffer")
+    fetch_authored_entry(offer_hash, || {
+        format!("{offer_hash} does not reference a HiveOwnerHandoffOffer entry")
+    })
 }
 
 fn fetch_owner_handoff_accept(
     accept_hash: &ActionHash,
 ) -> ExternResult<(AgentPubKey, HiveOwnerHandoffAccept)> {
-    fetch_authored_entry(accept_hash, "HiveOwnerHandoffAccept")
+    fetch_authored_entry(accept_hash, || {
+        format!("{accept_hash} does not reference a HiveOwnerHandoffAccept entry")
+    })
 }
 
 /// EVER-owner, not current-owner: a validator cannot detect a completed

@@ -227,11 +227,7 @@ pub(super) fn run_content_validators(
 /// double-charges the per-group authority walk.
 pub(super) fn first_duplicate_group(group_acl: &AclByGroupGenesis) -> Option<&ActionHash> {
     let mut seen = std::collections::BTreeSet::new();
-    std::iter::once(&group_acl.owner)
-        .chain(group_acl.admin.iter())
-        .chain(group_acl.writer.iter())
-        .chain(group_acl.reader.iter())
-        .find(|hash| !seen.insert(*hash))
+    group_acl.groups().find(|hash| !seen.insert(*hash))
 }
 
 /// `AclSpec::HiveGroup` validator. The author must hold Writer+ in
@@ -313,11 +309,7 @@ fn validate_hivegroup_acl(
     // author is a member of via one specific membership. Cross-group
     // multi-membership writes are still possible by issuing separate
     // entries.
-    for group_hash in std::iter::once(&group_acl.owner)
-        .chain(group_acl.admin.iter())
-        .chain(group_acl.writer.iter())
-        .chain(group_acl.reader.iter())
-    {
+    for group_hash in group_acl.groups() {
         // Per-group cross-hive consistency check. fetch_group_genesis
         // returns the parent hive; reject if it does not match the
         // entry's hive (attack #9).
