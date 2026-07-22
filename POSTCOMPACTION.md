@@ -5,7 +5,7 @@
 
 ---
 
-## Latest arc (2026-07-18..21): pass-7 integrity fork — scratch branch (NOT shipped)
+## Latest arc (2026-07-18..22): pass-7 integrity fork — scratch branch (NOT shipped)
 
 Branch `feat-integrity-pass-7` (scratch discipline: NEVER merge/tag/distribute,
 NEVER tell humm-tauri; blessing ritual parked). Wave-1 (M0–M7, through `022b7d8`)
@@ -40,6 +40,37 @@ COMPLETE per the approved M8–M12 plan:
   clean, DNA hash frozen at the M9 pin `uhC0koUno…`. Ledger:
   `docs/PASS_7_SCRATCH.md` (branch-only; commit hashes backfilled, H2 sketch
   recorded). Branch PARKED for blessing — NO merge/tag/distribution/mbox.
+
+Wave-3 COMPLETE (M13–M15, HEAD `ee47e74`; final scratch DNA
+`uhC0kemuLaIzdw19cQwOLB1JB7o7-5ZFXNIwcOYlBpNFfL_8Uicl6`):
+
+- **M13 (`5476cb6`, DNA `uhC0kbz8Dh…`)** — one integrity milestone batching four
+  documented items: `group_acl` bucket disjointness (the H2 zome-only ACL gap;
+  pure `first_duplicate_group` + a pre-fetch Step 1.5 reject in
+  `validate_hivegroup_acl`, L23 — a group in two buckets is redundant under
+  witness dominance, rejected before any authority walk); Err→Invalid
+  normalization of the local link-validator structural rejects
+  (`target_action_hash` → `require_action_target` returning
+  `Result<ActionHash, ValidateCallbackResult>`, 5 callsites, + 6 local
+  `to_app_option` rejects); L21 interpolates `GROUP_DISPLAY_ID_MAX_CHARS`
+  (renders identical); dropped the `membership.for_agent` clone.
+- **M14 (`6ae396a`, DNA held)** — coordinator wire-identical extractions:
+  `create_encrypted_content` split into `emit_create_signals` +
+  `publish_create_links`; the `get_latest_membership` twins collapsed onto one
+  `latest_membership_via(input, strategy, options)` core.
+- **M15 (`ee47e74`, DNA `uhC0kemu…`)** — six review lanes (rust/security/silent/
+  standards+DRY over M13+M14, then general+rust over the M15 delta) all APPROVE;
+  three flagged the local normalization as incomplete, so M15 finished it:
+  `common.rs fetch_target_encrypted_content` + `original_pointer.rs` helpers +
+  `updates.rs` base/target rejects all moved to `Invalid` via the nested-verdict
+  `ExternResult<Result<T, ValidateCallbackResult>>` idiom (5 + 3 callers updated),
+  plus three hash-safe doc fixes and two pre-fetch host tests. `must_get_valid_record`
+  / serialize paths stay `Err`. Only remaining `Err` residual: the two entry
+  authority fetchers (`group/authority.rs`, `hive/authority.rs`), deferred to H2.
+- Final gates: integrity host 120, coordinator host 51, clippy `-D warnings` + fmt
+  clean, full sweettest 62 passed + 1 ignored (14 binaries), reject-literal
+  superset holds (net-new = disjointness L23; L21 interpolation renders identical).
+  Branch PARKED — NO merge/tag/distribution/mbox.
 
 Also on `main` post-v3.3.0: B10 opt-in liveness rider (`6a3d428`), B11 declined
 zome-side (`16eac91`), meter doc §5.3 (`d30d4f1`); the mbox crown-fix arc closed
@@ -304,7 +335,7 @@ DNA `uhC0k2dX`, happ `42dbf9df`) is what humm-tauri currently bundles and runs
   `nix develop --command hc dna pack dnas/humm_earth_core/workdir`, then
   `nix develop --command hc app pack workdir --recursive`; `hc dna hash …` MUST print
   `uhC0ksXs…` on `main` (v3.0.0/pass-6). Pass-5/v2.0.0 was `uhC0k2dX…`.
-- **Tests:** host `cargo test -p content --lib` (48) + `-p content_integrity --lib` (76 on main; 112 on the pass-7 branch).
+- **Tests:** host `cargo test -p content --lib` (48) + `-p content_integrity --lib` (76 on main; 120 on the pass-7 branch).
   Conductor: `crates/sweettest` (in-process, iroh). **Tryorama CANNOT boot on
   hc 0.6.x** — do not use it.
 
@@ -316,7 +347,7 @@ DNA `uhC0k2dX`, happ `42dbf9df`) is what humm-tauri currently bundles and runs
   devShell provides `openssl` + `pkg-config`; RustCrypto pinned to holochain's RCs.
 - Run: `cd crates/sweettest && nix develop ../.. --command bash -c 'export LIBCLANG_PATH=<nix clang lib dir>; cargo test -- --test-threads=1'`
   (`LIBCLANG_PATH` e.g. `/nix/store/…clang-18.1.8-lib/lib`).
-- **37 passed + 1 ignored on `main` (v3.3.0); 61 passed + 1 ignored on the
+- **37 passed + 1 ignored on `main` (v3.3.0); 62 passed + 1 ignored on the
   pass-7 scratch branch** (14 test binaries; heavyweights: pinned_hosts 9,
   service_records 9). Wire-mirror rule: a mirror used by 2+ test files lives in
   `tests/support/mod.rs` (single source of truth); a mirror used by exactly ONE
