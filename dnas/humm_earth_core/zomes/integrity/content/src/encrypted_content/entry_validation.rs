@@ -221,9 +221,10 @@ pub(super) fn run_content_validators(
 }
 
 /// First group hash appearing in more than one bucket (or twice in
-/// one) of a `group_acl` — the buckets MUST form disjoint sets, else
-/// role dominance is ambiguous and the per-group authority walk
-/// double-charges the validator.
+/// one) of a `group_acl` — the buckets MUST form disjoint sets. A
+/// duplicate is redundant under the witness dominance chain (dominance
+/// resolves it deterministically), not ambiguous; it only needlessly
+/// double-charges the per-group authority walk.
 pub(super) fn first_duplicate_group(group_acl: &AclByGroupGenesis) -> Option<&ActionHash> {
     let mut seen = std::collections::BTreeSet::new();
     std::iter::once(&group_acl.owner)
@@ -248,9 +249,8 @@ pub(super) fn first_duplicate_group(group_acl: &AclByGroupGenesis) -> Option<&Ac
 ///
 /// ## Step order (fail-fast)
 ///
-/// 1. Cardinality bound on `group_acl` (cheap, pre-fetch).
-/// 1.5. Bucket disjointness across owner/admin/writer/reader (cheap,
-///    pre-fetch — buckets must be pairwise disjoint).
+/// 1. Cardinality bound on `group_acl` + bucket disjointness across
+///    owner/admin/writer/reader (both cheap, pre-fetch).
 /// 2. Hive Writer+ authority (1 fetch).
 /// 3. Per-group cross-hive consistency + per-group Writer+ authority
 ///    (≤ 3 fetches per group, bounded by [`GROUP_ACL_MAX_GROUPS`]).
@@ -288,9 +288,8 @@ fn validate_hivegroup_acl(
              maximum is GROUP_ACL_MAX_GROUPS = {GROUP_ACL_MAX_GROUPS}",
         )));
     }
-    // Step 1.5 — bucket disjointness. A group listed in two buckets
-    // (or twice in one) makes role dominance ambiguous and double-
-    // charges the per-group authority walk. Cheap, pre-fetch.
+    // Rejected pre-fetch, before any authority walk; a duplicate is
+    // redundant (not ambiguous) per first_duplicate_group's contract.
     if let Some(duplicate) = first_duplicate_group(group_acl) {
         return Ok(ValidateCallbackResult::Invalid(format!(
             "HiveGroup group_acl buckets must be disjoint: {duplicate} appears more than once",

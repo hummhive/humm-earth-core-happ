@@ -11,23 +11,23 @@ use crate::encrypted_content::EncryptedContent;
 /// fields used for path recomputation.
 pub(super) fn fetch_target_encrypted_content(
     target_address: &AnyLinkableHash,
-) -> ExternResult<(SignedActionHashed, EncryptedContent)> {
-    let target_ah = target_address.clone().into_action_hash().ok_or_else(|| {
-        wasm_error!(WasmErrorInner::Guest(format!(
+) -> ExternResult<Result<(SignedActionHashed, EncryptedContent), ValidateCallbackResult>> {
+    let Some(target_ah) = target_address.clone().into_action_hash() else {
+        return Ok(Err(ValidateCallbackResult::Invalid(format!(
             "link target {target_address} must be an ActionHash",
-        )))
-    })?;
+        ))));
+    };
     let record = must_get_valid_record(target_ah)?;
-    let entry: EncryptedContent = record
+    let Some(entry) = record
         .entry()
-        .to_app_option()
+        .to_app_option::<EncryptedContent>()
         .map_err(|e| wasm_error!(e))?
-        .ok_or_else(|| {
-            wasm_error!(WasmErrorInner::Guest(format!(
-                "link target {target_address} does not reference an EncryptedContent",
-            )))
-        })?;
-    Ok((record.signed_action().clone(), entry))
+    else {
+        return Ok(Err(ValidateCallbackResult::Invalid(format!(
+            "link target {target_address} does not reference an EncryptedContent",
+        ))));
+    };
+    Ok(Ok((record.signed_action().clone(), entry)))
 }
 
 /// Recompute a path hash from string components and return it as the

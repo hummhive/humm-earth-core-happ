@@ -16,7 +16,10 @@ pub fn validate_create_link_lineage(
     target_address: AnyLinkableHash,
     _tag: LinkTag,
 ) -> ExternResult<ValidateCallbackResult> {
-    let (target_action, target_entry) = fetch_target_encrypted_content(&target_address)?;
+    let (target_action, target_entry) = match fetch_target_encrypted_content(&target_address)? {
+        Ok(pair) => pair,
+        Err(invalid) => return Ok(invalid),
+    };
     let author_check = require_link_author_is_target_author(&action, &target_action);
     if !matches!(author_check, ValidateCallbackResult::Valid) {
         return Ok(author_check);

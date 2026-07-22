@@ -13,28 +13,35 @@ fn action_hash_from_link_address(
     })
 }
 
-fn require_encrypted_content_record(record: &Record, label: &str) -> ExternResult<()> {
-    let _: EncryptedContent = record
+fn require_encrypted_content_record(
+    record: &Record,
+    label: &str,
+) -> ExternResult<Result<(), ValidateCallbackResult>> {
+    let Some(_) = record
         .entry()
-        .to_app_option()
+        .to_app_option::<EncryptedContent>()
         .map_err(|e| wasm_error!(e))?
-        .ok_or_else(|| {
-            wasm_error!(WasmErrorInner::Guest(format!(
-                "OriginalHashPointer {label} does not reference an EncryptedContent"
-            )))
-        })?;
-    Ok(())
+    else {
+        return Ok(Err(ValidateCallbackResult::Invalid(format!(
+            "OriginalHashPointer {label} does not reference an EncryptedContent"
+        ))));
+    };
+    Ok(Ok(()))
 }
 
-fn encrypted_content_root_hash(mut action_hash: ActionHash) -> ExternResult<ActionHash> {
+fn encrypted_content_root_hash(
+    mut action_hash: ActionHash,
+) -> ExternResult<Result<ActionHash, ValidateCallbackResult>> {
     loop {
         let record = must_get_valid_record(action_hash.clone())?;
-        require_encrypted_content_record(&record, "base chain action")?;
+        if let Err(invalid) = require_encrypted_content_record(&record, "base chain action")? {
+            return Ok(Err(invalid));
+        }
         match record.action() {
-            Action::Create(_) => return Ok(action_hash),
+            Action::Create(_) => return Ok(Ok(action_hash)),
             Action::Update(update) => action_hash = update.original_action_address.clone(),
             _ => {
-                return Err(wasm_error!(WasmErrorInner::Guest(
+                return Ok(Err(ValidateCallbackResult::Invalid(
                     "OriginalHashPointer base chain action must be a Create or Update".into(),
                 )));
             }
@@ -63,7 +70,9 @@ pub fn validate_create_link_original_hash_pointer(
     };
 
     let base_record = must_get_valid_record(base_hash.clone())?;
-    require_encrypted_content_record(&base_record, "base")?;
+    if let Err(invalid) = require_encrypted_content_record(&base_record, "base")? {
+        return Ok(invalid);
+    }
     if &action.author != base_record.action().author() {
         return Ok(ValidateCallbackResult::Invalid(format!(
             "OriginalHashPointer link author {} does not match base entry author {}",
@@ -73,7 +82,9 @@ pub fn validate_create_link_original_hash_pointer(
     }
 
     let target_record = must_get_valid_record(target_hash.clone())?;
-    require_encrypted_content_record(&target_record, "target")?;
+    if let Err(invalid) = require_encrypted_content_record(&target_record, "target")? {
+        return Ok(invalid);
+    }
     if !matches!(target_record.action(), Action::Create(_)) {
         return Ok(ValidateCallbackResult::Invalid(
             "OriginalHashPointer target must be the root Create action".into(),
@@ -87,7 +98,10 @@ pub fn validate_create_link_original_hash_pointer(
         )));
     }
 
-    let root_hash = encrypted_content_root_hash(base_hash)?;
+    let root_hash = match encrypted_content_root_hash(base_hash)? {
+        Ok(hash) => hash,
+        Err(invalid) => return Ok(invalid),
+    };
     if root_hash != target_hash {
         return Ok(ValidateCallbackResult::Invalid(
             "OriginalHashPointer target must match the native update-chain root".into(),

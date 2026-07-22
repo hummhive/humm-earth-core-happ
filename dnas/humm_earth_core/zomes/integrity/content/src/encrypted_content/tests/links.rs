@@ -231,3 +231,43 @@ fn delete_link_original_hash_pointer_enforces_author_equality() {
         other => panic!("expected Invalid, got {other:?}"),
     }
 }
+
+#[test]
+fn create_link_hive_rejects_non_action_target() {
+    let alice = agent_pubkey(1);
+    let base = AnyLinkableHash::from(EntryHash::from_raw_36(vec![5u8; 36]));
+    let target = AnyLinkableHash::from(EntryHash::from_raw_36(vec![4u8; 36]));
+    let result =
+        validate_create_link_hive(make_create_link(alice), base, target, LinkTag::new(vec![]))
+            .expect("non-action target should be classified pre-fetch, not error");
+    match result {
+        ValidateCallbackResult::Invalid(msg) => {
+            assert!(msg.contains("link target"), "got: {msg}");
+            assert!(msg.contains("must be an ActionHash"), "got: {msg}");
+        }
+        other => panic!("expected Invalid, got {other:?}"),
+    }
+}
+
+#[test]
+fn create_link_encrypted_content_updates_rejects_non_action_base() {
+    let alice = agent_pubkey(1);
+    let base = AnyLinkableHash::from(EntryHash::from_raw_36(vec![5u8; 36]));
+    let target = AnyLinkableHash::from(action_hash(2));
+    let result = validate_create_link_encrypted_content_updates(
+        make_create_link(alice),
+        base,
+        target,
+        LinkTag::new(vec![]),
+    )
+    .expect("non-action base should be classified pre-fetch, not error");
+    match result {
+        ValidateCallbackResult::Invalid(msg) => {
+            assert!(
+                msg.contains("EncryptedContentUpdates link base must be an ActionHash"),
+                "got: {msg}"
+            );
+        }
+        other => panic!("expected Invalid, got {other:?}"),
+    }
+}

@@ -29,11 +29,11 @@ pub fn validate_create_link_encrypted_content_updates(
     target_address: AnyLinkableHash,
     _tag: LinkTag,
 ) -> ExternResult<ValidateCallbackResult> {
-    let base_ah = base_address.into_action_hash().ok_or_else(|| {
-        wasm_error!(WasmErrorInner::Guest(
+    let Some(base_ah) = base_address.into_action_hash() else {
+        return Ok(ValidateCallbackResult::Invalid(
             "EncryptedContentUpdates link base must be an ActionHash".into(),
-        ))
-    })?;
+        ));
+    };
     let base_record = must_get_valid_record(base_ah)?;
     let base_author = base_record.action().author().clone();
     if action.author != base_author {
@@ -52,11 +52,11 @@ pub fn validate_create_link_encrypted_content_updates(
             "EncryptedContentUpdates link base does not reference an EncryptedContent".into(),
         ));
     };
-    let target_ah = target_address.into_action_hash().ok_or_else(|| {
-        wasm_error!(WasmErrorInner::Guest(
+    let Some(target_ah) = target_address.into_action_hash() else {
+        return Ok(ValidateCallbackResult::Invalid(
             "EncryptedContentUpdates link target must be an ActionHash".into(),
-        ))
-    })?;
+        ));
+    };
     let target_record = must_get_valid_record(target_ah)?;
     let target_author = target_record.action().author().clone();
     if action.author != target_author {

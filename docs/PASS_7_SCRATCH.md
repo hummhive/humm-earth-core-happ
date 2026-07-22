@@ -17,6 +17,7 @@
 | M12 (review-lane fixes + DRY sweep) | 74d52ea | uhC0koUno-fuuCeAdMbEnkHqSWW2k1EHx76Rym8Dt9cyoB4djU_Bv (UNCHANGED; coordinator docs/nits + test-only) | dff117981cac29f9a20ec14d0309d53d07b9d8dfbe64c1fc07f1cea886ec9891 |
 | M13 (group_acl bucket disjointness + deterministic link-validator rejects) | (backfill@M15) | uhC0kbz8DhCkYWaLeihsumn8V726s3ZzWcTsAqLNcFBWIEVaWVPnB | 7a4cd2e03328ed4c23e2329dff5ccf23b42e1a16f0a5ce137f13b7f11434e2ad |
 | M14 (create-link publication + membership twin extraction) | (backfill@M15) | uhC0kbz8DhCkYWaLeihsumn8V726s3ZzWcTsAqLNcFBWIEVaWVPnB (UNCHANGED; coordinator-only refactor) | 7a4cd2e03328ed4c23e2329dff5ccf23b42e1a16f0a5ce137f13b7f11434e2ad |
+| M15 (complete link-validator normalization + review doc fixes) | (backfill) | uhC0kemuLaIzdw19cQwOLB1JB7o7-5ZFXNIwcOYlBpNFfL_8Uicl6 | 39062286742a11836822ab8cf5fcfde2ed6e92321b90106a4ed5de38eb8e92f0 |
 
 ## New reject literals (accumulates the blessing-time BDD delta)
 | # | literal | validator fn | milestone |
@@ -178,13 +179,35 @@ sweettest therefore drives `create_group_genesis` directly.
   `membership.for_agent.clone()` nit (dropped in `hive/links.rs`). (c) L21 now
   interpolates `GROUP_DISPLAY_ID_MAX_CHARS` — renders byte-identical to the shipped
   literal (matches the `HEADER_ID_MAX_CHARS` precedent). (d) the clone drop above.
-  **NAMED RESIDUAL (still `Err`, next sanctioned pass):** shared helpers that return
-  non-verdict types and have out-of-set callers, so a local Invalid conversion is
-  impossible without a return-type change cascading to callers — the entry authority
-  fetchers (`group/authority.rs`, `hive/authority.rs`), `fetch_target_encrypted_content`
-  in `encrypted_content/links/common.rs` (5 external callers), and
-  `require_encrypted_content_record` in `encrypted_content/links/original_pointer.rs`
-  (3 in-file call paths incl. root-chain traversal, returns `ExternResult<()>`).
+  **NAMED RESIDUAL (still `Err`, next sanctioned pass):** the two entry authority
+  fetchers `group/authority.rs` + `hive/authority.rs` — a different pre-pass-2
+  class whose shared helper hands a decoded entry tuple to many callers; deferred
+  to co-design with the per-entry-type ACL validators (H2).
+- **M15 review-wave completion (hash moved again to `uhC0kemu…`, the FINAL scratch
+  hash):** all four lanes (rust/security/silent/standards+DRY) returned APPROVE;
+  three independently flagged that the local Err→Invalid normalization was still
+  incomplete. M15 finishes it: (a) the two `updates.rs` base/target
+  `into_action_hash` rejects → `Invalid`; (b) `common.rs`
+  `fetch_target_encrypted_content` → nested verdict
+  `ExternResult<Result<T, ValidateCallbackResult>>` (BOTH the non-action-target and
+  the type-mismatch branch), 5 callers (acl/content_id/dynamic/hive/lineage)
+  match-return the `Invalid`; (c) `original_pointer.rs`
+  `require_encrypted_content_record` + `encrypted_content_root_hash` → nested verdict
+  (incl. the chain-action `_` reject), callers updated. Every message string stays
+  byte-identical (superset holds). The security lane traced the vendored
+  holochain-0.6.1 sources to confirm these Err→Invalid moves cannot turn a
+  should-retry data-availability case into a wrongful permanent reject
+  (`GetRecordDetailsQuery` returns only StoreRecord-backed rows; `(Public, NotStored)`
+  is malformed at sys-validation; real not-found short-circuits host-side as
+  `UnresolvedDependencies`; the AgentPubKey corner is a permanent mismatch where
+  `Invalid` is correct). Two pre-fetch host tests pin the `Invalid` class
+  (`create_link_hive_rejects_non_action_target`,
+  `create_link_encrypted_content_updates_rejects_non_action_base`). Plus three
+  hash-safe doc fixes: dropped the "ambiguous" wording on `first_duplicate_group`
+  (dominance resolves a duplicate deterministically — redundant, not ambiguous),
+  folded the disjointness bullet into ladder step 1 (fixes a rustdoc `1.5.`
+  list-marker quirk), restored the per-variant `public_key_acl.reader` doc on
+  `emit_create_signals`.
 
 ## DEFERRED — H2 sketch (per-entry-type ACL validators; blessing-time co-design)
 

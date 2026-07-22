@@ -53,6 +53,8 @@ pub fn create_encrypted_content(
 }
 
 /// Local self-emit + best-effort cross-host fan-out to public_key_acl.reader.
+/// The reader bucket is the validated recipient list for DirectMessage, a
+/// routing hint for HiveGroup/Public, and usually empty for OpenWrite.
 /// `from_agent` stays None on both; the receiver stamps conductor provenance.
 fn emit_create_signals(
     response: &EncryptedContentResponse,
