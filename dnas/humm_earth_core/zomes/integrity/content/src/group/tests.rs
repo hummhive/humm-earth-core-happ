@@ -388,3 +388,22 @@ fn display_id_bounds_accept_1_to_256_chars_only() {
     };
     assert!(msg.contains("system-role GroupGenesis display_id must be 1-256 chars"));
 }
+
+#[test]
+fn require_action_target_accepts_action_hash() {
+    let ah = ActionHash::from_raw_36(vec![3; 36]);
+    let target = AnyLinkableHash::from(ah.clone());
+    assert_eq!(require_action_target(&target), Ok(ah));
+}
+
+#[test]
+fn require_action_target_rejects_entry_hash() {
+    let eh = EntryHash::from_raw_36(vec![7; 36]);
+    let target = AnyLinkableHash::from(eh);
+    match require_action_target(&target) {
+        Err(ValidateCallbackResult::Invalid(msg)) => {
+            assert!(msg.contains("must be an ActionHash"), "got: {msg}");
+        }
+        other => panic!("expected Invalid, got {other:?}"),
+    }
+}

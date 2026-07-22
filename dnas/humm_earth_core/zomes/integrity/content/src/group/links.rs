@@ -2,13 +2,17 @@ use hdi::prelude::*;
 
 use super::types::{GroupGenesis, GroupMembership};
 
-/// Resolve a link `target_address` to its `ActionHash`, erroring if the
-/// target is not action-addressed.
-pub(crate) fn target_action_hash(target_address: &AnyLinkableHash) -> ExternResult<ActionHash> {
+/// Resolve a link target that MUST be action-addressed. A non-action
+/// target is a structural defect of the link itself → deterministic
+/// `Invalid`, never `Err` (an `Err` parks the link in validation-retry
+/// limbo instead of rejecting it).
+pub(crate) fn require_action_target(
+    target_address: &AnyLinkableHash,
+) -> Result<ActionHash, ValidateCallbackResult> {
     target_address.clone().into_action_hash().ok_or_else(|| {
-        wasm_error!(WasmErrorInner::Guest(format!(
-            "link target {target_address} must be an ActionHash",
-        )))
+        ValidateCallbackResult::Invalid(format!(
+            "link target {target_address} must be an ActionHash"
+        ))
     })
 }
 
@@ -35,22 +39,22 @@ pub(crate) fn link_authors_target_entry<T>(
 where
     T: TryFrom<SerializedBytes, Error = SerializedBytesError>,
 {
-    let record = must_get_valid_record(target_action_hash(target_address)?)?;
+    let target_ah = match require_action_target(target_address) {
+        Ok(hash) => hash,
+        Err(invalid) => return Ok(Err(invalid)),
+    };
+    let record = must_get_valid_record(target_ah)?;
     if let invalid @ ValidateCallbackResult::Invalid(_) =
         require_link_author_is(&link_action.author, record.action().author())
     {
         return Ok(Err(invalid));
     }
-    let entry = record
-        .entry()
-        .to_app_option()
-        .map_err(|e| wasm_error!(e))?
-        .ok_or_else(|| {
-            wasm_error!(WasmErrorInner::Guest(format!(
-                "link target {} references an unexpected entry type",
-                record.action_address(),
-            )))
-        })?;
+    let Some(entry) = record.entry().to_app_option().map_err(|e| wasm_error!(e))? else {
+        return Ok(Err(ValidateCallbackResult::Invalid(format!(
+            "link target {} references an unexpected entry type",
+            record.action_address(),
+        ))));
+    };
     Ok(Ok(entry))
 }
 
@@ -64,22 +68,23 @@ pub fn validate_create_link_agent_to_group_memberships(
     target_address: AnyLinkableHash,
     _tag: LinkTag,
 ) -> ExternResult<ValidateCallbackResult> {
-    let target_ah = target_action_hash(&target_address)?;
+    let target_ah = match require_action_target(&target_address) {
+        Ok(hash) => hash,
+        Err(invalid) => return Ok(invalid),
+    };
     let record = must_get_valid_record(target_ah)?;
     let target_author = record.action().author().clone();
     let author_check = require_link_author_is(&action.author, &target_author);
     if !matches!(author_check, ValidateCallbackResult::Valid) {
         return Ok(author_check);
     }
-    let membership: GroupMembership = record
-        .entry()
-        .to_app_option()
-        .map_err(|e| wasm_error!(e))?
-        .ok_or_else(|| {
-            wasm_error!(WasmErrorInner::Guest(format!(
-                "AgentToGroupMemberships target {target_address} is not a GroupMembership",
-            )))
-        })?;
+    let Some(membership): Option<GroupMembership> =
+        record.entry().to_app_option().map_err(|e| wasm_error!(e))?
+    else {
+        return Ok(ValidateCallbackResult::Invalid(format!(
+            "AgentToGroupMemberships target {target_address} is not a GroupMembership",
+        )));
+    };
     let expected_base = AnyLinkableHash::from(membership.for_agent.clone());
     if base_address != expected_base {
         return Ok(ValidateCallbackResult::Invalid(format!(
@@ -101,22 +106,23 @@ pub fn validate_create_link_group_to_group_memberships(
     target_address: AnyLinkableHash,
     tag: LinkTag,
 ) -> ExternResult<ValidateCallbackResult> {
-    let target_ah = target_action_hash(&target_address)?;
+    let target_ah = match require_action_target(&target_address) {
+        Ok(hash) => hash,
+        Err(invalid) => return Ok(invalid),
+    };
     let record = must_get_valid_record(target_ah)?;
     let target_author = record.action().author().clone();
     let author_check = require_link_author_is(&action.author, &target_author);
     if !matches!(author_check, ValidateCallbackResult::Valid) {
         return Ok(author_check);
     }
-    let membership: GroupMembership = record
-        .entry()
-        .to_app_option()
-        .map_err(|e| wasm_error!(e))?
-        .ok_or_else(|| {
-            wasm_error!(WasmErrorInner::Guest(format!(
-                "GroupToGroupMemberships target {target_address} is not a GroupMembership",
-            )))
-        })?;
+    let Some(membership): Option<GroupMembership> =
+        record.entry().to_app_option().map_err(|e| wasm_error!(e))?
+    else {
+        return Ok(ValidateCallbackResult::Invalid(format!(
+            "GroupToGroupMemberships target {target_address} is not a GroupMembership",
+        )));
+    };
     let expected_base = AnyLinkableHash::from(membership.group_genesis_hash.clone());
     if base_address != expected_base {
         return Ok(ValidateCallbackResult::Invalid(format!(
@@ -153,7 +159,10 @@ pub fn validate_create_link_hive_to_groups(
     target_address: AnyLinkableHash,
     tag: LinkTag,
 ) -> ExternResult<ValidateCallbackResult> {
-    let target_ah = target_action_hash(&target_address)?;
+    let target_ah = match require_action_target(&target_address) {
+        Ok(hash) => hash,
+        Err(invalid) => return Ok(invalid),
+    };
     let record = must_get_valid_record(target_ah)?;
     let target_author = record.action().author().clone();
     let author_check = require_link_author_is(&action.author, &target_author);
@@ -165,15 +174,13 @@ pub fn validate_create_link_hive_to_groups(
             "HiveToGroups link tag must be empty (reserved for future use)".into(),
         ));
     }
-    let genesis: GroupGenesis = record
-        .entry()
-        .to_app_option()
-        .map_err(|e| wasm_error!(e))?
-        .ok_or_else(|| {
-            wasm_error!(WasmErrorInner::Guest(format!(
-                "HiveToGroups target {target_address} is not a GroupGenesis",
-            )))
-        })?;
+    let Some(genesis): Option<GroupGenesis> =
+        record.entry().to_app_option().map_err(|e| wasm_error!(e))?
+    else {
+        return Ok(ValidateCallbackResult::Invalid(format!(
+            "HiveToGroups target {target_address} is not a GroupGenesis",
+        )));
+    };
     let expected_base = AnyLinkableHash::from(genesis.hive_genesis_hash.clone());
     if base_address != expected_base {
         return Ok(ValidateCallbackResult::Invalid(format!(

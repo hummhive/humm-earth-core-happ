@@ -49,9 +49,9 @@ pub fn validate_create_group_genesis(
 pub(crate) fn system_role_display_id_verdict(display_id: &str) -> ValidateCallbackResult {
     let chars = display_id.chars().count();
     if chars == 0 || chars > GROUP_DISPLAY_ID_MAX_CHARS {
-        return ValidateCallbackResult::Invalid(
-            "system-role GroupGenesis display_id must be 1-256 chars".into(),
-        );
+        return ValidateCallbackResult::Invalid(format!(
+            "system-role GroupGenesis display_id must be 1-{GROUP_DISPLAY_ID_MAX_CHARS} chars"
+        ));
     }
     ValidateCallbackResult::Valid
 }

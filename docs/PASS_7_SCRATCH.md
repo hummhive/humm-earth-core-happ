@@ -15,6 +15,7 @@
 | M10 (idempotent delete + ACL liveness parity + paged inbox) | 97602f5 | uhC0koUno-fuuCeAdMbEnkHqSWW2k1EHx76Rym8Dt9cyoB4djU_Bv (UNCHANGED; coordinator-only) | dff117981cac29f9a20ec14d0309d53d07b9d8dfbe64c1fc07f1cea886ec9891 |
 | M11 (role-K downward-closure enumeration) | 34cad93 | uhC0koUno-fuuCeAdMbEnkHqSWW2k1EHx76Rym8Dt9cyoB4djU_Bv (UNCHANGED; coordinator-only) | dff117981cac29f9a20ec14d0309d53d07b9d8dfbe64c1fc07f1cea886ec9891 |
 | M12 (review-lane fixes + DRY sweep) | 74d52ea | uhC0koUno-fuuCeAdMbEnkHqSWW2k1EHx76Rym8Dt9cyoB4djU_Bv (UNCHANGED; coordinator docs/nits + test-only) | dff117981cac29f9a20ec14d0309d53d07b9d8dfbe64c1fc07f1cea886ec9891 |
+| M13 (group_acl bucket disjointness + deterministic link-validator rejects) | (backfill@M15) | uhC0kbz8DhCkYWaLeihsumn8V726s3ZzWcTsAqLNcFBWIEVaWVPnB | 7a4cd2e03328ed4c23e2329dff5ccf23b42e1a16f0a5ce137f13b7f11434e2ad |
 
 ## New reject literals (accumulates the blessing-time BDD delta)
 | # | literal | validator fn | milestone |
@@ -50,6 +51,7 @@
 | — | `HiveMembershipIndex link may only be deleted by its author (creator: …, attempted by: …)` | `validate_delete_link_hive_membership_index` | M8 |
 | L21 | `system-role GroupGenesis display_id must be 1-256 chars` | `system_role_display_id_verdict` (via `validate_create_group_genesis`) | M9 |
 | L22 | `a system-role GroupGenesis with this display_id already exists in this hive on your chain` | `validate_unique_system_role_on_chain` | M9 |
+| L23 | `HiveGroup group_acl buckets must be disjoint: {duplicate} appears more than once` | `validate_hivegroup_acl` (via `first_duplicate_group`) | M13 |
 
 `find_or_create_group_genesis` deliberately catches ONLY
 `GROUP_GENESIS_UNIQUENESS_REJECT` (L13) in its find-wins fallback; L22 propagates
@@ -157,6 +159,31 @@ sweettest therefore drives `create_group_genesis` directly.
   deferred to blessing: the integrity-side `membership.for_agent.clone()`
   allocation nit in `hive/links.rs` (rust lane) — dropping it would move the
   frozen DNA hash.
+- **M13 batch (Wave-3; hash intentionally moved off the M9 freeze to
+  `uhC0kbz8Dh…`):** four edits in one integrity milestone. (a) `group_acl`
+  bucket-disjointness — the H2 zome-only ACL gap — via pure `first_duplicate_group`
+  + a pre-fetch Step 1.5 reject in `validate_hivegroup_acl` (L23); a group listed in
+  two buckets is redundant under the witness dominance chain, not ambiguous, but is
+  now rejected before any authority walk. The existing `recipient_witnesses`
+  accept-fixture reused one group in `owner`+`reader`; retargeted to `owner`-only
+  (Reader witness still validates via owner→Reader dominance). (b) Err→Invalid
+  normalization of the LOCAL link-validator rejects — `target_action_hash` →
+  `require_action_target` returning `Result<ActionHash, ValidateCallbackResult>`
+  (5 callsites: 4 in `group/links.rs`, 1 in `hive/links.rs`), plus the 6 local
+  `to_app_option` type-mismatch rejects in `group/links.rs` (4) and
+  `encrypted_content/links/updates.rs` (2). Every message string is byte-identical;
+  only the reject class moved (Guest→Invalid), so the superset check is unaffected.
+  This RESOLVES the M12 S-3 deferral for the local cases and the rust-lane
+  `membership.for_agent.clone()` nit (dropped in `hive/links.rs`). (c) L21 now
+  interpolates `GROUP_DISPLAY_ID_MAX_CHARS` — renders byte-identical to the shipped
+  literal (matches the `HEADER_ID_MAX_CHARS` precedent). (d) the clone drop above.
+  **NAMED RESIDUAL (still `Err`, next sanctioned pass):** shared helpers that return
+  non-verdict types and have out-of-set callers, so a local Invalid conversion is
+  impossible without a return-type change cascading to callers — the entry authority
+  fetchers (`group/authority.rs`, `hive/authority.rs`), `fetch_target_encrypted_content`
+  in `encrypted_content/links/common.rs` (5 external callers), and
+  `require_encrypted_content_record` in `encrypted_content/links/original_pointer.rs`
+  (3 in-file call paths incl. root-chain traversal, returns `ExternResult<()>`).
 
 ## DEFERRED — H2 sketch (per-entry-type ACL validators; blessing-time co-design)
 
@@ -170,9 +197,9 @@ need their co-design; neither is buildable zome-only. Also structurally
 unavailable: `max_uses` cannot be made authoritative by counting redemption
 links inside a pure entry validator (links are not part of the entry's
 validation package). The one genuine zome-only ACL gap found while scoping —
-`group_acl` bucket-disjointness enforcement — is a candidate for the NEXT
-sanctioned integrity fork, alongside the deferred hygiene items above
-(Err-vs-Invalid normalization, L21 const interpolation, the
-`membership.for_agent` clone). The DM-existence validator that ships today
+`group_acl` bucket-disjointness enforcement — LANDED at M13 on this fork (L23,
+`first_duplicate_group` in `validate_hivegroup_acl`), together with the deferred
+hygiene items (Err-vs-Invalid normalization of the local link-validator rejects,
+L21 const interpolation, the `membership.for_agent` clone drop). The DM-existence validator that ships today
 (`validate_directmessage_acl`) plus Public/OpenWrite dispatch remain the
 enforced surface.

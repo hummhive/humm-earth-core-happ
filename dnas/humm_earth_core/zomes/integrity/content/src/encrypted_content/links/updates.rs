@@ -43,15 +43,15 @@ pub fn validate_create_link_encrypted_content_updates(
             action.author, base_author,
         )));
     }
-    let _: EncryptedContent = base_record
+    let Some(_) = base_record
         .entry()
-        .to_app_option()
+        .to_app_option::<EncryptedContent>()
         .map_err(|e| wasm_error!(e))?
-        .ok_or_else(|| {
-            wasm_error!(WasmErrorInner::Guest(
-                "EncryptedContentUpdates link base does not reference an EncryptedContent".into(),
-            ))
-        })?;
+    else {
+        return Ok(ValidateCallbackResult::Invalid(
+            "EncryptedContentUpdates link base does not reference an EncryptedContent".into(),
+        ));
+    };
     let target_ah = target_address.into_action_hash().ok_or_else(|| {
         wasm_error!(WasmErrorInner::Guest(
             "EncryptedContentUpdates link target must be an ActionHash".into(),
@@ -66,15 +66,15 @@ pub fn validate_create_link_encrypted_content_updates(
             action.author, target_author,
         )));
     }
-    let _: EncryptedContent = target_record
+    let Some(_) = target_record
         .entry()
-        .to_app_option()
+        .to_app_option::<EncryptedContent>()
         .map_err(|e| wasm_error!(e))?
-        .ok_or_else(|| {
-            wasm_error!(WasmErrorInner::Guest(
-                "EncryptedContentUpdates link target does not reference an EncryptedContent".into(),
-            ))
-        })?;
+    else {
+        return Ok(ValidateCallbackResult::Invalid(
+            "EncryptedContentUpdates link target does not reference an EncryptedContent".into(),
+        ));
+    };
     Ok(ValidateCallbackResult::Valid)
 }
 

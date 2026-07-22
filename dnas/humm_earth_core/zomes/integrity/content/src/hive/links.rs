@@ -2,7 +2,7 @@
 
 use hdi::prelude::*;
 
-use crate::group::{require_link_author_is, target_action_hash};
+use crate::group::{require_action_target, require_link_author_is};
 use crate::EntryTypes;
 
 /// `HiveMembershipIndex`: base = member `AgentPubKey`, target =
@@ -21,7 +21,11 @@ pub fn validate_create_link_hive_membership_index(
             "HiveMembershipIndex tag must be empty".into(),
         ));
     }
-    let record = must_get_valid_record(target_action_hash(&target_address)?)?;
+    let target_ah = match require_action_target(&target_address) {
+        Ok(hash) => hash,
+        Err(invalid) => return Ok(invalid),
+    };
+    let record = must_get_valid_record(target_ah)?;
     let target_author = record.action().author().clone();
     let author_check = require_link_author_is(&action.author, &target_author);
     if !matches!(author_check, ValidateCallbackResult::Valid) {
@@ -42,7 +46,7 @@ pub fn validate_create_link_hive_membership_index(
     // field-superset of HiveGenesis, so to_app_option would false-positive.
     match EntryTypes::deserialize_from_type(*zome_index, *entry_index, entry)? {
         Some(EntryTypes::HiveMembership(membership)) => {
-            if base_address != AnyLinkableHash::from(membership.for_agent.clone()) {
+            if base_address != AnyLinkableHash::from(membership.for_agent) {
                 return Ok(ValidateCallbackResult::Invalid(
                     "HiveMembershipIndex base must be the membership's for_agent".into(),
                 ));

@@ -295,3 +295,42 @@ fn acl_bucket_dominance_matrix() {
     assert!(!Reader.dominates(Admin));
     assert!(!Reader.dominates(Writer));
 }
+
+#[test]
+fn disjoint_buckets_have_no_duplicate() {
+    let acl = group_acl(
+        action_hash(1),
+        vec![action_hash(2)],
+        vec![action_hash(3)],
+        vec![action_hash(4)],
+    );
+    assert!(first_duplicate_group(&acl).is_none());
+}
+
+#[test]
+fn owner_repeated_in_admin_is_duplicate() {
+    let acl = group_acl(action_hash(1), vec![action_hash(1)], vec![], vec![]);
+    assert_eq!(first_duplicate_group(&acl), Some(&action_hash(1)));
+}
+
+#[test]
+fn duplicate_within_writer_bucket_is_caught() {
+    let acl = group_acl(
+        action_hash(1),
+        vec![],
+        vec![action_hash(5), action_hash(5)],
+        vec![],
+    );
+    assert_eq!(first_duplicate_group(&acl), Some(&action_hash(5)));
+}
+
+#[test]
+fn duplicate_across_writer_and_reader_is_caught() {
+    let acl = group_acl(
+        action_hash(1),
+        vec![],
+        vec![action_hash(6)],
+        vec![action_hash(6)],
+    );
+    assert_eq!(first_duplicate_group(&acl), Some(&action_hash(6)));
+}
