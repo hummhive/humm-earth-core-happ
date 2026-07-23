@@ -174,6 +174,18 @@ pub fn set_cap_tokens() -> ExternResult<()> {
     fns.insert((zome.clone(), "content_summary_many".into()));
     fns.insert((zome.clone(), "is_ownership_contested".into()));
 
+    // Pass-7 Wave-4 batch read externs: read-only over public DHT link space,
+    // same grant class as their singleton twins above. `content_id_exists`
+    // probes the same link space and returns only a bool.
+    fns.insert((
+        zome.clone(),
+        "list_encrypted_content_by_dynamic_links".into(),
+    ));
+    fns.insert((zome.clone(), "list_by_hive_links_many".into()));
+    fns.insert((zome.clone(), "get_many_by_content_id_link".into()));
+    fns.insert((zome.clone(), "list_by_author_many".into()));
+    fns.insert((zome.clone(), "content_id_exists".into()));
+
     // Group-authority read externs (pass-3). Same rationale as the
     // hive read surface above: GroupGenesis and GroupMembership entries
     // are public DHT data and the corresponding link space is public.

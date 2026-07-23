@@ -21,6 +21,7 @@
 | M16 (integrity DRY: shared typed fetch + bucket iterator + expiry containment) | (backfill) | uhC0k-HAqM4zW2rCWrKSujEKDZcqybE_ATUjKxkRy2BmRjURYddxP | ec11ba8f9518cee6aee5d9e1df4fc1f7449f42584213abb4f8636cdceb90fcdd |
 | M17 (coordinator resolve-path perf: record reuse + immutable-entity caches) | (backfill) | uhC0k-HAqM4zW2rCWrKSujEKDZcqybE_ATUjKxkRy2BmRjURYddxP (UNCHANGED; coordinator-only) | ec11ba8f9518cee6aee5d9e1df4fc1f7449f42584213abb4f8636cdceb90fcdd |
 | M18 (coordinator DRY + allocation discipline: shared emit/resolve + borrowed link helpers + O(limit) paging) | (backfill) | uhC0k-HAqM4zW2rCWrKSujEKDZcqybE_ATUjKxkRy2BmRjURYddxP (UNCHANGED; coordinator-only) | ec11ba8f9518cee6aee5d9e1df4fc1f7449f42584213abb4f8636cdceb90fcdd |
+| M19 (coordinator content batch read externs: dynamic-links/hive-links/content-id/author + exists, bounded) | (backfill) | uhC0k-HAqM4zW2rCWrKSujEKDZcqybE_ATUjKxkRy2BmRjURYddxP (UNCHANGED; coordinator-only) | ec11ba8f9518cee6aee5d9e1df4fc1f7449f42584213abb4f8636cdceb90fcdd |
 
 ## New reject literals (accumulates the blessing-time BDD delta)
 | # | literal | validator fn | milestone |
@@ -249,6 +250,24 @@ sweettest therefore drives `create_group_genesis` directly.
   class with no per-class `Vec<String>`, and the update reindex reuses one path-hash
   cache across delete+add. The link SET is byte-identical (buckets are disjoint under
   L23, so concat == union).
+- **M19 (coordinator content batch read externs; hash HELD):** five additive
+  read-only externs, each cap-granted beside its singleton twin and BOUNDED three
+  ways — item count, per-item first page, and a shared aggregate resolve budget.
+  `list_encrypted_content_by_dynamic_links` (<=64 labels, per-label bounded first
+  page via `link_page`), `list_by_hive_links_many` (<=32 requests),
+  `list_by_author_many` (<=64 lookups), `get_many_by_content_id_link` (<=64 lookups,
+  first-target select mirrored, unresolvable -> `record:None` with a `warn!`, rows
+  never dropped), and the scalar `content_id_exists` (link-set non-emptiness,
+  resolves zero records). The three page-based externs share
+  `enforce_batch_resolve_budget`: the sum of normalized per-item limits must be
+  <= `BATCH_RESOLVE_BUDGET`=4096 (matching the existing `MY_CONTENT_HARD_LIMIT`
+  single-call resolve ceiling), so one call can never amplify into unbounded DHT
+  resolution. Five NEW coordinator reject literals: `dynamic_links batch accepts at
+  most 64 labels`, `hive-link batch accepts at most 32 requests`, `content-id batch
+  accepts at most 64 lookups`, `author batch accepts at most 64 lookups`, `batch
+  total requested records exceed the 4096 budget`. Measure-first: red sweettests
+  proved BOTH the initial unbounded-per-label B2 AND the missing aggregate budget
+  before each fix. 13 batch_reads tests green.
 
 ## DEFERRED — H2 sketch (per-entry-type ACL validators; blessing-time co-design)
 
