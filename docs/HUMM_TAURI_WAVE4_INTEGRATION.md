@@ -225,16 +225,19 @@ client must not add semantic leakage on top:
 - **Discovery paths** hash their bases, but the plaintext link TAGS remain visible — the
   Dynamic-label tag and the ACL group-hash tag are readable by any DHT observer.
 - **CLIENT RULE (load-bearing):** any sensitive `dynamic_links` value MUST be either a
-  RANDOM ≥128-bit id or a KEYED hash (HMAC/keyed-BLAKE with a SECRET salt the observer
-  does not have) — NEVER a semantic/plaintext label AND never a bare (unsalted) hash of a
-  guessable label (an unsalted hash of `"invoices-2026"` is dictionary/precompute-attackable,
-  so it leaks the same meaning). This prevents DIRECT SEMANTIC disclosure only. An opaque
-  tag is still an equality/linkability signal (same tag across records is correlatable) and
-  exposes frequency + timing; it does NOT make the record anonymous. This is a client
-  convention — the zome stores whatever label it is given.
+  RANDOM ≥128-bit id or a MAC of the label under a SECRET KEY the observer does not have —
+  an approved construction is HMAC-SHA-512 or keyed BLAKE3 (NOT `hash(salt || label)`: the
+  key is a secret MAC key, not a public salt). If the key is derived, use HKDF-SHA-512 with
+  explicit domain separation. NEVER a semantic/plaintext label, and NEVER a bare (unkeyed)
+  hash of a guessable label (an unkeyed hash of `"invoices-2026"` is
+  dictionary/precompute-attackable, so it leaks the same meaning). This prevents DIRECT
+  SEMANTIC disclosure only: an opaque tag is still an equality/linkability signal (the same
+  tag across records is correlatable) and exposes frequency + timing; it does NOT make the
+  record anonymous. This is a client convention — the zome stores whatever label it is given.
 
 - **Given** a sensitive discovery need (e.g. a private collection), **when** the client
   publishes content with a `dynamic_links` label, **then** the label is a random ≥128-bit
-  id (or a secret-keyed hash) — a passive DHT observer cannot recover the content's meaning
-  from the tag, though tag equality/frequency/timing correlation across records remains
-  (unavoidable at the DHT layer).
+  id (or an HMAC-SHA-512 / keyed-BLAKE3 MAC of the label under a secret key, derived via
+  HKDF-SHA-512 with domain separation) — a passive DHT observer cannot recover the content's
+  meaning from the tag, though tag equality/frequency/timing correlation across records
+  remains (unavoidable at the DHT layer).
