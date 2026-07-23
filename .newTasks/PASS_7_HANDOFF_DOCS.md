@@ -1,6 +1,6 @@
 # PASS_7_HANDOFF_DOCS — complete humm-tauri integration handoff (Phase 1)
 
-**Status: IN PROGRESS** (started 2026-07-23)
+**Status: PHASE 1 COMPLETE** (2026-07-23) — awaiting owner GitHub push + dual cutover to main
 **Branch:** `feat-integrity-pass-7` (branch-only deliverable; blessing-gated, NOT distributed)
 **Deliverable:** `docs/HUMM_TAURI_PASS_7_INTEGRATION.md` — the complete M0–M22 handoff for
 humm-tauri: every client-visible wire change, integrity contract delta (L1–L23), batch/local
@@ -19,7 +19,7 @@ and the "migration moves to the happ" section. Absorbs and replaces
 | 1.3b | `slop-scan` pass over the new doc (ANTI_SLOP.md bar) | done | 2026-07-23 | Word pass clean (zero banned-list hits); structural pass clean (tables/BDD are the format, exempt per skill) |
 | V1 | Literal-fidelity grep: every backticked reject/log literal in the doc greps byte-identical in `dnas/ crates/ docs/PASS_7_SCRATCH.md` | done | 2026-07-23 | 157 spans checked (single-process python; shell `while read` loop double-encodes UTF-8 — avoid). Zero literal misses; 30 residuals all prose/pseudo-shape/humm-tauri identifiers, the latter verified against `~/humm-tauri` |
 | V2 | Surface completeness: all 12 granted extern names + all new-vs-main externs appear in the doc | done | 2026-07-23 | `hdk_extern` diff main→HEAD = exactly 13 new externs; all present in doc |
-| V3 | Close-out ritual: POSTCOMPACTION branch-copy arc entry → commits → `wsl-push.sh` → `wsl-check.sh` agreement | in progress | 2026-07-23 | |
+| V3 | Close-out ritual: POSTCOMPACTION branch-copy arc entry → commits → `wsl-push.sh` → `wsl-check.sh` agreement | done | 2026-07-23 | `10f0115` (doc) + `5a4f697` (tracking/arc); both clones ff'd + in sync |
 
 ## Implementation notes / deviations
 
