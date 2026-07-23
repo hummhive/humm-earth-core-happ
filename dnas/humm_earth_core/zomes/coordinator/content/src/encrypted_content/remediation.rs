@@ -37,6 +37,7 @@ pub fn list_my_hiveless_content(
         content_type,
         since_ts: None,
         limit: None,
+        include_liveness: false,
     })?;
     records.retain(|record| record.encrypted_content.header.hive_context().is_none());
     Ok(records)

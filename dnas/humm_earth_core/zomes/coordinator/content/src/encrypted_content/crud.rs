@@ -14,6 +14,8 @@ use content_integrity::*;
 use hdi::hash_path::path::Component;
 use hdk::prelude::*;
 
+use std::collections::HashMap;
+
 use crate::{
     dynamic_links::create_dynamic_links, hive_link::create_hive_link,
     humm_content_id_link::create_humm_content_id_link, linking::acl_links::create_acl_links,
@@ -40,6 +42,7 @@ pub fn create_encrypted_content(
         hash: action_hash.clone().to_string(),
         original_hash: action_hash.to_string(),
         latest_action_micros: None,
+        tombstoned: None,
     };
 
     // Local emit (every variant) + best-effort cross-host fan-out to
@@ -172,8 +175,15 @@ pub fn find_or_create_encrypted_content(
 
 #[hdk_extern]
 pub fn get_encrypted_content(content_hash: ActionHash) -> ExternResult<EncryptedContentResponse> {
-    let ah = get_eh(content_hash.clone())?;
-    let Some((entry, hash, _, ts)) = get_latest_typed_from_eh(ah)? else {
+    resolve_encrypted_content(content_hash, GetOptions::network())
+}
+
+pub(crate) fn resolve_encrypted_content(
+    content_hash: ActionHash,
+    options: GetOptions,
+) -> ExternResult<EncryptedContentResponse> {
+    let ah = get_eh(content_hash.clone(), options.clone())?;
+    let Some((entry, hash, _, ts)) = get_latest_typed_from_eh(ah, options)? else {
         return Err(wasm_error!(WasmErrorInner::Guest(String::from(
             "Could not find the EncryptedContent"
         ))));
@@ -183,6 +193,7 @@ pub fn get_encrypted_content(content_hash: ActionHash) -> ExternResult<Encrypted
         hash: hash.to_string(),
         original_hash: content_hash.to_string(),
         latest_action_micros: Some(ts.as_micros()),
+        tombstoned: None,
     })
 }
 
@@ -201,10 +212,37 @@ pub fn get_encrypted_content(content_hash: ActionHash) -> ExternResult<Encrypted
 pub fn get_many_encrypted_content(
     ahs: Vec<ActionHash>,
 ) -> ExternResult<Vec<EncryptedContentResponse>> {
-    Ok(ahs
-        .into_iter()
-        .filter_map(|ah| get_encrypted_content(ah).ok())
-        .collect())
+    resolve_many_encrypted_content(ahs, GetOptions::network())
+}
+
+pub(crate) fn resolve_many_encrypted_content(
+    ahs: Vec<ActionHash>,
+    options: GetOptions,
+) -> ExternResult<Vec<EncryptedContentResponse>> {
+    let mut resolved: HashMap<ActionHash, Option<EncryptedContentResponse>> = HashMap::new();
+    let mut out = Vec::with_capacity(ahs.len());
+    for ah in ahs {
+        let response = match resolved.get(&ah) {
+            Some(cached) => cached.clone(),
+            None => {
+                let response = match resolve_encrypted_content(ah.clone(), options.clone()) {
+                    Ok(response) => Some(response),
+                    Err(e) => {
+                        debug!(
+                            "resolve_many_encrypted_content: target {ah} unresolved, dropped: {e:?}"
+                        );
+                        None
+                    }
+                };
+                resolved.insert(ah, response.clone());
+                response
+            }
+        };
+        if let Some(response) = response {
+            out.push(response);
+        }
+    }
+    Ok(out)
 }
 
 /// Resolve the root `EncryptedContent` action by walking native update metadata.

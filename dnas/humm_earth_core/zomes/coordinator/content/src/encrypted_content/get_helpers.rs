@@ -12,8 +12,8 @@ use hdk::prelude::*;
 /// Resolve an `ActionHash` to its `EntryHash` via a DHT get on the
 /// associated `Record`. Errors if the record is not found OR if the
 /// record's action has no entry hash (e.g. for non-entry actions).
-pub fn get_eh(ah: ActionHash) -> ExternResult<EntryHash> {
-    let record = get_record(AnyDhtHash::from(ah))?;
+pub fn get_eh(ah: ActionHash, options: GetOptions) -> ExternResult<EntryHash> {
+    let record = get_record(AnyDhtHash::from(ah), options)?;
     let Some(eh) = record.action().entry_hash() else {
         return Err(wasm_error!(WasmErrorInner::Guest(
             "ah_to_eh(): Record not found".to_string(),
@@ -22,9 +22,9 @@ pub fn get_eh(ah: ActionHash) -> ExternResult<EntryHash> {
     Ok(eh.to_owned())
 }
 
-/// DHT-get wrapping `Network` strategy with a uniform error message.
-pub fn get_record(dh: AnyDhtHash) -> ExternResult<Record> {
-    let maybe_record = get(dh, GetOptions::network())?;
+/// DHT-get with caller-selected options and a uniform error message.
+pub fn get_record(dh: AnyDhtHash, options: GetOptions) -> ExternResult<Record> {
+    let maybe_record = get(dh, options)?;
     let Some(record) = maybe_record else {
         return Err(wasm_error!(WasmErrorInner::Guest(
             "no Record found at given hash".to_string(),
@@ -47,43 +47,50 @@ pub type OptionTypedEntryAndHash<T> = Option<TypedEntryAndHash<T>>;
 /// `Ok(None)` if the entry is dead (deleted) or not present locally.
 pub fn get_latest_typed_from_eh<T: TryFrom<SerializedBytes, Error = SerializedBytesError>>(
     entry_hash: EntryHash,
+    options: GetOptions,
 ) -> ExternResult<OptionTypedEntryAndHash<T>> {
     // First, make sure we DO have the latest action_hash address
-    let maybe_maybe_details = get_details(entry_hash.clone(), GetOptions::network())?;
+    let maybe_maybe_details = get_details(entry_hash.clone(), options.clone())?;
     let Some(Details::Entry(details)) = maybe_maybe_details else {
         return Ok(None);
     };
     if details.entry_dht_status != EntryDhtStatus::Live {
         return Ok(None);
     }
-    let latest_ah = match details.updates.len() {
-        // pass out the action associated with this entry
-        0 => sah_to_ah(details.actions.first().unwrap().to_owned()),
+    // No update: the create's entry is already in `details`; rebuild the
+    // record locally instead of re-fetching the same address. An update
+    // points at a distinct, updated entry, so fetch that one.
+    let record = match details.updates.len() {
+        0 => {
+            let Some(create) = details.actions.first() else {
+                return Ok(None);
+            };
+            Record::new(create.to_owned(), Some(details.entry.clone()))
+        }
         _ => {
             let mut sortlist = details.updates.to_vec();
-            // unix timestamp should work for sorting
             sortlist.sort_by_key(|update| update.action().timestamp().as_micros());
-            // sorts in ascending order, so take the last Record
-            let last = sortlist.last().unwrap().to_owned();
-            sah_to_ah(last)
+            let Some(last) = sortlist.last() else {
+                return Ok(None);
+            };
+            let Some(record) = get(sah_to_ah(last.to_owned()), options)? else {
+                return Ok(None);
+            };
+            record
         }
     };
-    // Second, go and get that Record, and return its entry and action_address
-    let Some(record) = get(latest_ah, GetOptions::network())? else {
-        return Ok(None);
-    };
-    let maybe_maybe_typed_entry = record.entry().to_app_option::<T>();
-    if let Err(e) = maybe_maybe_typed_entry {
-        return Err(wasm_error!(WasmErrorInner::Serialize(e)));
-    }
-    let Some(typed_entry) = maybe_maybe_typed_entry.unwrap() else {
-        return Ok(None);
+    let typed_entry = match record.entry().to_app_option::<T>() {
+        Ok(Some(entry)) => entry,
+        Ok(None) => return Ok(None),
+        Err(e) => return Err(wasm_error!(WasmErrorInner::Serialize(e))),
     };
     let ah = match record.action() {
-        // we DO want to return the action for the original instead of the updated
+        // Return the ORIGINAL action for an update so callers reference the
+        // original entry, not the updated one.
         Action::Update(update) => update.original_action_address.clone(),
         Action::Create(_) => record.action_address().clone(),
-        _ => unreachable!("Can't have returned a action for a nonexistent entry"),
+        // An entry only rides a Create or Update; anything else cannot resolve.
+        _ => return Ok(None),
     };
     let Some(eh) = record.action().entry_hash() else {
         return Ok(None);

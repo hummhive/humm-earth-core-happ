@@ -14,7 +14,7 @@ use hdi::hash_path::path::Component;
 use hdk::prelude::*;
 use std::collections::HashSet;
 
-use super::crud::get_encrypted_content;
+use super::crud::resolve_many_encrypted_content;
 use super::EncryptedContentResponse;
 
 const LINK_PAGE_DEFAULT_LIMIT: usize = 100;
@@ -49,6 +49,8 @@ pub struct HiveLinkPageInput {
     pub limit: Option<usize>,
     #[serde(default)]
     pub source_after_action_hash: Option<String>,
+    #[serde(default)]
+    pub include_liveness: bool,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -62,6 +64,8 @@ pub struct DynamicLinkPageInput {
     pub limit: Option<usize>,
     #[serde(default)]
     pub source_after_action_hash: Option<String>,
+    #[serde(default)]
+    pub include_liveness: bool,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -74,6 +78,8 @@ pub struct AuthorLinkPageInput {
     pub limit: Option<usize>,
     #[serde(default)]
     pub source_after_action_hash: Option<String>,
+    #[serde(default)]
+    pub include_liveness: bool,
 }
 
 /// Paged twin of `list_by_hive_link` — same path, same link type, plus
@@ -90,6 +96,8 @@ pub fn list_by_hive_link_page(input: HiveLinkPageInput) -> ExternResult<BoundedL
         input.since_ts,
         input.limit,
         input.source_after_action_hash,
+        input.include_liveness,
+        GetOptions::network(),
     )
 }
 
@@ -107,6 +115,8 @@ pub fn list_by_dynamic_link_page(input: DynamicLinkPageInput) -> ExternResult<Bo
         input.since_ts,
         input.limit,
         input.source_after_action_hash,
+        input.include_liveness,
+        GetOptions::network(),
     )
 }
 
@@ -126,6 +136,8 @@ pub fn list_by_author_page(input: AuthorLinkPageInput) -> ExternResult<BoundedLi
         input.since_ts,
         input.limit,
         input.source_after_action_hash,
+        input.include_liveness,
+        GetOptions::network(),
     )
 }
 
@@ -180,7 +192,7 @@ pub(crate) fn content_id_records_by_author(
     sort_by_source_position(&mut links);
     let deduped = dedupe_by_target(links);
     let (selected, truncated) = page_links(deduped, None, None, MY_CONTENT_HARD_LIMIT);
-    Ok((resolve_targets(selected), truncated))
+    Ok((resolve_content_link_targets(selected, false)?, truncated))
 }
 
 /// Canonical pick when multiple candidates share a content-id path:
@@ -195,35 +207,71 @@ pub(crate) fn canonical_lowest_hash(
     records.into_iter().min_by(|a, b| a.hash.cmp(&b.hash))
 }
 
-/// Shared page engine behind the three `*_page` externs.
-fn link_page(
+/// Probe a resolved record's ROOT action for tombstoning, per-action so
+/// byte-identical duplicate roots sharing one entry are distinguished
+/// (the B10 bug: entry-level liveness cannot tell a dead root from a live
+/// sibling). Any failure — unparseable hash, absent details, wrong Details
+/// variant, host error — yields `None` (unknown), never dropping the
+/// record or failing the tolerant list read.
+pub(crate) fn root_tombstoned(original_hash_b64: &str, options: GetOptions) -> Option<bool> {
+    let action = ActionHash::try_from(original_hash_b64).ok()?;
+    match get_details(action, options).ok()?? {
+        Details::Record(record_details) => Some(!record_details.deletes.is_empty()),
+        _ => None,
+    }
+}
+
+/// Stamp `tombstoned` on each record when `include_liveness`; otherwise
+/// leave every record's `tombstoned` at `None` (byte-identical pre-B10
+/// behavior). The opt-in gate keeps the +1 `get_details` per record off
+/// the default read path.
+pub(crate) fn apply_liveness(
+    mut records: Vec<EncryptedContentResponse>,
+    include_liveness: bool,
+    options: GetOptions,
+) -> Vec<EncryptedContentResponse> {
+    if include_liveness {
+        for record in &mut records {
+            record.tombstoned = root_tombstoned(&record.original_hash, options.clone());
+        }
+    }
+    records
+}
+
+/// Shared page engine behind the bounded `*_page` externs.
+pub(crate) fn link_page(
     path_hash: EntryHash,
     link_type: LinkTypes,
     since_ts: Option<Timestamp>,
     limit: Option<usize>,
     source_after_action_hash: Option<String>,
+    include_liveness: bool,
+    options: GetOptions,
 ) -> ExternResult<BoundedLinkPage> {
     let limit = resolve_page_limit(limit)?;
     let after_hash = decode_paired_cursor(source_after_action_hash.as_deref(), since_ts.as_ref())?;
     // `LinkQuery::after` is deliberately NOT used with a composite
     // cursor: its boundary is approximate, and an approximate boundary
     // under the strict composite filter could drop equal-timestamp rows.
-    let links = get_links(
-        LinkQuery::try_new(path_hash, link_type)?,
-        GetStrategy::Network,
-    )?;
+    let strategy = options.strategy();
+    let links = get_links(LinkQuery::try_new(path_hash, link_type)?, strategy)?;
     let (selected, truncated) = page_links(links, since_ts, after_hash, limit);
-    let source_positions: Vec<SourcePosition> = selected
-        .iter()
-        .map(|link| SourcePosition {
+    let mut source_positions = Vec::with_capacity(selected.len());
+    let mut targets = Vec::with_capacity(selected.len());
+    for link in selected {
+        source_positions.push(SourcePosition {
             timestamp_micros: link.timestamp.as_micros(),
             action_hash: link.create_link_hash.to_string(),
-        })
-        .collect();
+        });
+        if let Some(target) = link.target.into_action_hash() {
+            targets.push(target);
+        }
+    }
+    let records = resolve_action_targets(targets, include_liveness, options)?;
     Ok(BoundedLinkPage {
         source_count: source_positions.len(),
         source_positions,
-        records: resolve_targets(selected),
+        records,
         truncated,
     })
 }
@@ -289,6 +337,7 @@ pub(crate) fn page_links(
     let mut selected: Vec<Link> = links
         .into_iter()
         .filter(|link| cursor_admits(link, since_ts.as_ref(), after_hash.as_ref()))
+        .take(limit + 1)
         .collect();
     let truncated = selected.len() > limit;
     selected.truncate(limit);
@@ -326,16 +375,30 @@ fn dedupe_by_target(links: Vec<Link>) -> Vec<Link> {
         .collect()
 }
 
-/// Per-target failure isolation: a malformed, tombstoned, or
-/// gossip-lagged target drops from `records` while its source position
-/// survives, so callers cursor past poison rows. This `.ok()` is the
-/// documented list-read contract (`get_many_encrypted_content` doc).
-fn resolve_targets(links: Vec<Link>) -> Vec<EncryptedContentResponse> {
-    links
+/// Resolve a page's action-hash targets to records via the memoized batch read,
+/// then stamp liveness. Per-target failure isolation is inherited from
+/// `get_many_encrypted_content` (a malformed/tombstoned/gossip-lagged target
+/// drops while its source position survives — the documented list contract).
+fn resolve_action_targets(
+    targets: Vec<ActionHash>,
+    include_liveness: bool,
+    options: GetOptions,
+) -> ExternResult<Vec<EncryptedContentResponse>> {
+    let records = resolve_many_encrypted_content(targets, options.clone())?;
+    Ok(apply_liveness(records, include_liveness, options))
+}
+
+/// Collect each link's action-hash target, then resolve via
+/// [`resolve_action_targets`]. Shared by the legacy list externs.
+pub(crate) fn resolve_content_link_targets(
+    links: Vec<Link>,
+    include_liveness: bool,
+) -> ExternResult<Vec<EncryptedContentResponse>> {
+    let targets = links
         .into_iter()
         .filter_map(|link| link.target.into_action_hash())
-        .filter_map(|ah| get_encrypted_content(ah).ok())
-        .collect()
+        .collect();
+    resolve_action_targets(targets, include_liveness, GetOptions::network())
 }
 
 #[cfg(test)]
@@ -365,6 +428,7 @@ mod tests {
             hash: hash.to_string(),
             original_hash: hash.to_string(),
             latest_action_micros: None,
+            tombstoned: None,
         }
     }
 
