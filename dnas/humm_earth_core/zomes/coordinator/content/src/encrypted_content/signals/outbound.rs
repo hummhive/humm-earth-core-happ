@@ -3,7 +3,7 @@ use content_integrity::Acl;
 use hdk::prelude::*;
 
 use super::blob_pin::{BlobPinSignal, BLOB_PIN_SIGNAL_MAX_RECIPIENTS};
-use super::content::EncryptedContentSignal;
+use super::content::EncryptedContentHint;
 use super::dm::{DmCallSignal, DmDeleteRequestSignal, DmRemoteSignal};
 
 fn send_encoded_remote_signal<I>(signal: I, recipients: Vec<AgentPubKey>) -> ExternResult<()>
@@ -37,7 +37,7 @@ fn acl_reader_recipients(public_key_acl: &Acl, self_pubkey: &AgentPubKey) -> Vec
         .collect()
 }
 
-pub fn remote_signal_acl_readers(public_key_acl: &Acl, signal: EncryptedContentSignal) {
+pub fn remote_signal_acl_readers(public_key_acl: &Acl, hint: EncryptedContentHint) {
     let self_pubkey = match agent_info() {
         Ok(info) => info.agent_initial_pubkey,
         Err(err) => {
@@ -51,12 +51,12 @@ pub fn remote_signal_acl_readers(public_key_acl: &Acl, signal: EncryptedContentS
         "remote_signal_acl_readers: raw_count={} valid_recipients={} action_type={:?}",
         raw_count,
         recipients.len(),
-        signal.action_type,
+        hint.action_type,
     );
     if recipients.is_empty() {
         return;
     }
-    if let Err(err) = send_encoded_remote_signal(signal, recipients) {
+    if let Err(err) = send_encoded_remote_signal(hint, recipients) {
         debug!("remote_signal_acl_readers: remote signal send failed (non-fatal): {err:?}");
     }
 }

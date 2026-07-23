@@ -10,7 +10,10 @@ use hdk::prelude::*;
 pub use linking::*;
 use std::collections::HashSet;
 
-use encrypted_content::signals::{BlobPinSignal, DmRemoteSignal, EncryptedContentSignal};
+use encrypted_content::signals::{
+    BlobPinSignal, DmRemoteSignal, EncryptedContentHint, EncryptedContentSignal,
+};
+use hive::OwnerHandoffOfferHint;
 
 /// Fetch + decode a DHT entry, tolerating absence AND an undecodable/wrong-type
 /// target as `None`. Intentional resilience: owner-resolution and inbox scans
@@ -347,12 +350,33 @@ pub fn recv_remote_signal(signal: ExternIO) -> ExternResult<()> {
         return emit_signal(payload);
     }
 
-    // 4. Unknown payload shape — explicitly error so misrouted or
+    // 4. Pass-7 Wave-4 fetch-hint: the leakage-hardened remote content channel
+    //    carries identifiers only, never the ciphertext (recipient re-queries).
+    if let Ok(mut payload) = signal.decode::<EncryptedContentHint>() {
+        info!(
+            "recv_remote_signal[EncryptedContentHint]: action_type={:?} hash={} from_agent={}",
+            payload.action_type, payload.hash, caller_agent,
+        );
+        payload.from_agent = Some(caller_agent);
+        return emit_signal(payload);
+    }
+
+    // 5. Pass-7 Wave-4 owner-handoff offer hint.
+    if let Ok(mut payload) = signal.decode::<OwnerHandoffOfferHint>() {
+        info!(
+            "recv_remote_signal[OwnerHandoffOfferHint]: offer_hash={} from_agent={}",
+            payload.offer_hash, caller_agent,
+        );
+        payload.from_agent = Some(caller_agent);
+        return emit_signal(payload);
+    }
+
+    // 6. Unknown payload shape — explicitly error so misrouted or
     //    malformed signals are visible in conductor logs rather than
     //    silently dropped. The cap grant is open so a misbehaving peer
     //    can absolutely send garbage; this is the audit trail.
     Err(wasm_error!(WasmErrorInner::Guest(
-        "recv_remote_signal: payload did not decode as EncryptedContentSignal, DmRemoteSignal, or BlobPinSignal"
+        "recv_remote_signal: payload did not decode as EncryptedContentSignal, EncryptedContentHint, DmRemoteSignal, BlobPinSignal, or OwnerHandoffOfferHint"
             .into()
     )))
 }

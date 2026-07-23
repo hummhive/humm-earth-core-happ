@@ -23,6 +23,7 @@
 | M18 (coordinator DRY + allocation discipline: shared emit/resolve + borrowed link helpers + O(limit) paging) | (backfill) | uhC0k-HAqM4zW2rCWrKSujEKDZcqybE_ATUjKxkRy2BmRjURYddxP (UNCHANGED; coordinator-only) | ec11ba8f9518cee6aee5d9e1df4fc1f7449f42584213abb4f8636cdceb90fcdd |
 | M19 (coordinator content batch read externs: dynamic-links/hive-links/content-id/author + exists, bounded) | (backfill) | uhC0k-HAqM4zW2rCWrKSujEKDZcqybE_ATUjKxkRy2BmRjURYddxP (UNCHANGED; coordinator-only) | ec11ba8f9518cee6aee5d9e1df4fc1f7449f42584213abb4f8636cdceb90fcdd |
 | M20 (coordinator membership/group/local batch read externs: memberships-local/group-members/my-groups-local/hive-link-local-page) | (backfill) | uhC0k-HAqM4zW2rCWrKSujEKDZcqybE_ATUjKxkRy2BmRjURYddxP (UNCHANGED; coordinator-only) | ec11ba8f9518cee6aee5d9e1df4fc1f7449f42584213abb4f8636cdceb90fcdd |
+| M21 (coordinator fetch-hint remote signals + owner-handoff offer hint) | (backfill) | uhC0k-HAqM4zW2rCWrKSujEKDZcqybE_ATUjKxkRy2BmRjURYddxP (UNCHANGED; coordinator-only) | ec11ba8f9518cee6aee5d9e1df4fc1f7449f42584213abb4f8636cdceb90fcdd |
 
 ## New reject literals (accumulates the blessing-time BDD delta)
 | # | literal | validator fn | milestone |
@@ -295,6 +296,27 @@ sweettest therefore drives `create_group_genesis` directly.
   batch_reads (6 new, close-but-wrong nuances: superseded-grant newest-wins, expired
   filtering, duplicate request rows, cross-scope decoys, singleton parity) + a 24-test
   regression on the refactored functions.
+- **M21 (coordinator fetch-hint remote signals + owner-handoff offer hint; hash HELD):**
+  the S1 leakage fix. The cross-host content channel no longer carries ciphertext:
+  `emit_content_change` keeps the FULL `EncryptedContentSignal` for the author's LOCAL
+  `emit_signal`, but `remote_signal_acl_readers` now fans out a new `EncryptedContentHint`
+  (`{action_type, hash, original_hash, from_agent}`) — identifiers only; the reader
+  re-queries + `get`-verifies. `recv_remote_signal` gains a hint arm that stamps
+  `from_agent = call_info().provenance` (overwriting any sender-supplied value) and
+  re-emits locally; the legacy full-signal arm stays for decode robustness. L13:
+  `initiate_owner_handoff` best-effort sends an `OwnerHandoffOfferHint`
+  (`{offer_hash, hive_genesis_hash, from_agent}`) to the recipient (warn-never-block; not
+  a new cap-granted extern). The two hints are structurally DISJOINT from every other
+  dispatcher family (hint lacks `data`; full signal lacks `hash`/`original_hash`; offer
+  hint lacks `action_type`) — pinned by four host round-trip/cross-decode tests.
+  Sanctioned clean cutover (no additive rider): pass-7's network is disjoint from shipped
+  pass-6, so no live receiver decodes the old remote shape; humm-tauri adopts hint ingest
+  at blessing (§I). The recv fall-through error now names all five families — ONE
+  intentional coordinator literal change (old 3-family text lost, new 5-family text added;
+  documented for the superset check). Sweettest `signal_hints`: reader gets a hint whose
+  wire does NOT decode as the full payload (`deny_unknown_fields` airtight), local author
+  keeps the full ciphertext, a forged `from_agent` is overwritten by real provenance, the
+  handoff hint delivers stamped. 56 host + signal_hints 3 + pinned_hosts 9.
 
 ## DEFERRED — H2 sketch (per-entry-type ACL validators; blessing-time co-design)
 

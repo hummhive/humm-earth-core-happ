@@ -452,3 +452,78 @@ fn blob_pin_stamp_from_agent_overwrites_both_variants() {
         assert_eq!(hint.from_agent.as_ref(), Some(&fake_caller));
     }
 }
+
+fn sample_hint() -> EncryptedContentHint {
+    EncryptedContentHint {
+        action_type: EncryptedContentSignalType::Create,
+        hash: "h".into(),
+        original_hash: "h".into(),
+        from_agent: None,
+    }
+}
+
+/// EncryptedContentHint round-trips through ExternIO.
+#[test]
+fn encrypted_content_hint_roundtrip() {
+    let io = ExternIO::encode(sample_hint()).expect("encode");
+    let back: EncryptedContentHint = io.decode().expect("decode");
+    assert!(matches!(
+        back.action_type,
+        EncryptedContentSignalType::Create
+    ));
+    assert_eq!(back.hash, "h");
+    assert!(back.from_agent.is_none());
+}
+
+/// The hint carries NO ciphertext: the full EncryptedContentSignal (with
+/// `data`) and the hint MUST NOT decode as each other — the dispatcher's
+/// arm selection relies on this disjointness.
+#[test]
+fn encrypted_content_hint_and_full_signal_are_disjoint() {
+    let hint_io = ExternIO::encode(sample_hint()).expect("encode");
+    assert!(
+        hint_io.decode::<EncryptedContentSignal>().is_err(),
+        "hint MUST NOT decode as the full EncryptedContentSignal"
+    );
+    let full = EncryptedContentSignal {
+        action_type: EncryptedContentSignalType::Create,
+        data: sample_response(),
+        from_agent: None,
+    };
+    let full_io = ExternIO::encode(&full).expect("encode");
+    assert!(
+        full_io.decode::<EncryptedContentHint>().is_err(),
+        "full signal MUST NOT decode as the fetch-hint"
+    );
+}
+
+/// The hint MUST NOT cross-decode as the DM, blob-pin, or owner-handoff families.
+#[test]
+fn encrypted_content_hint_does_not_cross_decode() {
+    let hint_io = ExternIO::encode(sample_hint()).expect("encode");
+    assert!(hint_io.decode::<DmRemoteSignal>().is_err());
+    assert!(hint_io.decode::<BlobPinSignal>().is_err());
+    assert!(hint_io
+        .decode::<crate::hive::OwnerHandoffOfferHint>()
+        .is_err());
+}
+
+/// OwnerHandoffOfferHint round-trips and is disjoint from every other
+/// dispatcher family, so recv_remote_signal routes it to its own arm.
+#[test]
+fn owner_handoff_offer_hint_roundtrip_and_disjoint() {
+    use crate::hive::OwnerHandoffOfferHint;
+    let hint = OwnerHandoffOfferHint {
+        offer_hash: sample_target_hash(),
+        hive_genesis_hash: sample_target_hash(),
+        from_agent: None,
+    };
+    let io = ExternIO::encode(&hint).expect("encode");
+    let back: OwnerHandoffOfferHint = io.decode().expect("decode");
+    assert_eq!(back.offer_hash, sample_target_hash());
+    assert!(back.from_agent.is_none());
+    assert!(io.decode::<EncryptedContentSignal>().is_err());
+    assert!(io.decode::<EncryptedContentHint>().is_err());
+    assert!(io.decode::<DmRemoteSignal>().is_err());
+    assert!(io.decode::<BlobPinSignal>().is_err());
+}

@@ -31,3 +31,18 @@ pub enum EncryptedContentSignalType {
     Update,
     Delete,
 }
+
+/// Fetch-hint variant of [`EncryptedContentSignal`] for the cross-host channel:
+/// it carries the identifiers a reader re-queries but NEVER the ciphertext, so
+/// an attacker-controllable signal cannot re-broadcast durable content bytes.
+#[hdk_entry_helper]
+#[derive(Clone, PartialEq)]
+pub struct EncryptedContentHint {
+    pub action_type: EncryptedContentSignalType,
+    pub hash: String,
+    pub original_hash: String,
+    /// Stamped by recv_remote_signal from call_info().provenance; any
+    /// sender-supplied value is discarded.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub from_agent: Option<AgentPubKey>,
+}

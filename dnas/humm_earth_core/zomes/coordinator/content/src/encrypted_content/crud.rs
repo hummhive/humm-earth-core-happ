@@ -25,7 +25,8 @@ use crate::{
 use super::get_helpers::{get_eh, get_latest_typed_from_eh};
 use super::paging::{canonical_lowest_hash, content_id_records_by_author};
 use super::signals::{
-    remote_signal_acl_readers, EncryptedContentSignal, EncryptedContentSignalType,
+    remote_signal_acl_readers, EncryptedContentHint, EncryptedContentSignal,
+    EncryptedContentSignalType,
 };
 use super::{CreateEncryptedContentInput, EncryptedContentResponse, UpdateEncryptedContentInput};
 
@@ -56,13 +57,18 @@ fn emit_content_change(
     action_type: EncryptedContentSignalType,
     response: &EncryptedContentResponse,
 ) -> ExternResult<()> {
-    let signal = EncryptedContentSignal {
-        action_type,
+    emit_signal(EncryptedContentSignal {
+        action_type: action_type.clone(),
         data: response.clone(),
         from_agent: None,
+    })?;
+    let hint = EncryptedContentHint {
+        action_type,
+        hash: response.hash.clone(),
+        original_hash: response.original_hash.clone(),
+        from_agent: None,
     };
-    emit_signal(signal.clone())?;
-    remote_signal_acl_readers(&response.encrypted_content.header.public_key_acl, signal);
+    remote_signal_acl_readers(&response.encrypted_content.header.public_key_acl, hint);
     Ok(())
 }
 

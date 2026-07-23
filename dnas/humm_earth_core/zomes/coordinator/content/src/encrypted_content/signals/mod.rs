@@ -6,7 +6,7 @@ mod dm;
 mod outbound;
 
 pub use blob_pin::{BlobPinHint, BlobPinSignal};
-pub use content::{EncryptedContentSignal, EncryptedContentSignalType};
+pub use content::{EncryptedContentHint, EncryptedContentSignal, EncryptedContentSignalType};
 pub use dm::{DmCallSignal, DmDeleteRequestSignal, DmRemoteSignal};
 pub use outbound::{
     remote_signal_acl_readers, send_blob_pin_signal, send_dm_call_init_accept,
