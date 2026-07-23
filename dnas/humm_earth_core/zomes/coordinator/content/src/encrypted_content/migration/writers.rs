@@ -32,11 +32,11 @@ pub struct MarkMigratedInput {
 /// inspect the new action hash and signal-emitted state.
 ///
 /// Side-effects (inherited from `update_encrypted_content`):
-/// local `emit_signal` carrying the marker payload to the author's own
-/// UI; cross-host `send_remote_signal` fan-out via
+/// local `emit_signal` carrying the full marker payload to the author's own
+/// UI; a ciphertext-free `EncryptedContentHint` fanned out cross-host via
 /// `remote_signal_acl_readers` to every agent in the entry's
-/// `public_key_acl.reader` (minus self), with `from_agent` stamped on
-/// the receiver by `recv_remote_signal`; standard `EncryptedContentUpdates`
+/// `public_key_acl.reader` (minus self), with `from_agent` stamped on the
+/// receiver by `recv_remote_signal`; standard `EncryptedContentUpdates`
 /// + `OriginalHashPointer` link plumbing.
 ///
 /// **Not in `set_cap_tokens`** — local-only by design. A remote-callable

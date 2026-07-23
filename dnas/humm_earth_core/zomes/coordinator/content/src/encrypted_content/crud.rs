@@ -16,7 +16,7 @@ use hdk::prelude::*;
 
 use std::collections::{HashMap, HashSet};
 
-use crate::linking::acl_links::{acl_fanout, discovery_path_hash};
+use crate::linking::acl_links::{acl_fanout, create_acl_link_at, discovery_path_hash};
 use crate::{
     dynamic_links::create_dynamic_links, hive_link::create_hive_link,
     humm_content_id_link::create_humm_content_id_link, linking::acl_links::create_acl_links,
@@ -255,7 +255,7 @@ pub(crate) fn resolve_many_encrypted_content(
                     Ok(response) => Some(response),
                     Err(e) => {
                         debug!(
-                            "get_many_encrypted_content: target {ah} unresolved, dropped: {e:?}"
+                            "resolve_many_encrypted_content: target {ah} unresolved, dropped: {e:?}"
                         );
                         None
                     }
@@ -467,37 +467,42 @@ fn reindex_acl_links(
         let old_set: HashSet<&ActionHash> = old_ids.clone().collect();
         let new_set: HashSet<&ActionHash> = new_ids.clone().collect();
         for id in new_ids.filter(|id| !old_set.contains(*id)) {
-            let (path_hash, entity_id) =
-                cached_acl_components(&mut path_hashes, &hive_b64, content_type, id)?;
-            create_link(
-                path_hash,
-                updated_hash.clone(),
-                link_type,
-                LinkTag::from(entity_id),
+            let entity_id = id.to_string();
+            let path_hash = cached_acl_path_hash(
+                &mut path_hashes,
+                &hive_b64,
+                content_type,
+                id,
+                Some(&entity_id),
             )?;
+            create_acl_link_at(path_hash, updated_hash, &entity_id, link_type)?;
         }
         for id in old_ids.filter(|id| !new_set.contains(*id)) {
-            let (path_hash, _) =
-                cached_acl_components(&mut path_hashes, &hive_b64, content_type, id)?;
+            let path_hash =
+                cached_acl_path_hash(&mut path_hashes, &hive_b64, content_type, id, None)?;
             delete_own_links_on_path(path_hash, link_type, &me, None)?;
         }
     }
     Ok(())
 }
 
-fn cached_acl_components<'a>(
+fn cached_acl_path_hash<'a>(
     path_hashes: &mut HashMap<&'a ActionHash, EntryHash>,
     hive_b64: &str,
     content_type: &str,
     group_hash: &'a ActionHash,
-) -> ExternResult<(EntryHash, String)> {
-    let entity_id = group_hash.to_string();
+    entity_id: Option<&str>,
+) -> ExternResult<EntryHash> {
     if let Some(path_hash) = path_hashes.get(group_hash) {
-        return Ok((path_hash.clone(), entity_id));
+        return Ok(path_hash.clone());
     }
-    let path_hash = discovery_path_hash(hive_b64, content_type, &entity_id)?;
+    let entity_id = match entity_id {
+        Some(entity_id) => std::borrow::Cow::Borrowed(entity_id),
+        None => std::borrow::Cow::Owned(group_hash.to_string()),
+    };
+    let path_hash = discovery_path_hash(hive_b64, content_type, entity_id.as_ref())?;
     path_hashes.insert(group_hash, path_hash.clone());
-    Ok((path_hash, entity_id))
+    Ok(path_hash)
 }
 
 #[derive(Serialize, Deserialize, Debug)]

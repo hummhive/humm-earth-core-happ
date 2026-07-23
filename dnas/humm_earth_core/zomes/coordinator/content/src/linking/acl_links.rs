@@ -40,6 +40,22 @@ pub(crate) fn discovery_path_hash(
     path.path_entry_hash()
 }
 
+/// Create the validator-pinned ACL link shape at a precomputed discovery base.
+pub(crate) fn create_acl_link_at(
+    path_hash: EntryHash,
+    target: &ActionHash,
+    entity_id: &str,
+    link_type: LinkTypes,
+) -> ExternResult<()> {
+    create_link(
+        path_hash,
+        target.clone(),
+        link_type,
+        LinkTag::from(entity_id.to_string()),
+    )?;
+    Ok(())
+}
+
 /// Create a single ACL link of the given variant. The `entity_id` is
 /// stamped into the `LinkTag` as UTF-8 bytes so the integrity validator
 /// can recompute the third path component (see this module's header).
@@ -49,12 +65,12 @@ pub(crate) fn create_acl_link(
     target: &ActionHash,
     entity_id: &str,
     link_type: LinkTypes,
-) -> ExternResult<ActionHash> {
-    create_link(
+) -> ExternResult<()> {
+    create_acl_link_at(
         discovery_path_hash(hive_b64, content_type, entity_id)?,
-        target.clone(),
+        target,
+        entity_id,
         link_type,
-        LinkTag::from(entity_id.to_string()),
     )
 }
 

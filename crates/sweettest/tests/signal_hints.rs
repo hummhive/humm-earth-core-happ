@@ -235,7 +235,6 @@ async fn remote_reader_receives_hint_without_ciphertext() {
     assert_eq!(remote_hint.hash, created.hash);
     assert_eq!(remote_hint.original_hash, created.hash);
     assert_eq!(remote_hint.from_agent.as_ref(), Some(&alice_key));
-    assert!(!remote_hint.hash.is_empty(), "hint hash must be populated");
     assert!(
         remote_wire.decode::<FullContentSignal>().is_err(),
         "reader-side hint wire must not contain the full payload or ciphertext"
@@ -279,10 +278,6 @@ async fn owner_handoff_offer_hint_delivers_to_recipient() {
         .await;
 
     let hint = receive_owner_handoff_hint(&mut bob_signals).await;
-    assert!(
-        !hint.offer_hash.to_string().is_empty(),
-        "offer hash must be populated"
-    );
     assert_eq!(hint.offer_hash, offer_hash);
     assert_eq!(hint.hive_genesis_hash, hive);
     assert_eq!(hint.from_agent.as_ref(), Some(&alice_key));

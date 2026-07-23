@@ -431,8 +431,9 @@ pub(crate) fn resolve_page_limit(limit: Option<usize>) -> ExternResult<usize> {
     }
 }
 
-/// Bounds aggregate first-page work to `MY_CONTENT_HARD_LIMIT`, preventing
-/// batch fan-out from bypassing the singleton resolve ceiling.
+/// Rejects a batch whose summed normalized per-item limits exceed
+/// `BATCH_RESOLVE_BUDGET` (deliberately mirroring `MY_CONTENT_HARD_LIMIT`), so
+/// batch fan-out cannot bypass the single-call resolve ceiling.
 pub(crate) fn enforce_batch_resolve_budget<I: IntoIterator<Item = Option<usize>>>(
     per_item_limits: I,
 ) -> ExternResult<()> {

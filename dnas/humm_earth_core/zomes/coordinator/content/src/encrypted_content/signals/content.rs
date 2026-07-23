@@ -2,16 +2,16 @@ use hdk::prelude::*;
 
 use crate::encrypted_content::EncryptedContentResponse;
 
-/// Signal payload emitted on entry create/update/delete. Carried on the
-/// local `emit_signal` channel AND on cross-host `send_remote_signal` to
-/// every agent in `public_key_acl.reader` (minus the author).
+/// Full signal payload for entry create/update/delete, emitted LOCALLY only
+/// (the author's own `emit_signal`). The cross-host `send_remote_signal`
+/// channel carries the ciphertext-free [`EncryptedContentHint`] instead, so the
+/// full payload (with `data`) never leaves on the remote channel.
 ///
-/// `from_agent` is the C1 anti-spoof bit. On local emit it is `None`; on
-/// `recv_remote_signal` arrival the dispatcher overwrites whatever the
-/// payload carried with `call_info()?.provenance` — the lair-attested
-/// caller pubkey. Sidecar consumers MUST trust `from_agent` as the
-/// authoritative sender identity and ignore any other "from" hint in the
-/// payload body.
+/// `from_agent` is the C1 anti-spoof bit: `None` on local emit; on
+/// `recv_remote_signal` arrival the dispatcher overwrites whatever the payload
+/// carried with `call_info()?.provenance` — the lair-attested caller pubkey.
+/// Consumers MUST trust `from_agent` as the authoritative sender identity and
+/// ignore any other "from" hint in the payload body.
 #[hdk_entry_helper]
 #[derive(Clone, PartialEq)]
 pub struct EncryptedContentSignal {

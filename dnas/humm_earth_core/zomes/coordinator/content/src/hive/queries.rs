@@ -13,7 +13,7 @@
 //! targets to either `HiveGenesis` (self-founded) or `HiveMembership`
 //! (granted), and project the result.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::{hash_map::Entry, HashMap, HashSet};
 
 use content_integrity::*;
 use hdk::prelude::*;
@@ -293,17 +293,37 @@ fn genesis_resolves_as_hive(
     Ok(resolved)
 }
 
+fn cached_hive_display(
+    cache: &mut HashMap<ActionHash, Option<String>>,
+    hive_genesis_hash: &ActionHash,
+) -> ExternResult<Option<String>> {
+    let cached = match cache.entry(hive_genesis_hash.clone()) {
+        Entry::Occupied(entry) => entry.into_mut(),
+        Entry::Vacant(entry) => {
+            let display_id = match get(hive_genesis_hash.clone(), GetOptions::network())? {
+                Some(genesis_record) => match try_decode_hive_genesis(&genesis_record) {
+                    Some(genesis) => Some(genesis.display_id),
+                    None => {
+                        warn!(
+                            "list_my_hives: hash {} for a valid membership is not a HiveGenesis entry; skipping (DHT corruption or membership grantor authored a foreign type?)",
+                            hive_genesis_hash
+                        );
+                        None
+                    }
+                },
+                None => None,
+            };
+            entry.insert(display_id)
+        }
+    };
+    Ok(cached.clone())
+}
+
 /// Return the distinct valid hive ids represented by the caller's
 /// network-visible membership index without resolving display metadata.
 pub(crate) fn my_hive_ids_network() -> ExternResult<Vec<ActionHash>> {
     let my_pubkey = agent_info()?.agent_initial_pubkey;
-    let links = get_links(
-        LinkQuery::try_new(
-            AnyLinkableHash::from(my_pubkey.clone()),
-            LinkTypes::HiveMembershipIndex,
-        )?,
-        GetStrategy::Network,
-    )?;
+    let links = membership_index_links(&my_pubkey, GetStrategy::Network)?;
     let now = sys_time()?;
     let mut seen = HashSet::new();
     let mut hive_ids = Vec::new();
@@ -417,27 +437,9 @@ pub fn list_my_hives(_: ()) -> ExternResult<Vec<ListedHive>> {
                     continue;
                 }
             }
-            let hive_genesis_hash = membership.hive_genesis_hash.clone();
-            let display_id = if let Some(cached) = display_cache.get(&hive_genesis_hash) {
-                cached.clone()
-            } else {
-                let resolved = match get(hive_genesis_hash.clone(), GetOptions::network())? {
-                    Some(genesis_record) => match try_decode_hive_genesis(&genesis_record) {
-                        Some(genesis) => Some(genesis.display_id),
-                        None => {
-                            warn!(
-                                "list_my_hives: hash {} for a valid membership is not a HiveGenesis entry; skipping (DHT corruption or membership grantor authored a foreign type?)",
-                                hive_genesis_hash
-                            );
-                            None
-                        }
-                    },
-                    None => None,
-                };
-                display_cache.insert(hive_genesis_hash, resolved.clone());
-                resolved
-            };
-            let Some(display_id) = display_id else {
+            let Some(display_id) =
+                cached_hive_display(&mut display_cache, &membership.hive_genesis_hash)?
+            else {
                 continue;
             };
             out.push(ListedHive {
