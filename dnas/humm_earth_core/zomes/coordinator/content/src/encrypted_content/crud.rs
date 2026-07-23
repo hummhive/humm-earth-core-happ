@@ -16,7 +16,7 @@ use hdk::prelude::*;
 
 use std::collections::{HashMap, HashSet};
 
-use crate::linking::acl_links::{acl_fanout, create_acl_link, discovery_path_hash};
+use crate::linking::acl_links::{acl_fanout, discovery_path_hash};
 use crate::{
     dynamic_links::create_dynamic_links, hive_link::create_hive_link,
     humm_content_id_link::create_humm_content_id_link, linking::acl_links::create_acl_links,
@@ -46,33 +46,23 @@ pub fn create_encrypted_content(
         tombstoned: None,
     };
 
-    emit_create_signals(&response, &encrypted_content.header.public_key_acl)?;
+    emit_content_change(EncryptedContentSignalType::Create, &response)?;
     publish_create_links(&encrypted_content, &action_hash, input.dynamic_links)?;
 
     Ok(response)
 }
 
-/// Local self-emit + best-effort cross-host fan-out to public_key_acl.reader.
-/// The reader bucket is the validated recipient list for DirectMessage, a
-/// routing hint for HiveGroup/Public, and usually empty for OpenWrite.
-/// `from_agent` stays None on both; the receiver stamps conductor provenance.
-fn emit_create_signals(
+fn emit_content_change(
+    action_type: EncryptedContentSignalType,
     response: &EncryptedContentResponse,
-    public_key_acl: &Acl,
 ) -> ExternResult<()> {
-    emit_signal(EncryptedContentSignal {
-        action_type: EncryptedContentSignalType::Create,
+    let signal = EncryptedContentSignal {
+        action_type,
         data: response.clone(),
         from_agent: None,
-    })?;
-    remote_signal_acl_readers(
-        public_key_acl,
-        EncryptedContentSignal {
-            action_type: EncryptedContentSignalType::Create,
-            data: response.clone(),
-            from_agent: None,
-        },
-    );
+    };
+    emit_signal(signal.clone())?;
+    remote_signal_acl_readers(&response.encrypted_content.header.public_key_acl, signal);
     Ok(())
 }
 
@@ -112,14 +102,10 @@ fn publish_create_links(
     // target intentionally skip these — the integrity validator
     // rejects them for those variants. We mirror the contract here.
     if encrypted_content.header.hive_context().is_some() {
-        create_hive_link(encrypted_content.clone(), action_hash.clone())?;
-        create_humm_content_id_link(encrypted_content.clone(), action_hash.clone())?;
-        if let Some(dynamic_links) = dynamic_links {
-            create_dynamic_links(
-                encrypted_content.clone(),
-                action_hash.clone(),
-                dynamic_links,
-            )?;
+        create_hive_link(&encrypted_content.header, action_hash)?;
+        create_humm_content_id_link(&encrypted_content.header, action_hash)?;
+        if let Some(labels) = dynamic_links {
+            create_dynamic_links(&encrypted_content.header, action_hash, &labels)?;
         }
     }
 
@@ -127,7 +113,7 @@ fn publish_create_links(
     // group_acl, which only AclSpec::HiveGroup carries. Skip for the
     // other three variants.
     if encrypted_content.header.group_acl().is_some() {
-        create_acl_links(encrypted_content.clone(), action_hash.clone())?;
+        create_acl_links(&encrypted_content.header, action_hash)?;
     }
 
     if let Some(lineage) = &encrypted_content.header.lineage {
@@ -356,19 +342,7 @@ pub fn update_encrypted_content(
 
     let record = get_encrypted_content(updated_encrypted_content_hash.clone())?;
 
-    emit_signal(EncryptedContentSignal {
-        action_type: EncryptedContentSignalType::Update,
-        data: record.clone(),
-        from_agent: None,
-    })?;
-    remote_signal_acl_readers(
-        &record.encrypted_content.header.public_key_acl,
-        EncryptedContentSignal {
-            action_type: EncryptedContentSignalType::Update,
-            data: record.clone(),
-            from_agent: None,
-        },
-    );
+    emit_content_change(EncryptedContentSignalType::Update, &record)?;
 
     Ok(record)
 }
@@ -391,11 +365,7 @@ fn reindex_dynamic_links(
     let content_type = &updated_content.header.content_type;
     let me = agent_info()?.agent_initial_pubkey;
     if let Some(labels) = dynamic_links {
-        create_dynamic_links(
-            updated_content.clone(),
-            updated_hash.clone(),
-            labels.clone(),
-        )?;
+        create_dynamic_links(&updated_content.header, updated_hash, &labels)?;
         for label in &labels {
             delete_own_links_on_path(
                 discovery_path_hash(&hive_b64, content_type, label)?,
@@ -462,24 +432,44 @@ fn reindex_acl_links(
     let hive_b64 = hive_hash.to_string();
     let content_type = &updated_content.header.content_type;
     let me = agent_info()?.agent_initial_pubkey;
+    let mut path_hashes = HashMap::new();
     for ((link_type, old_ids), (_, new_ids)) in
         acl_fanout(old_acl).into_iter().zip(acl_fanout(new_acl))
     {
-        let old_set: HashSet<&String> = old_ids.iter().collect();
-        let new_set: HashSet<&String> = new_ids.iter().collect();
-        for id in new_ids.iter().filter(|id| !old_set.contains(*id)) {
-            create_acl_link(&hive_b64, content_type, updated_hash, id, link_type)?;
-        }
-        for id in old_ids.iter().filter(|id| !new_set.contains(*id)) {
-            delete_own_links_on_path(
-                discovery_path_hash(&hive_b64, content_type, id)?,
+        let old_set: HashSet<&ActionHash> = old_ids.clone().collect();
+        let new_set: HashSet<&ActionHash> = new_ids.clone().collect();
+        for id in new_ids.filter(|id| !old_set.contains(*id)) {
+            let (path_hash, entity_id) =
+                cached_acl_components(&mut path_hashes, &hive_b64, content_type, id)?;
+            create_link(
+                path_hash,
+                updated_hash.clone(),
                 link_type,
-                &me,
-                None,
+                LinkTag::from(entity_id),
             )?;
+        }
+        for id in old_ids.filter(|id| !new_set.contains(*id)) {
+            let (path_hash, _) =
+                cached_acl_components(&mut path_hashes, &hive_b64, content_type, id)?;
+            delete_own_links_on_path(path_hash, link_type, &me, None)?;
         }
     }
     Ok(())
+}
+
+fn cached_acl_components<'a>(
+    path_hashes: &mut HashMap<&'a ActionHash, EntryHash>,
+    hive_b64: &str,
+    content_type: &str,
+    group_hash: &'a ActionHash,
+) -> ExternResult<(EntryHash, String)> {
+    let entity_id = group_hash.to_string();
+    if let Some(path_hash) = path_hashes.get(group_hash) {
+        return Ok((path_hash.clone(), entity_id));
+    }
+    let path_hash = discovery_path_hash(hive_b64, content_type, &entity_id)?;
+    path_hashes.insert(group_hash, path_hash.clone());
+    Ok((path_hash, entity_id))
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -513,20 +503,7 @@ pub fn delete_encrypted_content(
         Err(e) => return Err(e),
     };
     let ah = delete_entry(original_encrypted_content_hash.clone())?;
-    emit_signal(EncryptedContentSignal {
-        action_type: EncryptedContentSignalType::Delete,
-        data: record.clone(),
-        from_agent: None,
-    })?;
-    let acl_for_remote = record.encrypted_content.header.public_key_acl.clone();
-    remote_signal_acl_readers(
-        &acl_for_remote,
-        EncryptedContentSignal {
-            action_type: EncryptedContentSignalType::Delete,
-            data: record,
-            from_agent: None,
-        },
-    );
+    emit_content_change(EncryptedContentSignalType::Delete, &record)?;
 
     crate::delete_own_links_targeting(AnyLinkableHash::from(original_encrypted_content_hash))?;
 

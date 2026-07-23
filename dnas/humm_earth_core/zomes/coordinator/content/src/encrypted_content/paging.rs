@@ -14,7 +14,7 @@ use hdi::hash_path::path::Component;
 use hdk::prelude::*;
 use std::collections::HashSet;
 
-use super::crud::get_encrypted_content;
+use super::crud::get_many_encrypted_content;
 use super::EncryptedContentResponse;
 
 const LINK_PAGE_DEFAULT_LIMIT: usize = 100;
@@ -189,7 +189,7 @@ pub(crate) fn content_id_records_by_author(
     sort_by_source_position(&mut links);
     let deduped = dedupe_by_target(links);
     let (selected, truncated) = page_links(deduped, None, None, MY_CONTENT_HARD_LIMIT);
-    Ok((resolve_targets(selected), truncated))
+    Ok((resolve_content_link_targets(selected, false)?, truncated))
 }
 
 /// Canonical pick when multiple candidates share a content-id path:
@@ -253,11 +253,22 @@ fn link_page(
         GetStrategy::Network,
     )?;
     let (selected, truncated) = page_links(links, since_ts, after_hash, limit);
-    let source_positions = source_positions_of(&selected);
+    let mut source_positions = Vec::with_capacity(selected.len());
+    let mut targets = Vec::with_capacity(selected.len());
+    for link in selected {
+        source_positions.push(SourcePosition {
+            timestamp_micros: link.timestamp.as_micros(),
+            action_hash: link.create_link_hash.to_string(),
+        });
+        if let Some(target) = link.target.into_action_hash() {
+            targets.push(target);
+        }
+    }
+    let records = resolve_action_targets(targets, include_liveness)?;
     Ok(BoundedLinkPage {
         source_count: source_positions.len(),
         source_positions,
-        records: apply_liveness(resolve_targets(selected), include_liveness),
+        records,
         truncated,
     })
 }
@@ -323,6 +334,7 @@ pub(crate) fn page_links(
     let mut selected: Vec<Link> = links
         .into_iter()
         .filter(|link| cursor_admits(link, since_ts.as_ref(), after_hash.as_ref()))
+        .take(limit + 1)
         .collect();
     let truncated = selected.len() > limit;
     selected.truncate(limit);
@@ -360,16 +372,31 @@ fn dedupe_by_target(links: Vec<Link>) -> Vec<Link> {
         .collect()
 }
 
-/// Per-target failure isolation: a malformed, tombstoned, or
-/// gossip-lagged target drops from `records` while its source position
-/// survives, so callers cursor past poison rows. This `.ok()` is the
-/// documented list-read contract (`get_many_encrypted_content` doc).
-fn resolve_targets(links: Vec<Link>) -> Vec<EncryptedContentResponse> {
-    links
+/// Resolve a page's action-hash targets to records via the memoized batch read,
+/// then stamp liveness. Per-target failure isolation is inherited from
+/// `get_many_encrypted_content` (a malformed/tombstoned/gossip-lagged target
+/// drops while its source position survives — the documented list contract).
+fn resolve_action_targets(
+    targets: Vec<ActionHash>,
+    include_liveness: bool,
+) -> ExternResult<Vec<EncryptedContentResponse>> {
+    Ok(apply_liveness(
+        get_many_encrypted_content(targets)?,
+        include_liveness,
+    ))
+}
+
+/// Collect each link's action-hash target, then resolve via
+/// [`resolve_action_targets`]. Shared by the legacy list externs.
+pub(crate) fn resolve_content_link_targets(
+    links: Vec<Link>,
+    include_liveness: bool,
+) -> ExternResult<Vec<EncryptedContentResponse>> {
+    let targets = links
         .into_iter()
         .filter_map(|link| link.target.into_action_hash())
-        .filter_map(|ah| get_encrypted_content(ah).ok())
-        .collect()
+        .collect();
+    resolve_action_targets(targets, include_liveness)
 }
 
 #[cfg(test)]

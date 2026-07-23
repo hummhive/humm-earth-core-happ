@@ -23,8 +23,8 @@ use hdi::hash_path::path::Component;
 use hdk::prelude::*;
 use std::collections::HashSet;
 
-use super::crud::{get_encrypted_content, get_many_encrypted_content};
-use super::paging::apply_liveness;
+use super::crud::get_encrypted_content;
+use super::paging::resolve_content_link_targets;
 use super::EncryptedContentResponse;
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -50,14 +50,7 @@ pub fn list_by_dynamic_link(
         LinkQuery::try_new(path.path_entry_hash()?, LinkTypes::Dynamic)?,
         GetStrategy::Network,
     )?;
-    let hashes: Vec<ActionHash> = links
-        .into_iter()
-        .filter_map(|link| link.target.into_action_hash())
-        .collect();
-    Ok(apply_liveness(
-        get_many_encrypted_content(hashes)?,
-        input.include_liveness,
-    ))
+    resolve_content_link_targets(links, input.include_liveness)
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -116,14 +109,7 @@ pub fn list_by_hive_link(input: ListByHiveInput) -> ExternResult<Vec<EncryptedCo
         all_links.truncate(limit);
     }
 
-    let hashes: Vec<ActionHash> = all_links
-        .into_iter()
-        .filter_map(|l| l.target.into_action_hash())
-        .collect();
-    Ok(apply_liveness(
-        get_many_encrypted_content(hashes)?,
-        input.include_liveness,
-    ))
+    resolve_content_link_targets(all_links, input.include_liveness)
 }
 
 /// C3 input. Distinct from `ListByHiveInput` because counting has no
@@ -243,14 +229,7 @@ pub fn list_by_acl_link(input: ListByAclInput) -> ExternResult<Vec<EncryptedCont
         }
     };
 
-    let hashes: Vec<ActionHash> = links
-        .into_iter()
-        .filter_map(|link| link.target.into_action_hash())
-        .collect();
-    Ok(apply_liveness(
-        get_many_encrypted_content(hashes)?,
-        input.include_liveness,
-    ))
+    resolve_content_link_targets(links, input.include_liveness)
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -284,14 +263,7 @@ pub fn list_by_author(input: ListByAuthorInput) -> ExternResult<Vec<EncryptedCon
     if let Some(limit) = input.limit {
         links.truncate(limit);
     }
-    let hashes: Vec<ActionHash> = links
-        .into_iter()
-        .filter_map(|link| link.target.into_action_hash())
-        .collect();
-    Ok(apply_liveness(
-        get_many_encrypted_content(hashes)?,
-        input.include_liveness,
-    ))
+    resolve_content_link_targets(links, input.include_liveness)
 }
 
 // =============================================================================

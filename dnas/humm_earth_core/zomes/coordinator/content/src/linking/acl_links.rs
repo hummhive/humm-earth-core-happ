@@ -1,4 +1,4 @@
-//! ACL discovery links for [`EncryptedContent`].
+//! ACL discovery links for [`EncryptedContentHeader`].
 //!
 //! Pass-3 changes:
 //! - The link bundle is published **only for `AclSpec::HiveGroup`**.
@@ -19,7 +19,7 @@
 //!   integrity validator's per-class group_acl-set check matches this
 //!   fan-out exactly.
 
-use content_integrity::{AclByGroupGenesis, EncryptedContent, LinkTypes};
+use content_integrity::{AclByGroupGenesis, EncryptedContentHeader, LinkTypes};
 use hdi::hash_path::path::Component;
 use hdk::prelude::*;
 
@@ -70,15 +70,15 @@ pub(crate) fn create_acl_link(
 /// - one `Writer` link per member of (`admin ∪ writer`)
 /// - one `Reader` link per member of (`admin ∪ writer ∪ reader`)
 pub fn create_acl_links(
-    encrypted_content: EncryptedContent,
-    action_hash: ActionHash,
-) -> ExternResult<Vec<ActionHash>> {
-    let hive_hash = encrypted_content.header.hive_context().ok_or_else(|| {
+    header: &EncryptedContentHeader,
+    action_hash: &ActionHash,
+) -> ExternResult<()> {
+    let hive_hash = header.hive_context().ok_or_else(|| {
         wasm_error!(WasmErrorInner::Guest(
             "create_acl_links called on a header with no hive_context".into(),
         ))
     })?;
-    let group_acl = encrypted_content.header.group_acl().ok_or_else(|| {
+    let group_acl = header.group_acl().ok_or_else(|| {
         wasm_error!(WasmErrorInner::Guest(
             "create_acl_links called on a header whose acl_spec is not \
                  HiveGroup; HummContent* links anchor only to HiveGroup \
@@ -87,47 +87,65 @@ pub fn create_acl_links(
         ))
     })?;
     let hive_b64 = hive_hash.to_string();
-    let content_type = encrypted_content.header.content_type.clone();
 
-    let mut acl_link_action_hashes: Vec<ActionHash> = Vec::new();
-    for (link_type, entity_ids) in acl_fanout(group_acl) {
-        for entity_id in entity_ids {
-            acl_link_action_hashes.push(create_acl_link(
+    for (link_type, entity_hashes) in acl_fanout(group_acl) {
+        for entity_hash in entity_hashes {
+            let entity_id = entity_hash.to_string();
+            create_acl_link(
                 &hive_b64,
-                &content_type,
-                &action_hash,
+                &header.content_type,
+                action_hash,
                 &entity_id,
                 link_type,
-            )?);
+            )?;
         }
     }
-    Ok(acl_link_action_hashes)
+    Ok(())
 }
+
+/// A zero-allocation iterator over the group hashes in one ACL link class.
+pub(crate) type AclGroupHashIter<'a> = std::iter::Chain<
+    std::iter::Chain<std::slice::Iter<'a, ActionHash>, std::slice::Iter<'a, ActionHash>>,
+    std::slice::Iter<'a, ActionHash>,
+>;
 
 /// The full per-link-type entity fan-out for a `group_acl`, encoding the
 /// dominance rule once: Owner→[owner]; Admin→admin; Writer→admin∪writer;
 /// Reader→admin∪writer∪reader. Shared by [`create_acl_links`] and the
 /// update-time ACL reindex so both compute the identical link set.
-pub(crate) fn acl_fanout(group_acl: &AclByGroupGenesis) -> Vec<(LinkTypes, Vec<String>)> {
-    let owner = vec![group_acl.owner.to_string()];
-    let admin: Vec<String> = group_acl.admin.iter().map(|h| h.to_string()).collect();
-    let writer: Vec<String> = group_acl
-        .admin
-        .iter()
-        .chain(group_acl.writer.iter())
-        .map(|h| h.to_string())
-        .collect();
-    let reader: Vec<String> = group_acl
-        .admin
-        .iter()
-        .chain(group_acl.writer.iter())
-        .chain(group_acl.reader.iter())
-        .map(|h| h.to_string())
-        .collect();
-    vec![
-        (LinkTypes::HummContentOwner, owner),
-        (LinkTypes::HummContentAdmin, admin),
-        (LinkTypes::HummContentWriter, writer),
-        (LinkTypes::HummContentReader, reader),
+pub(crate) fn acl_fanout<'a>(
+    group_acl: &'a AclByGroupGenesis,
+) -> [(LinkTypes, AclGroupHashIter<'a>); 4] {
+    let empty: &'a [ActionHash] = &[];
+    let owner = std::slice::from_ref(&group_acl.owner);
+    [
+        (
+            LinkTypes::HummContentOwner,
+            owner.iter().chain(empty.iter()).chain(empty.iter()),
+        ),
+        (
+            LinkTypes::HummContentAdmin,
+            group_acl
+                .admin
+                .iter()
+                .chain(empty.iter())
+                .chain(empty.iter()),
+        ),
+        (
+            LinkTypes::HummContentWriter,
+            group_acl
+                .admin
+                .iter()
+                .chain(group_acl.writer.iter())
+                .chain(empty.iter()),
+        ),
+        (
+            LinkTypes::HummContentReader,
+            group_acl
+                .admin
+                .iter()
+                .chain(group_acl.writer.iter())
+                .chain(group_acl.reader.iter()),
+        ),
     ]
 }

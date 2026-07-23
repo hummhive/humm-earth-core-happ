@@ -20,6 +20,7 @@
 | M15 (complete link-validator normalization + review doc fixes) | ee47e74 | uhC0kemuLaIzdw19cQwOLB1JB7o7-5ZFXNIwcOYlBpNFfL_8Uicl6 | 39062286742a11836822ab8cf5fcfde2ed6e92321b90106a4ed5de38eb8e92f0 |
 | M16 (integrity DRY: shared typed fetch + bucket iterator + expiry containment) | (backfill) | uhC0k-HAqM4zW2rCWrKSujEKDZcqybE_ATUjKxkRy2BmRjURYddxP | ec11ba8f9518cee6aee5d9e1df4fc1f7449f42584213abb4f8636cdceb90fcdd |
 | M17 (coordinator resolve-path perf: record reuse + immutable-entity caches) | (backfill) | uhC0k-HAqM4zW2rCWrKSujEKDZcqybE_ATUjKxkRy2BmRjURYddxP (UNCHANGED; coordinator-only) | ec11ba8f9518cee6aee5d9e1df4fc1f7449f42584213abb4f8636cdceb90fcdd |
+| M18 (coordinator DRY + allocation discipline: shared emit/resolve + borrowed link helpers + O(limit) paging) | (backfill) | uhC0k-HAqM4zW2rCWrKSujEKDZcqybE_ATUjKxkRy2BmRjURYddxP (UNCHANGED; coordinator-only) | ec11ba8f9518cee6aee5d9e1df4fc1f7449f42584213abb4f8636cdceb90fcdd |
 
 ## New reject literals (accumulates the blessing-time BDD delta)
 | # | literal | validator fn | milestone |
@@ -236,6 +237,18 @@ sweettest therefore drives `create_group_genesis` directly.
   preserved). P8: owner-offer fetch skipped once resolved. P9: hoisted the
   loop-invariant `hive_b64` in `content_summary`. New sweettest
   `batch_reads::list_my_groups_returns_one_row_per_grant` guards the P5 cache.
+- **M18 (coordinator DRY + allocation discipline; hash HELD):** wire-identical, no
+  new reject literal. D2: one `emit_content_change(action_type, response)` replaces the
+  three create/update/delete emit sites (delete-path ACL clone dropped). D4:
+  `resolve_content_link_targets` (targets -> memoized `get_many` -> `apply_liveness`)
+  shared by the four legacy list externs + `content_id_records_by_author`, replacing
+  `resolve_targets`. P6: `page_links` collects `limit+1` (O(limit) temporaries) and
+  `link_page` builds source positions + targets in a single projection pass. P3: the
+  four `create_*` link helpers borrow `&EncryptedContentHeader`/`&ActionHash`/`&[String]`
+  and return `()`. P7: `acl_fanout` streams borrowed `ActionHash` iterators per link
+  class with no per-class `Vec<String>`, and the update reindex reuses one path-hash
+  cache across delete+add. The link SET is byte-identical (buckets are disjoint under
+  L23, so concat == union).
 
 ## DEFERRED — H2 sketch (per-entry-type ACL validators; blessing-time co-design)
 

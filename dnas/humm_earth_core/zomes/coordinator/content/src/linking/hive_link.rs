@@ -1,4 +1,4 @@
-use content_integrity::{EncryptedContent, LinkTypes};
+use content_integrity::{EncryptedContentHeader, LinkTypes};
 use hdi::hash_path::path::Component;
 use hdk::prelude::*;
 
@@ -16,10 +16,10 @@ use hdk::prelude::*;
 /// rather than silently skipping so a misuse fails fast at commit
 /// time rather than rotting into an unfindable entry.
 pub fn create_hive_link(
-    encrypted_content: EncryptedContent,
-    action_hash: ActionHash,
-) -> ExternResult<ActionHash> {
-    let hive_hash = encrypted_content.header.hive_context().ok_or_else(|| {
+    header: &EncryptedContentHeader,
+    action_hash: &ActionHash,
+) -> ExternResult<()> {
+    let hive_hash = header.hive_context().ok_or_else(|| {
         wasm_error!(WasmErrorInner::Guest(
             "create_hive_link called on a header with no hive_context \
              (DirectMessage or OpenWrite without target); the integrity \
@@ -29,12 +29,13 @@ pub fn create_hive_link(
     })?;
     let hive_path = Path::from(vec![
         Component::from(hive_hash.to_string()),
-        Component::from(encrypted_content.header.content_type.clone()),
+        Component::from(header.content_type.clone()),
     ]);
     create_link(
         hive_path.path_entry_hash()?,
-        action_hash,
+        action_hash.clone(),
         LinkTypes::Hive,
         (),
-    )
+    )?;
+    Ok(())
 }
