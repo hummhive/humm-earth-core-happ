@@ -85,6 +85,76 @@ two-conductor swarm lifecycle test that runs the production Inbox/DM ingest path
 checks live queries before and after pickup, restarts the recipient, and checks
 again.
 
+## Plain-language owner Q&A recorded 2026-07-23
+
+### User
+
+> So, in plain terms, what's the actual attack surface (what's required, concretely, beforehand by Mallory), what order of operations between Alice and Bob, what can be exposed, and what can be tampered with?
+
+### Answer
+
+Plain answer: this is a targeted key-substitution/cache-selection attack, not passive decryption. It is not yet reproduced end to end.
+
+I previously overstated the “overwrite an established warm cache at any time” case. That is not proved. The strongest supported window is initial pair-key establishment, restart, rotation, or another cache miss.
+
+#### What Mallory needs beforehand
+
+Mallory must:
+
+1. Run an agent on the same Holochain DNA network, probably with a modified client/coordinator capable of sending arbitrary remote-signal payloads.
+2. Know Alice’s and Bob’s Holochain AgentPubKeys. Those are public identities.
+3. Know both parties’ X25519 public encryption keys:
+   - Alice’s can be disclosed by the first-contact request/link.
+   - Bob publishes his key binding when he accepts.
+   - Existing public key bindings can also be queried.
+4. Derive the deterministic Alice–Bob pair identifier. This requires no secret.
+5. Generate a symmetric key Mallory knows and encrypt copies of it to Alice’s and Bob’s public X25519 keys.
+6. Construct a pair-SharedSecret candidate claiming the Alice–Bob pair but truthfully identifying Mallory as its author.
+7. Get that candidate considered before or instead of the legitimate Alice/Bob candidate.
+
+Mallory does not need:
+
+- Alice’s or Bob’s private keys;
+- membership in either Hive;
+- access to either device;
+- control of network traffic;
+- the legitimate Alice–Bob SharedSecret;
+- the ability to impersonate Alice or Bob at the Holochain action layer.
+
+### User
+
+> So, does Mallory need to do all that before Alice and Bob first talk with each other?
+
+### Answer
+
+For the currently plausible key-substitution scenario, yes: Mallory must win before Alice and Bob cache their legitimate pair SharedSecret—or during a later cache miss/restart/rotation.
+
+Concrete first-contact order:
+
+1. Alice sends Bob a first-contact request, exposing Alice’s public encryption key.
+2. Bob accepts and publishes his public key binding.
+3. Attack window opens: Mallory now knows both public keys and sends her Alice–Bob SharedSecret candidate.
+4. Alice and/or Bob accept Mallory’s candidate before caching their legitimate pair secret.
+5. The first real DM is encrypted using whichever candidate won.
+
+Mallory does not need to act before the initial request; she generally needs Bob’s acceptance/key publication first. But she must act before legitimate pair-key selection.
+
+Once Alice and Bob have a valid warm cache, we have not proved that Mallory can replace it. My earlier “at any time” claim was unsupported and should be withdrawn.
+
+Also, earth-core itself only provenance-stamps and re-emits the remote payload. It does not decrypt, cache, or commit it. Any actual poisoning depends entirely on humm-tauri admitting that Mallory-authored candidate into the Alice–Bob cache slot.
+
+### User
+
+> And that Mallory-authored one must hit before Alice and Bob hit it?
+
+### Answer
+
+Yes. For the currently supportable scenario, Mallory must win the race: her candidate must reach and be admitted by Alice and/or Bob before their legitimate Alice–Bob SharedSecret is selected and cached.
+
+If Alice and Bob’s legitimate candidate wins first, we have no evidence that Mallory can subsequently overwrite the warm cache. The same race could recur after a cache reset, restart, rotation, or other cache miss, but that also remains to be demonstrated.
+
+So the confirmed concern is a narrow first-selection race, not an established anytime takeover.
+
 ## Claims that require proof
 
 ### C1. Live push behavior
