@@ -20,6 +20,7 @@ use super::EncryptedContentResponse;
 const LINK_PAGE_DEFAULT_LIMIT: usize = 100;
 const LINK_PAGE_HARD_LIMIT: usize = 256;
 const MY_CONTENT_HARD_LIMIT: usize = 4096;
+pub const BATCH_RESOLVE_BUDGET: usize = 4096;
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub struct SourcePosition {
@@ -101,6 +102,23 @@ pub fn list_by_hive_link_page(input: HiveLinkPageInput) -> ExternResult<BoundedL
     )
 }
 
+#[hdk_extern]
+pub fn list_by_hive_link_local_page(input: HiveLinkPageInput) -> ExternResult<BoundedLinkPage> {
+    let path = Path::from(vec![
+        Component::from(input.hive_genesis_hash.to_string()),
+        Component::from(input.content_type),
+    ]);
+    link_page(
+        path.path_entry_hash()?,
+        LinkTypes::Hive,
+        input.since_ts,
+        input.limit,
+        input.source_after_action_hash,
+        input.include_liveness,
+        GetOptions::local(),
+    )
+}
+
 /// Paged twin of `list_by_dynamic_link`.
 #[hdk_extern]
 pub fn list_by_dynamic_link_page(input: DynamicLinkPageInput) -> ExternResult<BoundedLinkPage> {
@@ -139,6 +157,121 @@ pub fn list_by_author_page(input: AuthorLinkPageInput) -> ExternResult<BoundedLi
         input.include_liveness,
         GetOptions::network(),
     )
+}
+
+pub const HIVE_LINKS_BATCH_MAX: usize = 32;
+pub const AUTHOR_BATCH_MAX: usize = 64;
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct HiveLinkRequest {
+    pub content_type: String,
+    #[serde(default)]
+    pub since_ts: Option<Timestamp>,
+    #[serde(default)]
+    pub limit: Option<usize>,
+    #[serde(default)]
+    pub include_liveness: bool,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct HiveLinksBatchInput {
+    pub hive_genesis_hash: ActionHash,
+    pub requests: Vec<HiveLinkRequest>,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct HiveLinksBatchBucket {
+    pub content_type: String,
+    pub records: Vec<EncryptedContentResponse>,
+    pub truncated: bool,
+}
+
+/// Batched first pages over multiple content types under one hive. Each request
+/// is a cursor-less `list_by_hive_link_page` first page; deep pagination stays
+/// on the singleton page extern.
+#[hdk_extern]
+pub fn list_by_hive_links_many(
+    input: HiveLinksBatchInput,
+) -> ExternResult<Vec<HiveLinksBatchBucket>> {
+    if input.requests.len() > HIVE_LINKS_BATCH_MAX {
+        return Err(wasm_error!(WasmErrorInner::Guest(
+            "hive-link batch accepts at most 32 requests".into()
+        )));
+    }
+    enforce_batch_resolve_budget(input.requests.iter().map(|request| request.limit))?;
+    let hive_b64 = input.hive_genesis_hash.to_string();
+    let mut buckets = Vec::with_capacity(input.requests.len());
+    for request in input.requests {
+        let path = Path::from(vec![
+            Component::from(hive_b64.clone()),
+            Component::from(request.content_type.clone()),
+        ]);
+        let page = link_page(
+            path.path_entry_hash()?,
+            LinkTypes::Hive,
+            request.since_ts,
+            request.limit,
+            None,
+            request.include_liveness,
+            GetOptions::network(),
+        )?;
+        buckets.push(HiveLinksBatchBucket {
+            content_type: request.content_type,
+            records: page.records,
+            truncated: page.truncated,
+        });
+    }
+    Ok(buckets)
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct AuthorContentLookup {
+    pub author: AgentPubKey,
+    pub content_type: String,
+    #[serde(default)]
+    pub limit: Option<usize>,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct AuthorBatchBucket {
+    pub author: AgentPubKey,
+    pub records: Vec<EncryptedContentResponse>,
+    pub truncated: bool,
+}
+
+/// Batched first pages of author-shape content, oldest-first per lookup.
+#[hdk_extern]
+pub fn list_by_author_many(
+    lookups: Vec<AuthorContentLookup>,
+) -> ExternResult<Vec<AuthorBatchBucket>> {
+    if lookups.len() > AUTHOR_BATCH_MAX {
+        return Err(wasm_error!(WasmErrorInner::Guest(
+            "author batch accepts at most 64 lookups".into()
+        )));
+    }
+    enforce_batch_resolve_budget(lookups.iter().map(|lookup| lookup.limit))?;
+    let mut buckets = Vec::with_capacity(lookups.len());
+    for lookup in lookups {
+        let path = Path::from(vec![
+            Component::from(lookup.author.to_string()),
+            Component::from(lookup.content_type.clone()),
+        ]);
+        let page = link_page(
+            path.path_entry_hash()?,
+            LinkTypes::Hive,
+            None,
+            lookup.limit,
+            None,
+            false,
+            GetOptions::network(),
+        )?;
+        buckets.push(AuthorBatchBucket {
+            author: lookup.author,
+            records: page.records,
+            truncated: page.truncated,
+        });
+    }
+    Ok(buckets)
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -296,6 +429,24 @@ pub(crate) fn resolve_page_limit(limit: Option<usize>) -> ExternResult<usize> {
         ))),
         Some(n) => Ok(n.min(LINK_PAGE_HARD_LIMIT)),
     }
+}
+
+/// Rejects a batch whose summed normalized per-item limits exceed
+/// `BATCH_RESOLVE_BUDGET` (deliberately mirroring `MY_CONTENT_HARD_LIMIT`), so
+/// batch fan-out cannot bypass the single-call resolve ceiling.
+pub(crate) fn enforce_batch_resolve_budget<I: IntoIterator<Item = Option<usize>>>(
+    per_item_limits: I,
+) -> ExternResult<()> {
+    let mut total: usize = 0;
+    for limit in per_item_limits {
+        total = total.saturating_add(resolve_page_limit(limit)?);
+    }
+    if total > BATCH_RESOLVE_BUDGET {
+        return Err(wasm_error!(WasmErrorInner::Guest(
+            "batch total requested records exceed the 4096 budget".into()
+        )));
+    }
+    Ok(())
 }
 
 /// Decode + pairing-check the composite source cursor: a lone

@@ -155,7 +155,13 @@ pub fn set_cap_tokens() -> ExternResult<()> {
     // Batch read externs: read-only over public DHT link space, same grant
     // class as their singleton twins above. `content_id_exists` probes the
     // same link space and returns only a bool.
+    fns.insert((
+        zome.clone(),
+        "list_encrypted_content_by_dynamic_links".into(),
+    ));
+    fns.insert((zome.clone(), "list_by_hive_links_many".into()));
     fns.insert((zome.clone(), "get_many_by_content_id_link".into()));
+    fns.insert((zome.clone(), "list_by_author_many".into()));
     fns.insert((zome.clone(), "content_id_exists".into()));
 
     // Membership/group batch + local read externs. Same grant class as their
@@ -164,6 +170,7 @@ pub fn set_cap_tokens() -> ExternResult<()> {
     // `list_group_members_many` reads the public group roster link space.
     fns.insert((zome.clone(), "list_group_members_many".into()));
     fns.insert((zome.clone(), "list_my_groups_local".into()));
+    fns.insert((zome.clone(), "list_by_hive_link_local_page".into()));
 
     // Group-authority read externs (pass-3). Same rationale as the
     // hive read surface above: GroupGenesis and GroupMembership entries

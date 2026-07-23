@@ -24,7 +24,7 @@ use hdk::prelude::*;
 use std::collections::HashSet;
 
 use super::crud::get_encrypted_content;
-use super::paging::resolve_content_link_targets;
+use super::paging::{enforce_batch_resolve_budget, link_page, resolve_content_link_targets};
 use super::EncryptedContentResponse;
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -266,7 +266,68 @@ pub fn list_by_author(input: ListByAuthorInput) -> ExternResult<Vec<EncryptedCon
     resolve_content_link_targets(links, input.include_liveness)
 }
 
+pub const DYNAMIC_LINKS_BATCH_MAX: usize = 64;
 pub const CONTENT_ID_BATCH_MAX: usize = 64;
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct ListByDynamicLinksInput {
+    pub hive_genesis_hash: ActionHash,
+    pub content_type: String,
+    pub dynamic_links: Vec<String>,
+    #[serde(default)]
+    pub since_ts: Option<Timestamp>,
+    #[serde(default)]
+    pub limit: Option<usize>,
+    #[serde(default)]
+    pub include_liveness: bool,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct DynamicLinkBucket {
+    pub dynamic_link: String,
+    pub records: Vec<EncryptedContentResponse>,
+    pub truncated: bool,
+}
+
+/// Batched twin of `list_by_dynamic_link_page`: a bounded first page per dynamic
+/// label under one (hive, content_type) scope. Buckets key back to each
+/// requested label in request order; deep pagination stays on the singleton
+/// page extern.
+#[hdk_extern]
+pub fn list_encrypted_content_by_dynamic_links(
+    input: ListByDynamicLinksInput,
+) -> ExternResult<Vec<DynamicLinkBucket>> {
+    if input.dynamic_links.len() > DYNAMIC_LINKS_BATCH_MAX {
+        return Err(wasm_error!(WasmErrorInner::Guest(
+            "dynamic_links batch accepts at most 64 labels".into()
+        )));
+    }
+    enforce_batch_resolve_budget(std::iter::repeat_n(input.limit, input.dynamic_links.len()))?;
+    let hive_b64 = input.hive_genesis_hash.to_string();
+    let mut buckets = Vec::with_capacity(input.dynamic_links.len());
+    for dynamic_link in input.dynamic_links {
+        let path = Path::from(vec![
+            Component::from(hive_b64.clone()),
+            Component::from(input.content_type.clone()),
+            Component::from(dynamic_link.clone()),
+        ]);
+        let page = link_page(
+            path.path_entry_hash()?,
+            LinkTypes::Dynamic,
+            input.since_ts,
+            input.limit,
+            None,
+            input.include_liveness,
+            GetOptions::network(),
+        )?;
+        buckets.push(DynamicLinkBucket {
+            dynamic_link,
+            records: page.records,
+            truncated: page.truncated,
+        });
+    }
+    Ok(buckets)
+}
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct ContentIdLookup {
