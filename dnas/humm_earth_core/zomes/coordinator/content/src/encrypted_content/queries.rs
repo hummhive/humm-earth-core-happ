@@ -318,6 +318,7 @@ pub fn list_encrypted_content_by_dynamic_links(
             input.limit,
             None,
             input.include_liveness,
+            GetOptions::network(),
         )?;
         buckets.push(DynamicLinkBucket {
             dynamic_link,

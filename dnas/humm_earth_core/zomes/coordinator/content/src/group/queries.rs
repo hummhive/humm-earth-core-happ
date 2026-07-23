@@ -130,19 +130,33 @@ pub fn get_latest_group_membership(
 pub fn list_group_members(
     group_genesis_hash: ActionHash,
 ) -> ExternResult<Vec<GroupMembershipResponse>> {
-    let links = get_links(
+    group_members_of(group_genesis_hash)
+}
+
+pub(crate) fn group_members_of(
+    group_genesis_hash: ActionHash,
+) -> ExternResult<Vec<GroupMembershipResponse>> {
+    let links = group_roster_links(&group_genesis_hash)?;
+    resolve_roster(&group_genesis_hash, links)
+}
+
+fn group_roster_links(group_genesis_hash: &ActionHash) -> ExternResult<Vec<Link>> {
+    get_links(
         LinkQuery::try_new(
             AnyLinkableHash::from(group_genesis_hash.clone()),
             LinkTypes::GroupToGroupMemberships,
         )?,
         GetStrategy::Network,
-    )?;
+    )
+}
+
+fn resolve_roster(
+    group_genesis_hash: &ActionHash,
+    links: Vec<Link>,
+) -> ExternResult<Vec<GroupMembershipResponse>> {
     let now = sys_time()?;
 
-    // Best-per-agent: walk all links, keep latest-timestamped unexpired
-    // membership per `for_agent`. Final pass returns the dedup'd set.
-    let mut best: std::collections::HashMap<AgentPubKey, (Timestamp, GroupMembership, ActionHash)> =
-        std::collections::HashMap::new();
+    let mut best: HashMap<AgentPubKey, (Timestamp, GroupMembership, ActionHash)> = HashMap::new();
     for link in links {
         let Some(target_ah) = link.target.into_action_hash() else {
             continue;
@@ -157,7 +171,7 @@ pub fn list_group_members(
         else {
             continue;
         };
-        if membership.group_genesis_hash != group_genesis_hash {
+        if membership.group_genesis_hash != *group_genesis_hash {
             continue;
         }
         if let Some(expiry) = membership.expiry {
@@ -165,14 +179,14 @@ pub fn list_group_members(
                 continue;
             }
         }
-        let ts = record.action().timestamp();
+        let timestamp = record.action().timestamp();
         let key = membership.for_agent.clone();
         let install = best
             .get(&key)
-            .map(|(prev_ts, _, _)| ts > *prev_ts)
+            .map(|(previous_timestamp, _, _)| timestamp > *previous_timestamp)
             .unwrap_or(true);
         if install {
-            best.insert(key, (ts, membership, target_ah));
+            best.insert(key, (timestamp, membership, target_ah));
         }
     }
 
@@ -180,6 +194,56 @@ pub fn list_group_members(
         .into_values()
         .map(|(_, membership, hash)| GroupMembershipResponse { membership, hash })
         .collect())
+}
+
+pub const GROUP_MEMBERS_BATCH_MAX: usize = 64;
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct GroupMembersBucket {
+    pub group_genesis_hash: ActionHash,
+    pub members: Vec<GroupMembershipResponse>,
+}
+
+pub const GROUP_MEMBERS_LINK_BUDGET: usize = 4096;
+
+/// Rosters stay COMPLETE (ACL derivation needs every member), so an over-budget
+/// batch REJECTS instead of truncating; the caller falls back to per-group calls.
+fn enforce_roster_link_budget(total_links: usize) -> ExternResult<()> {
+    if total_links > GROUP_MEMBERS_LINK_BUDGET {
+        return Err(wasm_error!(WasmErrorInner::Guest(
+            "group-members batch roster links exceed the 4096 budget".into()
+        )));
+    }
+    Ok(())
+}
+
+#[hdk_extern]
+pub fn list_group_members_many(
+    group_genesis_hashes: Vec<ActionHash>,
+) -> ExternResult<Vec<GroupMembersBucket>> {
+    if group_genesis_hashes.len() > GROUP_MEMBERS_BATCH_MAX {
+        return Err(wasm_error!(WasmErrorInner::Guest(
+            "group-members batch accepts at most 64 groups".into()
+        )));
+    }
+    let mut rosters = Vec::with_capacity(group_genesis_hashes.len());
+    let mut total_links: usize = 0;
+    for group_genesis_hash in group_genesis_hashes {
+        let links = group_roster_links(&group_genesis_hash)?;
+        total_links = total_links.saturating_add(links.len());
+        enforce_roster_link_budget(total_links)?;
+        rosters.push((group_genesis_hash, links));
+    }
+    rosters
+        .into_iter()
+        .map(|(group_genesis_hash, links)| {
+            let members = resolve_roster(&group_genesis_hash, links)?;
+            Ok(GroupMembersBucket {
+                group_genesis_hash,
+                members,
+            })
+        })
+        .collect()
 }
 
 // =============================================================================
@@ -222,17 +286,36 @@ pub struct ListedGroup {
 /// group. The mirroring `list_my_hives` carries the same contract.
 #[hdk_extern]
 pub fn list_my_groups(_: ()) -> ExternResult<Vec<ListedGroup>> {
-    let my_pubkey = agent_info()?.agent_initial_pubkey;
-    let invite_byte = InboxEvent::GroupInvite.as_byte();
-    let now = sys_time()?;
-    let mut out: Vec<ListedGroup> = Vec::new();
-    let mut group_genesis_cache: HashMap<ActionHash, Option<GroupGenesis>> = HashMap::new();
+    list_my_groups_via(GetStrategy::Network, GetOptions::network())
+}
 
-    // Founded rows stay Inbox-based (Wave-2 residual): the shipped sweep
-    // consumes only DmCreate, and a founder re-derives from their own chain.
+#[hdk_extern]
+pub fn list_my_groups_local(_: ()) -> ExternResult<Vec<ListedGroup>> {
+    list_my_groups_via(GetStrategy::Local, GetOptions::local())
+}
+
+fn list_my_groups_via(
+    link_strategy: GetStrategy,
+    options: GetOptions,
+) -> ExternResult<Vec<ListedGroup>> {
+    let my_pubkey = agent_info()?.agent_initial_pubkey;
+    let now = sys_time()?;
+    let mut out = Vec::new();
+    append_founded_groups(&mut out, &my_pubkey, link_strategy, &options)?;
+    append_membership_groups(&mut out, &my_pubkey, &now, link_strategy, &options)?;
+    Ok(out)
+}
+
+fn append_founded_groups(
+    out: &mut Vec<ListedGroup>,
+    my_pubkey: &AgentPubKey,
+    link_strategy: GetStrategy,
+    options: &GetOptions,
+) -> ExternResult<()> {
+    let invite_byte = InboxEvent::GroupInvite.as_byte();
     let invite_links = get_links(
         LinkQuery::try_new(AnyLinkableHash::from(my_pubkey.clone()), LinkTypes::Inbox)?,
-        GetStrategy::Network,
+        link_strategy,
     )?;
     for link in invite_links {
         if link.tag.0.first().copied() != Some(invite_byte) {
@@ -241,55 +324,55 @@ pub fn list_my_groups(_: ()) -> ExternResult<Vec<ListedGroup>> {
         let Some(target_ah) = link.target.into_action_hash() else {
             continue;
         };
-        let Some(record) = get(target_ah.clone(), GetOptions::network())? else {
-            continue;
-        };
-        if let Some(listed) = resolve_genesis_invite(&record, &target_ah, &my_pubkey)? {
+        if let Some(listed) = resolve_genesis_invite(&target_ah, my_pubkey, options)? {
             out.push(listed);
         }
     }
+    Ok(())
+}
 
+fn append_membership_groups(
+    out: &mut Vec<ListedGroup>,
+    my_pubkey: &AgentPubKey,
+    now: &Timestamp,
+    link_strategy: GetStrategy,
+    options: &GetOptions,
+) -> ExternResult<()> {
     let membership_links = get_links(
         LinkQuery::try_new(
             AnyLinkableHash::from(my_pubkey.clone()),
             LinkTypes::AgentToGroupMemberships,
         )?,
-        GetStrategy::Network,
+        link_strategy,
     )?;
+    let mut group_genesis_cache: HashMap<ActionHash, Option<GroupGenesis>> = HashMap::new();
     for link in membership_links {
         let Some(target_ah) = link.target.into_action_hash() else {
             continue;
         };
-        let Some(record) = get(target_ah, GetOptions::network())? else {
-            continue;
-        };
-        if let Some(listed) =
-            resolve_membership_invite(&record, &my_pubkey, &now, &mut group_genesis_cache)?
-        {
+        if let Some(listed) = resolve_membership_invite(
+            &target_ah,
+            my_pubkey,
+            now,
+            &mut group_genesis_cache,
+            options,
+        )? {
             out.push(listed);
         }
     }
-
-    Ok(out)
+    Ok(())
 }
 
-/// Decode `record` as a [`GroupGenesis`]; if it is one, verify the
-/// record's author matches `my_pubkey` (the open-write Inbox surface
-/// means any peer can target an arbitrary genesis with a GroupInvite
-/// link on the local agent's pubkey, so the author guard is what makes
-/// "I founded this group" a real claim rather than a UI-spoofable
-/// hint). Returns `Some(ListedGroup { role: None })` for a valid
-/// founded group; `None` if the record isn't a genesis or the author
-/// guard fails.
+/// The author guard prevents open-write Inbox links from spoofing a founder claim.
 fn resolve_genesis_invite(
-    record: &Record,
     target_ah: &ActionHash,
     my_pubkey: &AgentPubKey,
+    options: &GetOptions,
 ) -> ExternResult<Option<ListedGroup>> {
-    // Cross-type tolerant: list_my_groups feeds BOTH GroupGenesis and
-    // GroupMembership inbox targets through here, so a membership target
-    // failing the genesis decode must fall through (Ok(None)) — never
-    // `?`-propagate, which broke the whole list once any group was joined.
+    let Some(record) = get(target_ah.clone(), options.clone())? else {
+        return Ok(None);
+    };
+    // Inbox targets are heterogeneous, so decode mismatches skip instead of failing the list.
     let Some(genesis) = record
         .entry()
         .to_app_option::<GroupGenesis>()
@@ -313,11 +396,12 @@ fn resolve_genesis_invite(
 fn cached_group_genesis<'a>(
     cache: &'a mut HashMap<ActionHash, Option<GroupGenesis>>,
     group_genesis_hash: &ActionHash,
+    options: &GetOptions,
 ) -> ExternResult<Option<&'a GroupGenesis>> {
     let cached = match cache.entry(group_genesis_hash.clone()) {
         Entry::Occupied(entry) => entry.into_mut(),
         Entry::Vacant(entry) => {
-            let genesis = match get(group_genesis_hash.clone(), GetOptions::network())? {
+            let genesis = match get(group_genesis_hash.clone(), options.clone())? {
                 Some(record) => record
                     .entry()
                     .to_app_option::<GroupGenesis>()
@@ -331,18 +415,16 @@ fn cached_group_genesis<'a>(
     Ok(cached.as_ref())
 }
 
-/// Decode `record` as a [`GroupMembership`]; if it grants `my_pubkey` a
-/// currently-unexpired role, fetch the referenced `GroupGenesis` for
-/// the display fields and return a populated [`ListedGroup`]. Returns
-/// `None` if the record isn't a membership, isn't for `my_pubkey`, has
-/// expired, or its referenced genesis is not resolvable / not a
-/// `GroupGenesis`.
 fn resolve_membership_invite(
-    record: &Record,
+    target_ah: &ActionHash,
     my_pubkey: &AgentPubKey,
     now: &Timestamp,
     group_genesis_cache: &mut HashMap<ActionHash, Option<GroupGenesis>>,
+    options: &GetOptions,
 ) -> ExternResult<Option<ListedGroup>> {
+    let Some(record) = get(target_ah.clone(), options.clone())? else {
+        return Ok(None);
+    };
     let Some(membership) = record
         .entry()
         .to_app_option::<GroupMembership>()
@@ -359,7 +441,8 @@ fn resolve_membership_invite(
             return Ok(None);
         }
     }
-    let Some(genesis) = cached_group_genesis(group_genesis_cache, &membership.group_genesis_hash)?
+    let Some(genesis) =
+        cached_group_genesis(group_genesis_cache, &membership.group_genesis_hash, options)?
     else {
         return Ok(None);
     };
@@ -523,6 +606,14 @@ pub fn get_group_genesis(action_hash: ActionHash) -> ExternResult<Option<GroupGe
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn roster_link_budget_accepts_at_budget_and_rejects_over() {
+        assert!(enforce_roster_link_budget(GROUP_MEMBERS_LINK_BUDGET).is_ok());
+        let over = enforce_roster_link_budget(GROUP_MEMBERS_LINK_BUDGET + 1)
+            .expect_err("over-budget roster batch must reject");
+        assert!(format!("{over:?}").contains("roster links exceed the 4096 budget"));
+    }
 
     fn listed_group(role: Option<HiveRole>, hash_byte: u8) -> ListedGroup {
         ListedGroup {

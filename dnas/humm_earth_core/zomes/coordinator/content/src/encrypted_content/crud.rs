@@ -195,8 +195,15 @@ pub fn find_or_create_encrypted_content(
 
 #[hdk_extern]
 pub fn get_encrypted_content(content_hash: ActionHash) -> ExternResult<EncryptedContentResponse> {
-    let ah = get_eh(content_hash.clone())?;
-    let Some((entry, hash, _, ts)) = get_latest_typed_from_eh(ah)? else {
+    resolve_encrypted_content(content_hash, GetOptions::network())
+}
+
+pub(crate) fn resolve_encrypted_content(
+    content_hash: ActionHash,
+    options: GetOptions,
+) -> ExternResult<EncryptedContentResponse> {
+    let ah = get_eh(content_hash.clone(), options.clone())?;
+    let Some((entry, hash, _, ts)) = get_latest_typed_from_eh(ah, options)? else {
         return Err(wasm_error!(WasmErrorInner::Guest(String::from(
             "Could not find the EncryptedContent"
         ))));
@@ -225,13 +232,28 @@ pub fn get_encrypted_content(content_hash: ActionHash) -> ExternResult<Encrypted
 pub fn get_many_encrypted_content(
     ahs: Vec<ActionHash>,
 ) -> ExternResult<Vec<EncryptedContentResponse>> {
+    resolve_many_encrypted_content(ahs, GetOptions::network())
+}
+
+pub(crate) fn resolve_many_encrypted_content(
+    ahs: Vec<ActionHash>,
+    options: GetOptions,
+) -> ExternResult<Vec<EncryptedContentResponse>> {
     let mut resolved: HashMap<ActionHash, Option<EncryptedContentResponse>> = HashMap::new();
     let mut out = Vec::with_capacity(ahs.len());
     for ah in ahs {
         let response = match resolved.get(&ah) {
             Some(cached) => cached.clone(),
             None => {
-                let response = get_encrypted_content(ah.clone()).ok();
+                let response = match resolve_encrypted_content(ah.clone(), options.clone()) {
+                    Ok(response) => Some(response),
+                    Err(e) => {
+                        debug!(
+                            "get_many_encrypted_content: target {ah} unresolved, dropped: {e:?}"
+                        );
+                        None
+                    }
+                };
                 resolved.insert(ah, response.clone());
                 response
             }

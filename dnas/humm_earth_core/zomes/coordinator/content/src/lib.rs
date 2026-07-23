@@ -186,6 +186,15 @@ pub fn set_cap_tokens() -> ExternResult<()> {
     fns.insert((zome.clone(), "list_by_author_many".into()));
     fns.insert((zome.clone(), "content_id_exists".into()));
 
+    // Pass-7 Wave-4 membership/group/local batch read externs. Same grant class
+    // as their singleton twins: the local twins resolve the caller's OWN data
+    // (self-scoped like list_my_hives_local / get_latest_membership_local),
+    // list_group_members_many reads the public group roster link space.
+    fns.insert((zome.clone(), "get_latest_memberships_local_many".into()));
+    fns.insert((zome.clone(), "list_group_members_many".into()));
+    fns.insert((zome.clone(), "list_my_groups_local".into()));
+    fns.insert((zome.clone(), "list_by_hive_link_local_page".into()));
+
     // Group-authority read externs (pass-3). Same rationale as the
     // hive read surface above: GroupGenesis and GroupMembership entries
     // are public DHT data and the corresponding link space is public.

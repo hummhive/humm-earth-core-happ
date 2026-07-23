@@ -8,8 +8,8 @@ use holochain::sweettest::await_consistency_s;
 use holo_hash::ActionHash;
 use serde::Deserialize;
 use support::{
-    create_hive, setup_cells, CreateGroupGenesisInput, CreateGroupMembershipInput, GenesisResponse,
-    MembershipResponse,
+    create_hive, grant_hive_membership, setup_cells, CreateGroupGenesisInput,
+    CreateGroupMembershipInput, GenesisResponse, MembershipResponse,
 };
 use holo_hash::AgentPubKey;
 use holochain::sweettest::{SweetConductor, SweetZome};
@@ -99,6 +99,11 @@ const CONTENT_ID_BATCH_REJECT: &str = "content-id batch accepts at most 64 looku
 const AUTHOR_BATCH_REJECT: &str = "author batch accepts at most 64 lookups";
 const BATCH_BUDGET_REJECT: &str =
     "batch total requested records exceed the 4096 budget";
+const MEMBERSHIP_BATCH_MAX: usize = 64;
+const GROUP_MEMBERS_BATCH_MAX: usize = 64;
+const MEMBERSHIP_BATCH_REJECT: &str = "membership batch accepts at most 64 hives";
+const GROUP_MEMBERS_BATCH_REJECT: &str =
+    "group-members batch accepts at most 64 groups";
 
 #[derive(Debug, Deserialize)]
 struct RecordMirror {
@@ -175,6 +180,56 @@ struct AuthorBatchBucket {
 struct ContentIdExistsInput {
     hive_genesis_hash: ActionHash,
     content_id: String,
+}
+
+#[derive(Debug, Serialize)]
+struct LatestMembershipsLocalManyInput {
+    hive_genesis_hashes: Vec<ActionHash>,
+}
+
+#[derive(Debug, Serialize)]
+struct GetLatestMembershipInputMirror {
+    agent: AgentPubKey,
+    hive_genesis_hash: ActionHash,
+}
+
+#[derive(Debug, Deserialize)]
+struct MembershipMirror {
+    hash: ActionHash,
+}
+
+#[derive(Debug, Deserialize)]
+struct MembershipBatchBucket {
+    hive_genesis_hash: ActionHash,
+    #[serde(default)]
+    membership: Option<MembershipMirror>,
+}
+
+#[derive(Debug, Deserialize)]
+struct MemberMirror {
+    hash: ActionHash,
+}
+
+#[derive(Debug, Deserialize)]
+struct GroupMembersBatchBucket {
+    group_genesis_hash: ActionHash,
+    members: Vec<MemberMirror>,
+}
+
+#[derive(Debug, Serialize)]
+struct HiveLinkPageInputMirror {
+    hive_genesis_hash: ActionHash,
+    content_type: String,
+    since_ts: Option<Timestamp>,
+    limit: Option<usize>,
+    source_after_action_hash: Option<String>,
+    include_liveness: bool,
+}
+
+#[derive(Debug, Deserialize)]
+struct BoundedLinkPageMirror {
+    records: Vec<RecordMirror>,
+    truncated: bool,
 }
 
 fn assert_reject_contains<T, E>(result: Result<T, E>, expected: &str)
@@ -287,6 +342,226 @@ async fn probe_content_id_exists(
             },
         )
         .await
+}
+
+async fn create_group(
+    conductor: &SweetConductor,
+    zome: &SweetZome,
+    hive_genesis_hash: &ActionHash,
+    display_id: &str,
+) -> ActionHash {
+    let response: GenesisResponse = conductor
+        .call(
+            zome,
+            "create_group_genesis",
+            CreateGroupGenesisInput {
+                hive_genesis_hash: hive_genesis_hash.clone(),
+                display_id: display_id.to_string(),
+                hive_wide_role: None,
+                creator_hive_membership_hash: None,
+            },
+        )
+        .await;
+    response.hash
+}
+
+async fn grant_group_membership(
+    conductor: &SweetConductor,
+    zome: &SweetZome,
+    group_genesis_hash: ActionHash,
+    for_agent: AgentPubKey,
+    role: &str,
+    expiry: Option<i64>,
+) -> ActionHash {
+    let response: MembershipResponse = conductor
+        .call(
+            zome,
+            "create_group_membership",
+            CreateGroupMembershipInput {
+                group_genesis_hash,
+                for_agent,
+                role: role.to_string(),
+                grantor_membership_hash: None,
+                grantor_hive_membership_hash: None,
+                expiry,
+            },
+        )
+        .await;
+    response.hash
+}
+
+async fn grant_hive_role(
+    conductor: &SweetConductor,
+    zome: &SweetZome,
+    hive_genesis_hash: ActionHash,
+    for_agent: AgentPubKey,
+    role: &str,
+    expiry: Option<i64>,
+) -> ActionHash {
+    grant_hive_membership(
+        conductor,
+        zome,
+        hive_genesis_hash,
+        for_agent,
+        role,
+        None,
+        expiry,
+        None,
+    )
+    .await
+}
+
+async fn create_membership_batch_fixture(
+    conductor: &SweetConductor,
+    zome: &SweetZome,
+    bob: &AgentPubKey,
+) -> (ActionHash, ActionHash, ActionHash, ActionHash) {
+    let hive_a = create_hive(conductor, zome, "membership-batch-a").await;
+    let hive_b = create_hive(conductor, zome, "membership-batch-b").await;
+    let hive_c = create_hive(conductor, zome, "membership-batch-c").await;
+
+    let _reader_hash =
+        grant_hive_role(conductor, zome, hive_a.clone(), bob.clone(), "Reader", None).await;
+    let writer_hash =
+        grant_hive_role(conductor, zome, hive_a.clone(), bob.clone(), "Writer", None).await;
+    let _expired_hash =
+        grant_hive_role(conductor, zome, hive_b.clone(), bob.clone(), "Reader", Some(1)).await;
+
+    (hive_a, hive_b, hive_c, writer_hash)
+}
+
+async fn latest_memberships_local_many(
+    conductor: &SweetConductor,
+    zome: &SweetZome,
+    hive_genesis_hashes: Vec<ActionHash>,
+) -> Vec<MembershipBatchBucket> {
+    conductor
+        .call(
+            zome,
+            "get_latest_memberships_local_many",
+            LatestMembershipsLocalManyInput {
+                hive_genesis_hashes,
+            },
+        )
+        .await
+}
+
+async fn latest_membership_local(
+    conductor: &SweetConductor,
+    zome: &SweetZome,
+    agent: &AgentPubKey,
+    hive_genesis_hash: ActionHash,
+) -> Option<MembershipMirror> {
+    conductor
+        .call(
+            zome,
+            "get_latest_membership_local",
+            GetLatestMembershipInputMirror {
+                agent: agent.clone(),
+                hive_genesis_hash,
+            },
+        )
+        .await
+}
+
+fn assert_membership_parity(
+    bucket: &MembershipBatchBucket,
+    expected_hive: &ActionHash,
+    singleton: &Option<MembershipMirror>,
+) {
+    assert_eq!(&bucket.hive_genesis_hash, expected_hive);
+    assert_eq!(
+        bucket.membership.as_ref().map(|membership| &membership.hash),
+        singleton.as_ref().map(|membership| &membership.hash)
+    );
+}
+
+async fn hive_link_page(
+    conductor: &SweetConductor,
+    zome: &SweetZome,
+    function_name: &str,
+    hive_genesis_hash: ActionHash,
+    content_type: &str,
+    limit: usize,
+) -> BoundedLinkPageMirror {
+    conductor
+        .call(
+            zome,
+            function_name,
+            HiveLinkPageInputMirror {
+                hive_genesis_hash,
+                content_type: content_type.to_string(),
+                since_ts: None,
+                limit: Some(limit),
+                source_after_action_hash: None,
+                include_liveness: false,
+            },
+        )
+        .await
+}
+
+fn sorted_record_hashes(page: &BoundedLinkPageMirror) -> Vec<String> {
+    let mut hashes: Vec<String> = page
+        .records
+        .iter()
+        .map(|record| record.hash.clone())
+        .collect();
+    hashes.sort();
+    hashes
+}
+
+async fn create_local_group_fixture(
+    conductor: &SweetConductor,
+    zome: &SweetZome,
+    bob: &AgentPubKey,
+) -> (ActionHash, ActionHash) {
+    let hive = create_hive(conductor, zome, "local-groups-hive").await;
+    let granted_group = create_group(conductor, zome, &hive, "local-granted-group").await;
+    let expired_group = create_group(conductor, zome, &hive, "local-expired-group").await;
+
+    let _active_hash = grant_group_membership(
+        conductor,
+        zome,
+        granted_group.clone(),
+        bob.clone(),
+        "Reader",
+        None,
+    )
+    .await;
+    let _expired_hash = grant_group_membership(
+        conductor,
+        zome,
+        expired_group.clone(),
+        bob.clone(),
+        "Reader",
+        Some(1),
+    )
+    .await;
+
+    (granted_group, expired_group)
+}
+
+async fn create_hive_link_page_fixture(
+    conductor: &SweetConductor,
+    zome: &SweetZome,
+    content_type: &str,
+    other_content_type: &str,
+) -> (ActionHash, Vec<String>, String) {
+    let hive = create_hive(conductor, zome, "local-page-hive").await;
+    let created = create_contents(
+        conductor,
+        zome,
+        &hive,
+        content_type,
+        &["local-page-1", "local-page-2", "local-page-3"],
+        None,
+    )
+    .await;
+    let mut other =
+        create_contents(conductor, zome, &hive, other_content_type, &["other-type-1"], None)
+            .await;
+    let other_hash = other.pop().expect("one different-type fixture record");
+    (hive, created, other_hash)
 }
 
 fn assert_bounded_dynamic_buckets(
@@ -650,4 +925,202 @@ async fn author_batch_rejects_over_budget() {
         .call_fallible(&zome, "list_by_author_many", lookups)
         .await;
     assert_reject_contains(rejected, BATCH_BUDGET_REJECT);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn local_membership_batch_matches_singleton_per_hive() {
+    holochain_trace::test_run();
+    let (conductors, cells) = setup_cells(2).await;
+    let (alice, bob) = (&cells[0], &cells[1]);
+    let alice_zome = alice.zome("content");
+    let bob_zome = bob.zome("content");
+    let bob_pubkey = bob.agent_pubkey().clone();
+    await_consistency_s(30, [alice, bob]).await.unwrap();
+
+    let (hive_a, hive_b, hive_c, writer_hash) =
+        create_membership_batch_fixture(&conductors[0], &alice_zome, &bob_pubkey).await;
+    await_consistency_s(60, [alice, bob]).await.unwrap();
+
+    let buckets = latest_memberships_local_many(
+        &conductors[1],
+        &bob_zome,
+        vec![hive_a.clone(), hive_b.clone(), hive_a.clone(), hive_c.clone()],
+    )
+    .await;
+    assert_eq!(buckets.len(), 4);
+
+    let singleton_a =
+        latest_membership_local(&conductors[1], &bob_zome, &bob_pubkey, hive_a.clone()).await;
+    let singleton_b =
+        latest_membership_local(&conductors[1], &bob_zome, &bob_pubkey, hive_b.clone()).await;
+    let singleton_c =
+        latest_membership_local(&conductors[1], &bob_zome, &bob_pubkey, hive_c.clone()).await;
+    assert_eq!(
+        singleton_a.as_ref().map(|membership| &membership.hash),
+        Some(&writer_hash)
+    );
+    assert!(singleton_b.is_none(), "the expired hive-B grant must be filtered");
+    assert!(singleton_c.is_none(), "an ungranted hive must remain absent");
+
+    assert_membership_parity(&buckets[0], &hive_a, &singleton_a);
+    assert_membership_parity(&buckets[1], &hive_b, &singleton_b);
+    assert_membership_parity(&buckets[2], &hive_a, &singleton_a);
+    assert_membership_parity(&buckets[3], &hive_c, &singleton_c);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn local_membership_batch_rejects_over_64_hives() {
+    let (conductor, _cell, zome) = single_conductor_cell_app().await;
+    let hive = create_hive(&conductor, &zome, "membership-bound-hive").await;
+    let rejected: Result<Vec<MembershipBatchBucket>, _> = conductor
+        .call_fallible(
+            &zome,
+            "get_latest_memberships_local_many",
+            LatestMembershipsLocalManyInput {
+                hive_genesis_hashes: vec![hive; MEMBERSHIP_BATCH_MAX + 1],
+            },
+        )
+        .await;
+    assert_reject_contains(rejected, MEMBERSHIP_BATCH_REJECT);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn group_members_many_returns_complete_rosters_in_order() {
+    holochain_trace::test_run();
+    let (conductors, cells) = setup_cells(2).await;
+    let (alice, bob) = (&cells[0], &cells[1]);
+    let alice_zome = alice.zome("content");
+    let bob_pubkey = bob.agent_pubkey().clone();
+    await_consistency_s(30, [alice, bob]).await.unwrap();
+
+    let hive = create_hive(&conductors[0], &alice_zome, "group-members-batch-hive").await;
+    let group1 = create_group(&conductors[0], &alice_zome, &hive, "roster-group-1").await;
+    let group2 = create_group(&conductors[0], &alice_zome, &hive, "roster-group-2").await;
+    let _reader_hash = grant_group_membership(
+        &conductors[0],
+        &alice_zome,
+        group1.clone(),
+        bob_pubkey.clone(),
+        "Reader",
+        None,
+    )
+    .await;
+    let writer_hash = grant_group_membership(
+        &conductors[0],
+        &alice_zome,
+        group1.clone(),
+        bob_pubkey,
+        "Writer",
+        None,
+    )
+    .await;
+    await_consistency_s(60, [alice, bob]).await.unwrap();
+
+    let buckets: Vec<GroupMembersBatchBucket> = conductors[0]
+        .call(
+            &alice_zome,
+            "list_group_members_many",
+            vec![group1.clone(), group2.clone()],
+        )
+        .await;
+    assert_eq!(
+        buckets
+            .iter()
+            .map(|bucket| bucket.group_genesis_hash.clone())
+            .collect::<Vec<_>>(),
+        vec![group1, group2]
+    );
+    assert_eq!(buckets[0].members.len(), 1);
+    assert_eq!(buckets[0].members[0].hash, writer_hash);
+    assert!(buckets[1].members.is_empty());
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn group_members_many_rejects_over_64_groups() {
+    let (conductor, _cell, zome) = single_conductor_cell_app().await;
+    let hive = create_hive(&conductor, &zome, "group-members-bound-hive").await;
+    let group = create_group(&conductor, &zome, &hive, "group-members-bound-group").await;
+    let rejected: Result<Vec<GroupMembersBatchBucket>, _> = conductor
+        .call_fallible(
+            &zome,
+            "list_group_members_many",
+            vec![group; GROUP_MEMBERS_BATCH_MAX + 1],
+        )
+        .await;
+    assert_reject_contains(rejected, GROUP_MEMBERS_BATCH_REJECT);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn list_my_groups_local_lists_founded_and_granted() {
+    holochain_trace::test_run();
+    let (conductors, cells) = setup_cells(2).await;
+    let (alice, bob) = (&cells[0], &cells[1]);
+    let alice_zome = alice.zome("content");
+    let bob_zome = bob.zome("content");
+    let bob_pubkey = bob.agent_pubkey().clone();
+    await_consistency_s(30, [alice, bob]).await.unwrap();
+
+    let (granted_group, expired_group) =
+        create_local_group_fixture(&conductors[0], &alice_zome, &bob_pubkey).await;
+    await_consistency_s(60, [alice, bob]).await.unwrap();
+
+    let alice_rows: Vec<ListedGroupRow> = conductors[0]
+        .call(&alice_zome, "list_my_groups_local", ())
+        .await;
+    let bob_rows: Vec<ListedGroupRow> = conductors[1]
+        .call(&bob_zome, "list_my_groups_local", ())
+        .await;
+
+    let founded = alice_rows
+        .iter()
+        .find(|row| row.group_genesis_hash == granted_group)
+        .expect("alice's locally founded group");
+    assert!(founded.role.is_none());
+    let granted = bob_rows
+        .iter()
+        .find(|row| row.group_genesis_hash == granted_group)
+        .expect("bob's locally integrated group grant");
+    assert_eq!(granted.role.as_deref(), Some("Reader"));
+    assert!(
+        bob_rows
+            .iter()
+            .all(|row| row.group_genesis_hash != expired_group),
+        "an expired grant must not appear in the local group listing: {bob_rows:?}"
+    );
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn hive_link_local_page_returns_own_content() {
+    let (conductor, cell, zome) = single_conductor_cell_app().await;
+    let content_type = "local-page-type";
+    let other_content_type = "local-page-other-type";
+    let (hive, mut expected_hashes, other_hash) =
+        create_hive_link_page_fixture(&conductor, &zome, content_type, other_content_type).await;
+    await_consistency_s(30, [&cell]).await.unwrap();
+    wait_for_count_links_by_hive_to(&conductor, &zome, &hive, content_type, 3).await;
+    wait_for_count_links_by_hive_to(&conductor, &zome, &hive, other_content_type, 1).await;
+
+    let bounded =
+        hive_link_page(&conductor, &zome, "list_by_hive_link_local_page", hive.clone(), content_type, 2)
+            .await;
+    assert_eq!(bounded.records.len(), 2);
+    assert!(bounded.truncated);
+
+    let complete =
+        hive_link_page(&conductor, &zome, "list_by_hive_link_local_page", hive.clone(), content_type, 5)
+            .await;
+    assert_eq!(complete.records.len(), 3);
+    assert!(!complete.truncated);
+
+    let network =
+        hive_link_page(&conductor, &zome, "list_by_hive_link_page", hive, content_type, 5).await;
+    assert_eq!(network.records.len(), 3);
+    assert!(!network.truncated);
+
+    expected_hashes.sort();
+    let local_hashes = sorted_record_hashes(&complete);
+    let network_hashes = sorted_record_hashes(&network);
+    assert_eq!(local_hashes, expected_hashes);
+    assert_eq!(network_hashes, expected_hashes);
+    assert!(!local_hashes.contains(&other_hash));
 }

@@ -14,7 +14,7 @@ use hdi::hash_path::path::Component;
 use hdk::prelude::*;
 use std::collections::HashSet;
 
-use super::crud::get_many_encrypted_content;
+use super::crud::resolve_many_encrypted_content;
 use super::EncryptedContentResponse;
 
 const LINK_PAGE_DEFAULT_LIMIT: usize = 100;
@@ -98,6 +98,24 @@ pub fn list_by_hive_link_page(input: HiveLinkPageInput) -> ExternResult<BoundedL
         input.limit,
         input.source_after_action_hash,
         input.include_liveness,
+        GetOptions::network(),
+    )
+}
+
+#[hdk_extern]
+pub fn list_by_hive_link_local_page(input: HiveLinkPageInput) -> ExternResult<BoundedLinkPage> {
+    let path = Path::from(vec![
+        Component::from(input.hive_genesis_hash.to_string()),
+        Component::from(input.content_type),
+    ]);
+    link_page(
+        path.path_entry_hash()?,
+        LinkTypes::Hive,
+        input.since_ts,
+        input.limit,
+        input.source_after_action_hash,
+        input.include_liveness,
+        GetOptions::local(),
     )
 }
 
@@ -116,6 +134,7 @@ pub fn list_by_dynamic_link_page(input: DynamicLinkPageInput) -> ExternResult<Bo
         input.limit,
         input.source_after_action_hash,
         input.include_liveness,
+        GetOptions::network(),
     )
 }
 
@@ -136,6 +155,7 @@ pub fn list_by_author_page(input: AuthorLinkPageInput) -> ExternResult<BoundedLi
         input.limit,
         input.source_after_action_hash,
         input.include_liveness,
+        GetOptions::network(),
     )
 }
 
@@ -193,6 +213,7 @@ pub fn list_by_hive_links_many(
             request.limit,
             None,
             request.include_liveness,
+            GetOptions::network(),
         )?;
         buckets.push(HiveLinksBatchBucket {
             content_type: request.content_type,
@@ -242,6 +263,7 @@ pub fn list_by_author_many(
             lookup.limit,
             None,
             false,
+            GetOptions::network(),
         )?;
         buckets.push(AuthorBatchBucket {
             author: lookup.author,
@@ -324,9 +346,9 @@ pub(crate) fn canonical_lowest_hash(
 /// sibling). Any failure — unparseable hash, absent details, wrong Details
 /// variant, host error — yields `None` (unknown), never dropping the
 /// record or failing the tolerant list read.
-pub(crate) fn root_tombstoned(original_hash_b64: &str) -> Option<bool> {
+pub(crate) fn root_tombstoned(original_hash_b64: &str, options: GetOptions) -> Option<bool> {
     let action = ActionHash::try_from(original_hash_b64).ok()?;
-    match get_details(action, GetOptions::network()).ok()?? {
+    match get_details(action, options).ok()?? {
         Details::Record(record_details) => Some(!record_details.deletes.is_empty()),
         _ => None,
     }
@@ -339,16 +361,17 @@ pub(crate) fn root_tombstoned(original_hash_b64: &str) -> Option<bool> {
 pub(crate) fn apply_liveness(
     mut records: Vec<EncryptedContentResponse>,
     include_liveness: bool,
+    options: GetOptions,
 ) -> Vec<EncryptedContentResponse> {
     if include_liveness {
         for record in &mut records {
-            record.tombstoned = root_tombstoned(&record.original_hash);
+            record.tombstoned = root_tombstoned(&record.original_hash, options.clone());
         }
     }
     records
 }
 
-/// Shared page engine behind the three `*_page` externs.
+/// Shared page engine behind the bounded `*_page` externs.
 pub(crate) fn link_page(
     path_hash: EntryHash,
     link_type: LinkTypes,
@@ -356,16 +379,15 @@ pub(crate) fn link_page(
     limit: Option<usize>,
     source_after_action_hash: Option<String>,
     include_liveness: bool,
+    options: GetOptions,
 ) -> ExternResult<BoundedLinkPage> {
     let limit = resolve_page_limit(limit)?;
     let after_hash = decode_paired_cursor(source_after_action_hash.as_deref(), since_ts.as_ref())?;
     // `LinkQuery::after` is deliberately NOT used with a composite
     // cursor: its boundary is approximate, and an approximate boundary
     // under the strict composite filter could drop equal-timestamp rows.
-    let links = get_links(
-        LinkQuery::try_new(path_hash, link_type)?,
-        GetStrategy::Network,
-    )?;
+    let strategy = options.strategy();
+    let links = get_links(LinkQuery::try_new(path_hash, link_type)?, strategy)?;
     let (selected, truncated) = page_links(links, since_ts, after_hash, limit);
     let mut source_positions = Vec::with_capacity(selected.len());
     let mut targets = Vec::with_capacity(selected.len());
@@ -378,7 +400,7 @@ pub(crate) fn link_page(
             targets.push(target);
         }
     }
-    let records = resolve_action_targets(targets, include_liveness)?;
+    let records = resolve_action_targets(targets, include_liveness, options)?;
     Ok(BoundedLinkPage {
         source_count: source_positions.len(),
         source_positions,
@@ -510,11 +532,10 @@ fn dedupe_by_target(links: Vec<Link>) -> Vec<Link> {
 fn resolve_action_targets(
     targets: Vec<ActionHash>,
     include_liveness: bool,
+    options: GetOptions,
 ) -> ExternResult<Vec<EncryptedContentResponse>> {
-    Ok(apply_liveness(
-        get_many_encrypted_content(targets)?,
-        include_liveness,
-    ))
+    let records = resolve_many_encrypted_content(targets, options.clone())?;
+    Ok(apply_liveness(records, include_liveness, options))
 }
 
 /// Collect each link's action-hash target, then resolve via
@@ -527,7 +548,7 @@ pub(crate) fn resolve_content_link_targets(
         .into_iter()
         .filter_map(|link| link.target.into_action_hash())
         .collect();
-    resolve_action_targets(targets, include_liveness)
+    resolve_action_targets(targets, include_liveness, GetOptions::network())
 }
 
 #[cfg(test)]

@@ -22,6 +22,7 @@
 | M17 (coordinator resolve-path perf: record reuse + immutable-entity caches) | (backfill) | uhC0k-HAqM4zW2rCWrKSujEKDZcqybE_ATUjKxkRy2BmRjURYddxP (UNCHANGED; coordinator-only) | ec11ba8f9518cee6aee5d9e1df4fc1f7449f42584213abb4f8636cdceb90fcdd |
 | M18 (coordinator DRY + allocation discipline: shared emit/resolve + borrowed link helpers + O(limit) paging) | (backfill) | uhC0k-HAqM4zW2rCWrKSujEKDZcqybE_ATUjKxkRy2BmRjURYddxP (UNCHANGED; coordinator-only) | ec11ba8f9518cee6aee5d9e1df4fc1f7449f42584213abb4f8636cdceb90fcdd |
 | M19 (coordinator content batch read externs: dynamic-links/hive-links/content-id/author + exists, bounded) | (backfill) | uhC0k-HAqM4zW2rCWrKSujEKDZcqybE_ATUjKxkRy2BmRjURYddxP (UNCHANGED; coordinator-only) | ec11ba8f9518cee6aee5d9e1df4fc1f7449f42584213abb4f8636cdceb90fcdd |
+| M20 (coordinator membership/group/local batch read externs: memberships-local/group-members/my-groups-local/hive-link-local-page) | (backfill) | uhC0k-HAqM4zW2rCWrKSujEKDZcqybE_ATUjKxkRy2BmRjURYddxP (UNCHANGED; coordinator-only) | ec11ba8f9518cee6aee5d9e1df4fc1f7449f42584213abb4f8636cdceb90fcdd |
 
 ## New reject literals (accumulates the blessing-time BDD delta)
 | # | literal | validator fn | milestone |
@@ -261,13 +262,39 @@ sweettest therefore drives `create_group_genesis` directly.
   resolves zero records). The three page-based externs share
   `enforce_batch_resolve_budget`: the sum of normalized per-item limits must be
   <= `BATCH_RESOLVE_BUDGET`=4096 (matching the existing `MY_CONTENT_HARD_LIMIT`
-  single-call resolve ceiling), so one call can never amplify into unbounded DHT
-  resolution. Five NEW coordinator reject literals: `dynamic_links batch accepts at
+  single-call resolve ceiling), bounding per-call target RESOLUTION (`get_details`);
+  the underlying `get_links` enumeration stays unbounded metadata (same profile as the
+  existing page externs, pre-registered for security review). Five NEW coordinator
+  reject literals: `dynamic_links batch accepts at
   most 64 labels`, `hive-link batch accepts at most 32 requests`, `content-id batch
   accepts at most 64 lookups`, `author batch accepts at most 64 lookups`, `batch
   total requested records exceed the 4096 budget`. Measure-first: red sweettests
   proved BOTH the initial unbounded-per-label B2 AND the missing aggregate budget
   before each fix. 13 batch_reads tests green.
+- **M20 (coordinator membership/group/local batch read externs; hash HELD):** four
+  additive externs + the deferred M18 "options-aware" resolution threading.
+  `get_latest_memberships_local_many` (B5, self-scoped to `agent_info()`, one Local
+  HiveMembershipIndex walk, newest-unexpired per requested hive via the shared
+  `latest_membership_via` selection; <=64 hives). `list_group_members_many` (B7,
+  COMPLETE rosters — ACL derivation needs every member — via `resolve_roster`; <=64
+  groups AND a pre-resolve aggregate `GROUP_MEMBERS_LINK_BUDGET`=4096 that REJECTS an
+  over-budget batch rather than truncating, so the caller falls back to per-group
+  calls). `list_my_groups_local` (L4/L5) + `list_by_hive_link_local_page` (L6): the
+  network bodies re-expressed via a shared `list_my_groups_via(strategy, options)` and
+  an options-threaded `link_page`. To resolve EncryptedContent locally, `GetOptions`
+  is threaded through `get_eh`/`get_latest_typed_from_eh`/`resolve_encrypted_content`/
+  `resolve_many_encrypted_content`/`resolve_action_targets`/`link_page` — EVERY existing
+  caller passes `GetOptions::network()` (zero behavior change);
+  `resolve_content_link_targets` keeps its signature. B5 + `list_my_groups_local` are
+  self-scoped (own data); B7 reads public rosters, hence its budget. THREE NEW reject
+  literals: `membership batch accepts at most 64 hives`, `group-members batch accepts
+  at most 64 groups`, `group-members batch roster links exceed the 4096 budget`. Also
+  hardened while touching the resolution chain: `resolve_many`'s tolerant drop is now
+  an explicit `match` + `debug!` (no `.ok()` swallow), and `get_latest_typed_from_eh`
+  replaced its `.unwrap()`/`unreachable!()` with graceful `match`/`Ok(None)`. 19
+  batch_reads (6 new, close-but-wrong nuances: superseded-grant newest-wins, expired
+  filtering, duplicate request rows, cross-scope decoys, singleton parity) + a 24-test
+  regression on the refactored functions.
 
 ## DEFERRED — H2 sketch (per-entry-type ACL validators; blessing-time co-design)
 

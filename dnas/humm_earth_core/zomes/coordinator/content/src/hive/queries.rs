@@ -70,6 +70,45 @@ pub struct GetLatestMembershipInput {
     pub hive_genesis_hash: ActionHash,
 }
 
+fn membership_index_links(agent: &AgentPubKey, strategy: GetStrategy) -> ExternResult<Vec<Link>> {
+    get_links(
+        LinkQuery::try_new(
+            AnyLinkableHash::from(agent.clone()),
+            LinkTypes::HiveMembershipIndex,
+        )?,
+        strategy,
+    )
+}
+
+fn consider_latest_membership(
+    best: &mut Option<(Timestamp, HiveMembershipResponse)>,
+    membership: HiveMembership,
+    timestamp: Timestamp,
+    hash: ActionHash,
+    agent: &AgentPubKey,
+    hive_genesis_hash: &ActionHash,
+    now: Timestamp,
+) {
+    if &membership.hive_genesis_hash != hive_genesis_hash {
+        return;
+    }
+    if &membership.for_agent != agent {
+        return;
+    }
+    if let Some(expiry) = membership.expiry {
+        if expiry < now {
+            return;
+        }
+    }
+    if best
+        .as_ref()
+        .map(|(previous_timestamp, _)| timestamp > *previous_timestamp)
+        .unwrap_or(true)
+    {
+        *best = Some((timestamp, HiveMembershipResponse { membership, hash }));
+    }
+}
+
 /// Shared walk behind both membership twins: enumerate the caller's
 /// HiveMembershipIndex links, decode targets as HiveMembership (skip
 /// non-memberships), filter to the (hive, agent) unexpired at now, and
@@ -80,49 +119,31 @@ fn latest_membership_via(
     strategy: GetStrategy,
     options: GetOptions,
 ) -> ExternResult<Option<HiveMembershipResponse>> {
-    let links = get_links(
-        LinkQuery::try_new(
-            AnyLinkableHash::from(input.agent.clone()),
-            LinkTypes::HiveMembershipIndex,
-        )?,
-        strategy,
-    )?;
+    let links = membership_index_links(&input.agent, strategy)?;
     let now = sys_time()?;
 
-    let mut best: Option<(Timestamp, HiveMembership, ActionHash)> = None;
+    let mut best: Option<(Timestamp, HiveMembershipResponse)> = None;
     for link in links {
         let Some(target_ah) = link.target.into_action_hash() else {
             continue;
         };
-        // Targets are either HiveGenesis or HiveMembership; only
-        // HiveMembership concerns this query. Decode-as-membership and
-        // skip on failure.
         let Some((membership, ts)) =
             crate::get_typed_entry_with_timestamp::<HiveMembership>(&target_ah, options.clone())?
         else {
             continue;
         };
-        if membership.hive_genesis_hash != input.hive_genesis_hash {
-            continue;
-        }
-        if membership.for_agent != input.agent {
-            continue;
-        }
-        if let Some(expiry) = membership.expiry {
-            if expiry < now {
-                continue;
-            }
-        }
-        if best
-            .as_ref()
-            .map(|(prev_ts, _, _)| ts > *prev_ts)
-            .unwrap_or(true)
-        {
-            best = Some((ts, membership, target_ah));
-        }
+        consider_latest_membership(
+            &mut best,
+            membership,
+            ts,
+            target_ah,
+            &input.agent,
+            &input.hive_genesis_hash,
+            now,
+        );
     }
 
-    Ok(best.map(|(_, membership, hash)| HiveMembershipResponse { membership, hash }))
+    Ok(best.map(|(_, response)| response))
 }
 
 /// Return the most-recent valid (unexpired) [`HiveMembership`] for
@@ -164,6 +185,86 @@ pub fn get_latest_membership_local(
     input: GetLatestMembershipInput,
 ) -> ExternResult<Option<HiveMembershipResponse>> {
     latest_membership_via(input, GetStrategy::Local, GetOptions::local())
+}
+
+pub const MEMBERSHIP_BATCH_MAX: usize = 64;
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct GetLatestMembershipsLocalManyInput {
+    pub hive_genesis_hashes: Vec<ActionHash>,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct LatestMembershipBucket {
+    pub hive_genesis_hash: ActionHash,
+    #[serde(default)]
+    pub membership: Option<HiveMembershipResponse>,
+}
+
+type LatestMembershipByHive = HashMap<ActionHash, Option<(Timestamp, HiveMembershipResponse)>>;
+
+#[hdk_extern]
+pub fn get_latest_memberships_local_many(
+    input: GetLatestMembershipsLocalManyInput,
+) -> ExternResult<Vec<LatestMembershipBucket>> {
+    if input.hive_genesis_hashes.len() > MEMBERSHIP_BATCH_MAX {
+        return Err(wasm_error!(WasmErrorInner::Guest(
+            "membership batch accepts at most 64 hives".into()
+        )));
+    }
+
+    let agent = agent_info()?.agent_initial_pubkey;
+    let best_by_hive = latest_memberships_local_by_hive(&agent, &input.hive_genesis_hashes)?;
+    Ok(input
+        .hive_genesis_hashes
+        .into_iter()
+        .map(|hive_genesis_hash| LatestMembershipBucket {
+            membership: best_by_hive
+                .get(&hive_genesis_hash)
+                .and_then(|best| best.as_ref().map(|(_, response)| response.clone())),
+            hive_genesis_hash,
+        })
+        .collect())
+}
+
+fn latest_memberships_local_by_hive(
+    agent: &AgentPubKey,
+    hive_genesis_hashes: &[ActionHash],
+) -> ExternResult<LatestMembershipByHive> {
+    let links = membership_index_links(agent, GetStrategy::Local)?;
+    let now = sys_time()?;
+    let options = GetOptions::local();
+    let mut best_by_hive: LatestMembershipByHive = hive_genesis_hashes
+        .iter()
+        .cloned()
+        .map(|hive_genesis_hash| (hive_genesis_hash, None))
+        .collect();
+
+    for link in links {
+        let Some(target_ah) = link.target.into_action_hash() else {
+            continue;
+        };
+        let Some((membership, timestamp)) =
+            crate::get_typed_entry_with_timestamp::<HiveMembership>(&target_ah, options.clone())?
+        else {
+            continue;
+        };
+        let hive_genesis_hash = membership.hive_genesis_hash.clone();
+        let Some(best) = best_by_hive.get_mut(&hive_genesis_hash) else {
+            continue;
+        };
+        consider_latest_membership(
+            best,
+            membership,
+            timestamp,
+            target_ah,
+            agent,
+            &hive_genesis_hash,
+            now,
+        );
+    }
+
+    Ok(best_by_hive)
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
