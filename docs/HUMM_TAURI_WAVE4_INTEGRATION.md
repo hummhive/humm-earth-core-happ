@@ -224,12 +224,17 @@ client must not add semantic leakage on top:
   content across generations.
 - **Discovery paths** hash their bases, but the plaintext link TAGS remain visible — the
   Dynamic-label tag and the ACL group-hash tag are readable by any DHT observer.
-- **CLIENT RULE (load-bearing):** any sensitive `dynamic_links` value MUST be a
-  high-entropy OPAQUE id (e.g. a random/hashed handle), NEVER a semantic or plaintext
-  label — a label like `"invoices-2026"` leaks its meaning to a passive observer; an
-  opaque id does not. This is a client convention; the zome stores whatever label it is given.
+- **CLIENT RULE (load-bearing):** any sensitive `dynamic_links` value MUST be either a
+  RANDOM ≥128-bit id or a KEYED hash (HMAC/keyed-BLAKE with a SECRET salt the observer
+  does not have) — NEVER a semantic/plaintext label AND never a bare (unsalted) hash of a
+  guessable label (an unsalted hash of `"invoices-2026"` is dictionary/precompute-attackable,
+  so it leaks the same meaning). This prevents DIRECT SEMANTIC disclosure only. An opaque
+  tag is still an equality/linkability signal (same tag across records is correlatable) and
+  exposes frequency + timing; it does NOT make the record anonymous. This is a client
+  convention — the zome stores whatever label it is given.
 
 - **Given** a sensitive discovery need (e.g. a private collection), **when** the client
-  publishes content with a `dynamic_links` label, **then** the label is a high-entropy
-  opaque id — a DHT observer scanning the tag learns nothing about the content's meaning,
-  membership, or purpose.
+  publishes content with a `dynamic_links` label, **then** the label is a random ≥128-bit
+  id (or a secret-keyed hash) — a passive DHT observer cannot recover the content's meaning
+  from the tag, though tag equality/frequency/timing correlation across records remains
+  (unavoidable at the DHT layer).
