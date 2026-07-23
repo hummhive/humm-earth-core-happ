@@ -58,6 +58,33 @@ The Wave-4 code review expanded from earth-core batch/DRY verification into an u
 - `src/api/sidecarHost/pairSharedSecret.ts` or its current successor
   - canonical pair parsing and author membership
 
+## Existing conductor coverage checked 2026-07-23
+
+Both focused commands pass against humm-tauri's pinned pass-6 hApp:
+
+```text
+pnpm exec vitest run --project bdd <four focused files>        6/6 passed
+pnpm exec vitest run --project bdd-swarm dm-offline-catchup   1/1 passed
+```
+
+| Test | Real topology | What it proves | Missing assertion |
+|---|---|---|---|
+| `dm-remote-signal-delivery` RS-1 | Alice/Bob cells in one conductor | Bob receives some App signal after the DM is DHT-readable | remote payload shape/body/hash; push before or without DHT |
+| `dm-first-contact-handshake` DM-12 | Alice/Bob cells in one conductor | OpenWrite key binding is cross-agent readable | request, Accept/Block, pair key, held-message flush, cleanup |
+| `reader-read-only-delete` DM case | Alice/Bob cells in one conductor | a DM recipient may call `delete_encrypted_content` | automatic delete, post-delete liveness, link cleanup, restart |
+| `delete-cleanup` | Alice only | author self-delete removes Hive/Dynamic discovery for HiveGroup content | recipient-side DM/request/SharedSecret cleanup |
+| `swarm/dm-offline-catchup` OC-1 | two separate conductor processes | after Bob restarts, DHT `list_by_author` finds all offline-authored hashes and replays no App signal | Inbox/sweep/decrypt path, consumption, delete, tombstone, cross-hive setup |
+
+`DM-L4` in `docs/earth-core-handoff/HUMM_TAURI_DM_MESSAGING_INTEGRATION.md`
+documents bilateral delete **authority** as an explicit real DHT tombstone. It does
+not specify automatic deletion after pickup.
+
+No existing conductor test proves that pickup automatically tombstones the DM,
+request, pair SharedSecret, or key binding. The smallest missing proof is one
+two-conductor swarm lifecycle test that runs the production Inbox/DM ingest path,
+checks live queries before and after pickup, restarts the recipient, and checks
+again.
+
 ## Claims that require proof
 
 ### C1. Live push behavior
