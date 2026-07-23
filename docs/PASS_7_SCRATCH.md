@@ -18,12 +18,12 @@
 | M13 (group_acl bucket disjointness + deterministic link-validator rejects) | 5476cb6 | uhC0kbz8DhCkYWaLeihsumn8V726s3ZzWcTsAqLNcFBWIEVaWVPnB | 7a4cd2e03328ed4c23e2329dff5ccf23b42e1a16f0a5ce137f13b7f11434e2ad |
 | M14 (create-link publication + membership twin extraction) | 6ae396a | uhC0kbz8DhCkYWaLeihsumn8V726s3ZzWcTsAqLNcFBWIEVaWVPnB (UNCHANGED; coordinator-only refactor) | 7a4cd2e03328ed4c23e2329dff5ccf23b42e1a16f0a5ce137f13b7f11434e2ad |
 | M15 (complete link-validator normalization + review doc fixes) | ee47e74 | uhC0kemuLaIzdw19cQwOLB1JB7o7-5ZFXNIwcOYlBpNFfL_8Uicl6 | 39062286742a11836822ab8cf5fcfde2ed6e92321b90106a4ed5de38eb8e92f0 |
-| M16 (integrity DRY: shared typed fetch + bucket iterator + expiry containment) | (backfill) | uhC0k-HAqM4zW2rCWrKSujEKDZcqybE_ATUjKxkRy2BmRjURYddxP | ec11ba8f9518cee6aee5d9e1df4fc1f7449f42584213abb4f8636cdceb90fcdd |
-| M17 (coordinator resolve-path perf: record reuse + immutable-entity caches) | (backfill) | uhC0k-HAqM4zW2rCWrKSujEKDZcqybE_ATUjKxkRy2BmRjURYddxP (UNCHANGED; coordinator-only) | ec11ba8f9518cee6aee5d9e1df4fc1f7449f42584213abb4f8636cdceb90fcdd |
-| M18 (coordinator DRY + allocation discipline: shared emit/resolve + borrowed link helpers + O(limit) paging) | (backfill) | uhC0k-HAqM4zW2rCWrKSujEKDZcqybE_ATUjKxkRy2BmRjURYddxP (UNCHANGED; coordinator-only) | ec11ba8f9518cee6aee5d9e1df4fc1f7449f42584213abb4f8636cdceb90fcdd |
-| M19 (coordinator content batch read externs: dynamic-links/hive-links/content-id/author + exists, bounded) | (backfill) | uhC0k-HAqM4zW2rCWrKSujEKDZcqybE_ATUjKxkRy2BmRjURYddxP (UNCHANGED; coordinator-only) | ec11ba8f9518cee6aee5d9e1df4fc1f7449f42584213abb4f8636cdceb90fcdd |
-| M20 (coordinator membership/group/local batch read externs: memberships-local/group-members/my-groups-local/hive-link-local-page) | (backfill) | uhC0k-HAqM4zW2rCWrKSujEKDZcqybE_ATUjKxkRy2BmRjURYddxP (UNCHANGED; coordinator-only) | ec11ba8f9518cee6aee5d9e1df4fc1f7449f42584213abb4f8636cdceb90fcdd |
-| M21 (coordinator fetch-hint remote signals + owner-handoff offer hint) | (backfill) | uhC0k-HAqM4zW2rCWrKSujEKDZcqybE_ATUjKxkRy2BmRjURYddxP (UNCHANGED; coordinator-only) | ec11ba8f9518cee6aee5d9e1df4fc1f7449f42584213abb4f8636cdceb90fcdd |
+| M16 (integrity DRY: shared typed fetch + bucket iterator + expiry containment) | d4459d2 | uhC0k-HAqM4zW2rCWrKSujEKDZcqybE_ATUjKxkRy2BmRjURYddxP | ec11ba8f9518cee6aee5d9e1df4fc1f7449f42584213abb4f8636cdceb90fcdd |
+| M17 (coordinator resolve-path perf: record reuse + immutable-entity caches) | 41c34fd | uhC0k-HAqM4zW2rCWrKSujEKDZcqybE_ATUjKxkRy2BmRjURYddxP (UNCHANGED; coordinator-only) | ec11ba8f9518cee6aee5d9e1df4fc1f7449f42584213abb4f8636cdceb90fcdd |
+| M18 (coordinator DRY + allocation discipline: shared emit/resolve + borrowed link helpers + O(limit) paging) | 9b7cae6 | uhC0k-HAqM4zW2rCWrKSujEKDZcqybE_ATUjKxkRy2BmRjURYddxP (UNCHANGED; coordinator-only) | ec11ba8f9518cee6aee5d9e1df4fc1f7449f42584213abb4f8636cdceb90fcdd |
+| M19 (coordinator content batch read externs: dynamic-links/hive-links/content-id/author + exists, bounded) | abc37e0 | uhC0k-HAqM4zW2rCWrKSujEKDZcqybE_ATUjKxkRy2BmRjURYddxP (UNCHANGED; coordinator-only) | ec11ba8f9518cee6aee5d9e1df4fc1f7449f42584213abb4f8636cdceb90fcdd |
+| M20 (coordinator membership/group/local batch read externs: memberships-local/group-members/my-groups-local/hive-link-local-page) | 38ac782 | uhC0k-HAqM4zW2rCWrKSujEKDZcqybE_ATUjKxkRy2BmRjURYddxP (UNCHANGED; coordinator-only) | ec11ba8f9518cee6aee5d9e1df4fc1f7449f42584213abb4f8636cdceb90fcdd |
+| M21 (coordinator fetch-hint remote signals + owner-handoff offer hint) | 02ed895 | uhC0k-HAqM4zW2rCWrKSujEKDZcqybE_ATUjKxkRy2BmRjURYddxP (UNCHANGED; coordinator-only) | ec11ba8f9518cee6aee5d9e1df4fc1f7449f42584213abb4f8636cdceb90fcdd |
 
 ## New reject literals (accumulates the blessing-time BDD delta)
 | # | literal | validator fn | milestone |
@@ -317,6 +317,46 @@ sweettest therefore drives `create_group_genesis` directly.
   wire does NOT decode as the full payload (`deny_unknown_fields` airtight), local author
   keeps the full ciphertext, a forged `from_agent` is overwritten by real provenance, the
   handoff hint delivers stamped. 56 host + signal_hints 3 + pinned_hosts 9.
+- **Wave-4 privacy/security acceptances (S5, S6):** blessing-time surface record.
+  **S6 (accepted for pass-7):** the pass-7 integrity fork WIDENED public relationship
+  metadata — `HiveMembershipIndex` (agent pubkey -> membership/genesis targets =
+  affiliation enumeration) and `Lineage` (plaintext prior-action tag + header lineage =
+  cross-generation correlation). Both are inherent to the M8/M4 index designs; a narrower
+  shape is a FUTURE integrity redesign, NOT a coordinator drive-by. Accepted as the price
+  of retraction-safe durable discovery + portable identity. **S5 (doc note):** path bases
+  are HASHED but discovery still leaks via public headers + plaintext link TAGS (Dynamic
+  label, ACL group-hash) + guessable low-entropy bases; new sensitive dynamic labels
+  should be OPAQUE client-side ids — a client convention, no zome change.
+- **M22 review lanes + superset (VERDICT: APPROVE, no blockers):** four independent
+  read-only lanes over `git diff 0232c56..HEAD`. **Security: CLEAN** — all nine new externs
+  correctly cap-classed; self-scoped ones `agent_info()`-derived; every batch path bounded
+  fail-closed; the M21 remote channel type-enforced ciphertext-free; `from_agent`
+  unconditionally provenance-stamped (forged value cannot survive). **Silent-failure:
+  CLEAN** — new resolution-failure drops log explicitly; the pre-existing polymorphic
+  `.ok().flatten()` decode idiom + documented probes are accepted, not masked failures.
+  **Rust + Standards/DRY: no blocker/major**, NIT/MINOR only, all FIXED here:
+  `my_hive_ids_network` reuses `membership_index_links`; `list_my_hives` display cache →
+  `cached_hive_display`; `create_acl_link_at` shared by create + reindex (validator-pinned
+  tag bytes byte-identical); reindex delete path drops the discarded entity_id String alloc
+  (`cached_acl_path_hash` returns EntryHash only); `resolve_many` drop-log neutrally named;
+  the `EncryptedContentSignal`/migration-writer/budget docs corrected to the hint-only
+  remote channel + `BATCH_RESOLVE_BUDGET`; two non-falsifiable asserts removed from
+  signal_hints. ACCEPTED/deferred: (a) M17 P1 record-reuse returns a duplicate-create entry
+  still Live via a sibling even when its FIRST create was deleted (old code returned None) —
+  more correct (entry IS Live), matches the B10 liveness posture, accepted as a refinement
+  over strict byte-identity; (b) `my_hive_ids_network` mirrors `list_my_hives`' inclusion
+  policy by copy (documented tether; a shared `classify_membership_index_target` is a future
+  extraction); (c) batch wire-struct names mix `Bucket`/`Result` — recorded as-shipped,
+  future batch externs pick one; (d) at the default per-item limit (100) the 4096 budget
+  binds before the 64-item caps (dynamic-links, author: 64x100=6400, so ~40 items fit)
+  but NOT the 32-request hive-links cap (32x100=3200 < 4096, reachable) — documented
+  interplay, all bounds coherent.
+  **Reject-literal superset vs `0232c56`: CLEAN** — zero validator/reject/link-tag literal
+  lost; the only LOST source strings are two reworded COMMENTS (`I founded this group`,
+  `wrong entry type`), the M16 interpolation-shape churn (renders byte-identical), the
+  removed `unreachable!` panic message, and the M21 fall-through (intentionally replaced by
+  the 5-family version). ADDED = the eight new batch reject literals + M16 inlined fetcher
+  literals + M21 signal/log strings + new extern/cap-token + test-assertion strings.
 
 ## DEFERRED — H2 sketch (per-entry-type ACL validators; blessing-time co-design)
 

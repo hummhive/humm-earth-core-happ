@@ -1,4 +1,4 @@
-<!-- codemap:data | generated:2026-06-05 | updated:2026-06-24 | scope:full -->
+<!-- codemap:data | generated:2026-06-05 | updated:2026-07-23 | scope:full -->
 
 # Data Model
 
@@ -9,9 +9,15 @@ No external database. Source file: `integrity/content/src/`.
 > or link types in the enums below changes the DNA hash and forks the chain.
 > Append-only at the END of each enum preserves existing variant indices.
 
-Pass-6 dry-refactor changes the DNA hash via integrity source/WASM structure and
-validation hardening only; EntryTypes, LinkTypes, serde tags, and wire fields are
-unchanged from pass-5.
+The shipped pass-6 v3.3.0 baseline remains DNA `uhC0ksXs…`; its dry-refactor
+changed integrity source/WASM without reordering entry or link enums. The parked
+pass-7 branch adds `ContentLineage`, `Lineage`, and `HiveMembershipIndex` in
+earlier waves. Wave-4 changed integrity bytes once at M16 for shared validation
+helpers, yielding the scratch-only DNA
+`uhC0k-HAqM4zW2rCWrKSujEKDZcqybE_ATUjKxkRy2BmRjURYddxP` and integrity wasm
+sha256 `ec11ba8f9518cee6aee5d9e1df4fc1f7449f42584213abb4f8636cdceb90fcdd`.
+M16 added no data variant or field; coordinator-only M17–M21 held this pin. The
+scratch DNA is parked and undistributed, outside the shipped baseline.
 
 ## Entry Types (EntryTypes enum — integrity/lib.rs)
 
@@ -35,7 +41,16 @@ unchanged from pass-5.
 ```
 Header fields: `id`, `content_type`, `display_hive_id`,
 `revision_author_signing_public_key`, `acl_spec: AclSpec`,
-`public_key_acl: Acl`.
+`public_key_acl: Acl`, and pass-7 `lineage?: ContentLineage`
+(`#[serde(default)]`).
+
+### ContentLineage (pass-7 scratch)
+```
+{ prior_dna_hash_b64: String, prior_action_hash_b64: String }
+```
+The claim lets migrated content cite its prior-generation action. Shape
+validation rejects current-DNA self-reference, while the `Lineage` reverse index
+binds the lookup path to the target entry's own claim and author.
 
 ### AclSpec Variants (pass-3 authority contract)
 ```
@@ -116,12 +131,42 @@ authority). Immutable.
 | 15 | AgentToOwnerHandoffs | AgentPubKey (to_agent) | HiveOwnerHandoffOffer AH | — | recipient's pending owner offers |
 | 16 | HiveToOwnerHandoffs | HiveGenesis AH | HiveOwnerHandoffAccept AH | — | owner-lineage resolution |
 | 17 | InviteToRedemptions | invite AH | InviteRedemption AH | — | advisory redemption count |
+| 18 | Lineage | Path([prior DNA hash, prior action hash]) | current EncryptedContent AH | prior action hash (UTF-8) | reverse lookup for cross-generation provenance |
+| 19 | HiveMembershipIndex | member AgentPubKey | HiveMembership AH or founder HiveGenesis AH | empty | durable self-scoped hive discovery; author-only deletion survives Inbox sweeps |
+
+Both pass-7 indexes expose public relationship metadata: `Lineage` correlates
+records across DNA generations, and `HiveMembershipIndex` makes hive
+affiliations enumerable from an AgentPubKey. The scratch ledger accepts that
+tradeoff for portable provenance and retraction-safe discovery. Dynamic and ACL
+link tags also remain public; sensitive dynamic labels should be opaque client
+identifiers rather than low-entropy names.
 
 ## InboxEvent Discriminators (inbox.rs)
 
 ```
 DmCreate = 1, DmDelete = 2, HiveInvite = 3, GroupInvite = 4
 ```
+
+## Transient Signal Shapes (coordinator; pass-7 Wave-4 scratch)
+
+```
+EncryptedContentSignal {
+  action_type, data: EncryptedContentResponse, from_agent?
+}                                      // full payload; coordinator emits locally
+
+EncryptedContentHint {
+  action_type, hash, original_hash, from_agent?
+}                                      // remote content fan-out; no ciphertext
+
+OwnerHandoffOfferHint {
+  offer_hash, hive_genesis_hash, from_agent?
+}                                      // explicit handoff recipient
+```
+
+`recv_remote_signal` replaces `from_agent` with `call_info().provenance` before
+re-emitting either hint locally. The legacy full-content decoder remains, so
+remote signals are wake-up hints: consumers fetch and validate the referenced
+DHT record instead of trusting signal-carried bytes.
 
 ## Authority Chain (trust hierarchy)
 
@@ -137,12 +182,34 @@ HiveGenesis (action hash = hive identity)
           resolve_current_owner folds to the single current owner.
 ```
 
+## Wave-4 Integrity Helper Invariants
+
+- `AclByGroupGenesis::groups()` supplies one owner-first traversal across the
+  owner, admin, writer, and reader buckets. Duplicate checks and per-group
+  authority walks therefore cannot silently disagree on bucket order.
+- `validate_expiry_containment` supplies the common hive/group verdict for an
+  expiring grantor: a child grant must expire no later than its grantor and
+  cannot become permanent.
+
 ## Constants
 
+Integrity:
 ```
 DM_MAX_RECIPIENTS = 32
 GROUP_ACL_MAX_GROUPS = 64
 HIVEGROUP_MAX_WITNESSES = 256
 ENCRYPTED_CONTENT_TIME_INDEX = "encrypted_content_time"
 MIGRATION_MARKER_CONTENT_TYPE_PREFIX = "_migrated/"
+```
+
+Pass-7 Wave-4 coordinator read bounds:
+```
+DYNAMIC_LINKS_BATCH_MAX = 64
+HIVE_LINKS_BATCH_MAX = 32
+CONTENT_ID_BATCH_MAX = 64
+AUTHOR_BATCH_MAX = 64
+MEMBERSHIP_BATCH_MAX = 64
+GROUP_MEMBERS_BATCH_MAX = 64
+BATCH_RESOLVE_BUDGET = 4096
+GROUP_MEMBERS_LINK_BUDGET = 4096
 ```

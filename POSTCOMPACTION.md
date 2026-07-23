@@ -5,7 +5,7 @@
 
 ---
 
-## Latest arc (2026-07-18..22): pass-7 integrity fork — scratch branch (NOT shipped)
+## Latest arc (2026-07-18..23): pass-7 integrity fork — scratch branch (NOT shipped)
 
 Branch `feat-integrity-pass-7` (scratch discipline: NEVER merge/tag/distribute,
 NEVER tell humm-tauri; blessing ritual parked). Wave-1 (M0–M7, through `022b7d8`)
@@ -71,6 +71,50 @@ Wave-3 COMPLETE (M13–M15, HEAD `ee47e74`; final scratch DNA
   clean, full sweettest 62 passed + 1 ignored (14 binaries), reject-literal
   superset holds (net-new = disjointness L23; L21 interpolation renders identical).
   Branch PARKED — NO merge/tag/distribution/mbox.
+
+Wave-4 COMPLETE (M16–M22; final scratch DNA
+`uhC0k-HAqM4zW2rCWrKSujEKDZcqybE_ATUjKxkRy2BmRjURYddxP`):
+
+- **M16 (`d4459d2`, DNA moved once)** — integrity-only DRY: group authority
+  fetchers share the typed fetch core, `AclByGroupGenesis::groups()` owns the
+  owner-first bucket walk, and `validate_expiry_containment` owns the hive/group
+  grant-window verdict. Integrity wasm sha256 is
+  `ec11ba8f9518cee6aee5d9e1df4fc1f7449f42584213abb4f8636cdceb90fcdd`;
+  every reject rendered byte-identically.
+- **M17–M18 (`41c34fd`, `9b7cae6`, hash HELD)** — coordinator read paths now
+  reuse initial records, memoize repeated action hashes, cache immutable
+  hive/group genesis reads, and share typed-fetch, link-target resolution,
+  content-change emission, ACL-link publication, and O(limit) page selection.
+  Explicit `GetOptions` later carries the same chain for local reads without
+  changing older network readers.
+- **M19–M20 (`abc37e0`, `38ac782`, hash HELD)** — nine read-only,
+  cap-granted externs landed: `list_encrypted_content_by_dynamic_links`,
+  `list_by_hive_links_many`, `get_many_by_content_id_link`,
+  `list_by_author_many`, `content_id_exists`,
+  `get_latest_memberships_local_many`, `list_group_members_many`,
+  `list_my_groups_local`, and `list_by_hive_link_local_page`. Item caps,
+  bounded first pages, and the shared 4096 resolution budget stop batch calls
+  from multiplying singleton work; complete group rosters have their own 4096
+  link budget and reject rather than truncate.
+- **M21 (`02ed895`, hash HELD)** — remote content fan-out now sends
+  `EncryptedContentHint { action_type, hash, original_hash, from_agent }`
+  without ciphertext; the full `EncryptedContentSignal` remains local-only for
+  normal coordinator emission. Owner handoff sends an
+  `OwnerHandoffOfferHint`, and `recv_remote_signal` overwrites each hint's
+  `from_agent` with `call_info().provenance`.
+- **M22 closure** — the public `HiveMembershipIndex` affiliation and `Lineage`
+  correlation metadata are explicitly accepted for this scratch pass; sensitive
+  dynamic labels should be opaque client ids. Four review-lane verdicts
+  (rust / security / silent-failure / standards+DRY) are APPROVE; security and
+  silent-failure are CLEAN, rust + standards had only NIT/MINOR (all fixed at M22).
+  Final gates are green: integrity host 124, coordinator host 56, fmt/clippy clean,
+  full sweettest 84 passed + 1 ignored across 16 binaries (incl. `batch_reads` +
+  `signal_hints`); reject-literal superset vs `0232c56` clean.
+
+M16 was Wave-4's only DNA move; M17–M22 held its pin. The branch remains PARKED
+and undistributed: no merge, tag, official-store row, or humm-tauri bundle. The
+shipped `.baseline-hashes.txt` contract remains pass-6 v3.3.0 (`uhC0ksXs…`,
+hApp `b98916f1…`).
 
 Also on `main` post-v3.3.0: B10 opt-in liveness rider (`6a3d428`), B11 declined
 zome-side (`16eac91`), meter doc §5.3 (`d30d4f1`); the mbox crown-fix arc closed
@@ -335,7 +379,8 @@ DNA `uhC0k2dX`, happ `42dbf9df`) is what humm-tauri currently bundles and runs
   `nix develop --command hc dna pack dnas/humm_earth_core/workdir`, then
   `nix develop --command hc app pack workdir --recursive`; `hc dna hash …` MUST print
   `uhC0ksXs…` on `main` (v3.0.0/pass-6). Pass-5/v2.0.0 was `uhC0k2dX…`.
-- **Tests:** host `cargo test -p content --lib` (48) + `-p content_integrity --lib` (76 on main; 120 on the pass-7 branch).
+- **Tests:** host suites are 48 coordinator / 76 integrity on `main`, and 56
+  coordinator / 124 integrity on the pass-7 scratch branch.
   Conductor: `crates/sweettest` (in-process, iroh). **Tryorama CANNOT boot on
   hc 0.6.x** — do not use it.
 
@@ -347,14 +392,14 @@ DNA `uhC0k2dX`, happ `42dbf9df`) is what humm-tauri currently bundles and runs
   devShell provides `openssl` + `pkg-config`; RustCrypto pinned to holochain's RCs.
 - Run: `cd crates/sweettest && nix develop ../.. --command bash -c 'export LIBCLANG_PATH=<nix clang lib dir>; cargo test -- --test-threads=1'`
   (`LIBCLANG_PATH` e.g. `/nix/store/…clang-18.1.8-lib/lib`).
-- **37 passed + 1 ignored on `main` (v3.3.0); 62 passed + 1 ignored on the
-  pass-7 scratch branch** (14 test binaries; heavyweights: pinned_hosts 9,
-  service_records 9). Wire-mirror rule: a mirror used by 2+ test files lives in
+- **37 passed + 1 ignored on `main` (v3.3.0); the full pass-7 scratch suite is 84
+  passed + 1 ignored** across 16 test binaries, including `batch_reads` and `signal_hints`.
+  Wire-mirror rule: a mirror used by 2+ test files lives in
   `tests/support/mod.rs` (single source of truth); a mirror used by exactly ONE
   file stays file-local — support/mod.rs is textually included by every binary,
-  so editing it relinks all 14. `EXPECTED_DNA_HASH` is read at runtime from
-  `fixtures/expected-dna-hash.txt` (re-pin = data edit, zero relinks). Test
-  profile uses `debug = "line-tables-only"` (linker OOM fix); `-j 1` no longer
+  so editing it relinks all 16. `EXPECTED_DNA_HASH` is read at runtime from
+  `fixtures/expected-dna-hash.txt` (re-pin = data edit, zero relinks).
+  The test profile uses `debug = "line-tables-only"` (linker OOM fix); `-j 1` no longer
   required but harmless.
 
 ## Other branches (committed; pass-6 now landed on main)

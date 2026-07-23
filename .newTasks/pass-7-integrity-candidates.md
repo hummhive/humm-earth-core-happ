@@ -186,3 +186,67 @@ Shipped surface with zero adoption at `725ed49a` (only `latest_action_micros` is
 
 ### Wave-2 build ordering (for the /plan)
 Integrity items (H1, H2, H3) batch into the SAME fork as M1–M4 — one DNA-hash move, re-pin `EXPECTED_DNA_HASH` + ledger row per integrity milestone. Coordinator items (H4, H5, H6) ride the fresh pass-7 coordinator (DNA held). Suggested milestone lanes: **M8 = H1**, **M9 = H2**, **M10 = H3** (integrity, hash moves each); **M11 = H4+H6**, **M12 = H5** (coordinator, hash held). Re-ground all anchors against branch HEAD first. Per-milestone gate ladder: rebuild → `EXPECTED_DNA_HASH` re-pin (integrity milestones) → host + sweettest gates → clippy `-D warnings` + fmt → reject-string superset diff vs pass-6 → 5-lane review; append the DNA-hash + reject-literal rows to `docs/PASS_7_SCRATCH.md` per milestone (the branch-only ledger that already tracks M0–M7).
+
+## I. Wave-4 client-adoption catalogue (branch-only; next-coordinator externs)
+
+- **Status:** OPEN — client-wiring roll-up for the pass-7 Wave-4 coordinator externs
+  (M17–M21 on branch `feat-integrity-pass-7`; DNA held after the M16 integrity move).
+  Each row is humm-tauri work that a shipped-at-blessing Wave-4 extern enables; ZERO
+  further earth-core work. Evidence file:line refers to humm-tauri at `a0fd5e4`.
+- **NOTE:** captured on the scratch-branch copy — MIRROR §I to main's copy at the next
+  main-side session; these externs ride main's coordinator cadence at blessing, not the
+  fork. Nothing here is distributed or mentioned to humm-tauri until blessing.
+
+### I.1 New batch/local externs → collapse N+1 load paths
+- **Media availability refresh** (`mediaAvailabilityRefreshQueue.ts:365-390` →
+  `availability.ts:345-356`, one `list_by_dynamic_link` per blob, ~100 roundtrips) →
+  `list_encrypted_content_by_dynamic_links` (blake3s ARE the dynamic labels; pass
+  `content_type` + the blake3 set). Win: ~100 calls → 1 (bounded ≤64 labels/page).
+- **Decrypt-pipeline SS candidates** (`decryptPipeline.ts:395-416`,
+  `sharedSecretCrud.ts:142-146`, per-uncached-group per-message) →
+  `list_encrypted_content_by_dynamic_links` grouped by ACL scope. Win: one key-resolve
+  + one call per scope for a 50-msg page.
+- **`HiveApi.list()` serial hive resolve** (`hive/index.ts:103-135`, 10–30 serial) →
+  `get_many_by_content_id_link`. Win: serial critical path → one batch (≤64), missing
+  rows come back `record: None` (aligned to request order).
+- **Feed addon fan-out** (`Feed/index.tsx:36-45`, one `list_by_hive_link` per addon
+  type) → `list_by_hive_links_many` (≤32 requests, per-request first page + truncated).
+- **Group-DM first contact** (`sidecarSharedSecret.ts:177-199,412-418,520-527`, up to
+  31 sequential member + author scans) → `list_by_author_many` (buckets by author;
+  client keeps member-over-inline precedence + X25519 validation).
+- **ACL expansion roster fetch** (`deriveHiveGroupPublicKeyAcl.ts:55-64`, serial per
+  group) → `list_group_members_many` (complete rosters; if a batch is rejected on the
+  roster-link budget, fall back to the singleton per group).
+- **Boot membership reconciliation** (`HiveGenesisRegistry.ts:310-318,352-374`, per-hive
+  `get_latest_membership_local`) → `get_latest_memberships_local_many` (self-scoped).
+- **Role-group + device-set bootstrap** (`bootstrapRoleGroups.ts:274-285`,
+  `deviceSet/bootstrap.ts:269-281`, ≤9 NETWORK `list_my_groups` polls/hive-boot) →
+  `list_my_groups_local` (kills both poll families).
+- **Stranded-group recovery** (`setupNewHive.ts:390-423`, sleeps + re-lists network
+  pages 3× for self-authored records) → `list_by_hive_link_local_page`.
+- **Existence probe** (`hummContentReads.ts:115-140` `checkEntryExists()` fetches a full
+  ciphertext record for `Boolean(record)`) → `content_id_exists` (scalar, resolves zero
+  records).
+
+### I.2 Signal-channel adoption (M21)
+- **Content signal ingest** (`sharedSecretSignalIngest.ts:72-294`, `dmIngest.ts:300-390`,
+  `dmPersistence.ts:112-148`) → retire the signal-embedded-bytes cache path; ingest the
+  new `EncryptedContentHint` (no ciphertext), then fetch + `get`-verify. Trust the
+  conductor-stamped `from_agent`, not pre-validation bytes.
+- **Owner-handoff governance panel** (`ownerHandoffHooks.ts:177-212`, polls
+  `list_pending_owner_handoffs` every 15s) → react to the `OwnerHandoffOfferHint` remote
+  signal; keep one list-on-mount as durable recovery.
+
+### I.3 Zero-DNA client hygiene (no Wave-4 extern needed)
+- **DM inbox drain/retry** (`dmSweep.ts:245-292,351-356,194-197`) already-shipped
+  `get_many_encrypted_content` (bypassed today — per-target `get_encrypted_content`).
+- **RoleGroupAnchorResolver** (`RoleGroupAnchorResolver.ts:95-118`) re-fetches
+  GroupGenesis records `list_groups_in_hive` already decoded — trust the typed response.
+- **`content_summary_many`** shipped (pass-6) with ZERO humm-tauri callers — adopt for
+  multi-hive summary.
+- **Sidecar manifest** O(N²) re-listing (`sidecar/index.ts:299-326`) + **directory
+  roster** per-row decode — client orchestration, no new extern.
+- **SS cache lifetime** (`SharedSecretCache` unbounded, survives keyring lock; decrypt
+  FIFO not cleared on lock) — client hardening.
+- **Companion pin-state IPC batch** for the media-availability path — humm-tauri-side
+  (Tauri IPC), not a zome extern.

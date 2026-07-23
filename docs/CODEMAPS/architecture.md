@@ -1,4 +1,4 @@
-<!-- codemap:architecture | generated:2026-06-05 | updated:2026-07-17 | scope:full -->
+<!-- codemap:architecture | generated:2026-06-05 | updated:2026-07-23 | scope:full -->
 
 # Architecture
 
@@ -58,12 +58,13 @@ by humm-tauri (both GUI and headless modes) via `@holochain/client` AppWebsocket
 |---|---|---|
 | WASM (integrity) | `integrity/.../lib.rs` | `validate()`, `genesis_self_check()` |
 | WASM (coordinator) | `coordinator/.../lib.rs` | `init()`, `recv_remote_signal()`, `post_commit()`, all `#[hdk_extern]` |
-| Tests | `tests/src/**/**.test.ts` | Tryorama integration tests via Vitest |
+| Conductor tests | `crates/sweettest/tests/*.rs` | In-process Holochain behavior tests; includes Wave-4 batch reads and signal hints |
+| Legacy tests | `tests/src/**/**.test.ts` | Tryorama/Vitest sources; Tryorama cannot boot against hc 0.6.x |
 | Migration | `scripts/migrate-dna.ts` | CLI: export → migrate-hive → import → mark-migrated |
 | Build | `scripts/build-zomes.sh` | Reproducible WASM build + `strip-wasms.sh` |
 | Dev env | `flake.nix` | Holonix 0.6 devShell |
 
-## Security Model (6-pass evolution)
+## Security Model (pass lineage)
 
 ```
 Pass 1: author-vs-header binding (check_author_matches_header)
@@ -74,8 +75,10 @@ Pass 5: hive Owner role (offer/accept handshake) + reader read-only + role-grant
 v2.0.0:  GroupGenesis EntryType filter (try_decode_hive_genesis) — closes the
          HiveGenesis false-positive; pass-4 rescue _local twins ride along
 Pass 6:  directory-module split + OriginalHashPointer link validation (native
-         update-chain root binding) + cross-entry-type update gate; no
-         EntryTypes, LinkTypes, serde tags, entry fields, or wire-shape changes
+         update-chain root binding) + cross-entry-type update gate
+Pass 7:  SCRATCH ONLY — bounded headers/ACLs, cross-generation Lineage,
+         durable HiveMembershipIndex, disjoint group ACL buckets, and
+         ciphertext-free remote content hints
 ```
 
 ## Data Flow
@@ -85,12 +88,36 @@ Writer UI → create_encrypted_content(input)
   ├─ commit EncryptedContent entry (DHT)
   ├─ create Hive/Dynamic/ACL/ContentId links (DHT paths)
   ├─ send_to_inbox → Inbox link on recipient pubkey (DHT)
-  ├─ emit_signal (local UI)
-  └─ remote_signal_acl_readers → send_encoded_remote_signal per reader (p2p, ExternIO pre-encode)
+  ├─ emit_signal → full EncryptedContentSignal (local author only)
+  └─ remote_signal_acl_readers → EncryptedContentHint per reader (identifiers only)
 
-Reader UI (online)  ← recv_remote_signal → re-query DHT
+Owner UI → initiate_owner_handoff → commit offer + OwnerHandoffOfferHint to recipient
+Reader UI (online)  ← recv_remote_signal stamps call provenance → re-query DHT
 Reader UI (offline) ← probe_inbox → resolve target → get entry
 ```
+
+## Pass-7 Wave-4 Read Surface (scratch only)
+
+Wave-4 collapses repeated client calls into nine read-only coordinator externs:
+
+- Content reads: `list_encrypted_content_by_dynamic_links`,
+  `list_by_hive_links_many`, `get_many_by_content_id_link`,
+  `list_by_author_many`, and `content_id_exists`.
+- Membership, roster, and local reads: `get_latest_memberships_local_many`,
+  `list_group_members_many`, `list_my_groups_local`, and
+  `list_by_hive_link_local_page`.
+
+Each extern has the same `Unrestricted` grant class as its singleton twin.
+Page-based batches return only a bounded first page per item and share a 4096
+aggregate resolution budget; `list_group_members_many` instead rejects when its
+complete rosters exceed 4096 source links. Item caps are 64, except the
+32-request hive-link batch.
+
+Network and local reads share one options-threaded resolution chain:
+`resolve_content_link_targets` / `resolve_action_targets` →
+`resolve_many_encrypted_content` → `resolve_encrypted_content`. Existing reads
+select network options; the two new local twins select local options, so adding
+the shared chain does not change an older extern's consistency mode.
 
 ## Integration with humm-tauri
 
@@ -117,6 +144,16 @@ released binaries live in
 `~/hummhive-official-happ-versions/`. Conductor behavior is proven in-process via
 `crates/sweettest` (tryorama can't boot on hc 0.6.x).
 
+The pass-7 lineage below is a **scratch, parked branch**, not a release.
+M16 changed the DNA once to
+`uhC0k-HAqM4zW2rCWrKSujEKDZcqybE_ATUjKxkRy2BmRjURYddxP`
+(`content_integrity.wasm` sha256
+`ec11ba8f9518cee6aee5d9e1df4fc1f7449f42584213abb4f8636cdceb90fcdd`).
+M17–M21 changed only the coordinator and held that pin. No pass-7 artifact was
+distributed or added to the official version store. The shipped baseline in
+`.baseline-hashes.txt` remains pass-6 v3.3.0 (`uhC0ksXs…`, hApp
+`b98916f1…`).
+
 | Pass | DNA Hash (prefix) | Integrity Change? | Key Change |
 |---|---|---|---|
 | main-hc060 | uhC0ksx1N1sx | baseline | Initial hc 0.6 port |
@@ -133,3 +170,4 @@ released binaries live in
 | pass-6-pinned-hosts (v3.1.0) | uhC0ksXsJOT | no (coordinator) | `latest_action_micros`, `BlobPinSignal` + `send_blob_pin_signal`, bounded source-cursor page externs (`list_by_{hive_link,dynamic_link,author}_page`), exact-own `get_my_content_by_id_link`; DNA held |
 | pass-6-idempotent-writes (v3.2.0) | uhC0ksXsJOT | no (coordinator) | find-or-create family (content/group-genesis/membership), hiveless remediation pair, optional-hive `fetch_pair_ss_with_hive_check`, HiveGenesis CREATE-based migration markers, `content_summary_many`; DNA held |
 | pass-6-service-meter (v3.3.0) | uhC0ksXsJOT | no (coordinator) | `upsert_service_meter` (cumulative max-merge day buckets) + `publish_node_spec` (opt-in singleton, REPLACE, dormant app-attestation behind empty accepted-keys), header convergence on upsert, CI cutover to host tests + build + sweettest; DNA held |
+| pass-7 Wave-4 scratch (PARKED) | uhC0k-HAqM4z | YES at M16 only | M16 integrity DRY moved the scratch pin once; M17–M21 added bounded reads and hint-only remote signals as coordinator-only changes; undistributed |

@@ -1,9 +1,17 @@
-<!-- codemap:backend | generated:2026-06-05 | updated:2026-07-17 | scope:full -->
+<!-- codemap:backend | generated:2026-06-05 | updated:2026-07-23 | scope:full -->
 
 # Backend (Zome Externs)
 
 All externs live in coordinator zome `content`. Integrity zome `content_integrity`
 has no callable externs (only `validate` + `genesis_self_check`).
+
+> **Branch scope:** the pass-7 Wave-4 sections describe parked work on
+> `feat-integrity-pass-7`. M16 moved the scratch DNA once to
+> `uhC0k-HAqM4zW2rCWrKSujEKDZcqybE_ATUjKxkRy2BmRjURYddxP`
+> (`content_integrity.wasm`
+> `ec11ba8f9518cee6aee5d9e1df4fc1f7449f42584213abb4f8636cdceb90fcdd`);
+> coordinator-only M17–M21 held it. This hash has never shipped. The shipped
+> `.baseline-hashes.txt` line remains pass-6 v3.3.0 (`uhC0ksXs…`).
 
 ## Coordinator Externs — EncryptedContent CRUD
 
@@ -11,9 +19,9 @@ has no callable externs (only `validate` + `genesis_self_check`).
 create_encrypted_content(CreateEncryptedContentInput) → EncryptedContentResponse
   └─ crud.rs → links: Hive(author) + Hive(hive) + Dynamic + ACL + ContentId + Inbox
 get_encrypted_content(ActionHash) → EncryptedContentResponse
-  └─ crud.rs → get_helpers::get_eh → get_latest_typed_from_eh
+  └─ crud.rs → resolve_encrypted_content(Network) → get_eh → get_latest_typed_from_eh
 get_many_encrypted_content(Vec<ActionHash>) → Vec<EncryptedContentResponse>
-  └─ crud.rs → maps get_encrypted_content
+  └─ crud.rs → resolve_many_encrypted_content(Network), memoized by input hash; duplicate request rows remain
 update_encrypted_content(UpdateEncryptedContentInput) → EncryptedContentResponse
   └─ crud.rs → native update-root walk + update_entry + EncryptedContentUpdates link + OriginalHashPointer link
 delete_encrypted_content(ActionHash) → ActionHash
@@ -43,16 +51,18 @@ my_pair_shared_secret_exists(PairSharedSecretExistsInput) → bool
   └─ queries.rs → LOCAL-chain check for the pair-SS dynamic link (pass-5; not cap-granted)
 ```
 
-All list/get-many reads above resolve targets through `get_many_encrypted_content`,
-which is **decode-tolerant** (`filter_map(.ok())`, pass-4-query-tolerance): an
-unresolvable / gossip-lagged / tombstoned target is skipped, never poisoning the
-batch. `list_my_hives[_local]` / `get_latest_membership[_local]` (+ the group
-equivalents) discriminate the genesis target by **EntryType** via
-`try_decode_hive_genesis` (`EntryTypes::deserialize_from_type` dispatch, v2.0.0):
-`GroupGenesis` is a strict field-superset of `HiveGenesis`, so the old shape-decode
-(`to_app_option`) silently false-positived every device-set / role-group as a
-"hive"; the EntryType filter returns `None` for a non-`HiveGenesis` target (and
-`warn!`-logs a corrupt recognised-type entry) instead of poisoning the list.
+Legacy list reads collect link targets in `resolve_content_link_targets`, then
+share `resolve_action_targets` → `resolve_many_encrypted_content` →
+`resolve_encrypted_content`. `GetOptions` stays explicit along the lower chain,
+which lets the Wave-4 local page twin read only the local store while every older
+caller keeps `GetOptions::network()`. An unresolvable, gossip-lagged, or
+tombstoned target is logged and skipped without aborting the remaining rows.
+
+Membership and group walks share `get_typed_entry_with_timestamp`; absence or a
+wrong entry shape returns `None` so a forged or lagging discovery link cannot
+poison the whole list. `list_my_hives[_local]` and membership-index readers still
+discriminate genesis targets by **EntryType** with `try_decode_hive_genesis`.
+This prevents a `GroupGenesis`—a strict field superset—from decoding as a hive.
 
 ## Coordinator Externs — Bounded pages + exact-own (pass-6-pinned-hosts, v3.1.0)
 
@@ -118,6 +128,46 @@ Snapshots `ServiceMeterSnapshot{schema, period, counters}` /
 `NodeSpecSnapshot{schema, spec, declared_at_micros, verified_by_app_key}` are
 zome-built msgpack; reads ride the existing granted list/page externs.
 Contract doc: `HUMM_TAURI_SERVICE_METER_INTEGRATION.md`.
+
+## Coordinator Externs — Pass-7 Wave-4 reads (scratch, parked)
+
+```
+list_encrypted_content_by_dynamic_links(ListByDynamicLinksInput) → Vec<DynamicLinkBucket>
+  └─ ≤64 labels; bounded first page per label; request-order buckets
+list_by_hive_links_many(HiveLinksBatchInput) → Vec<HiveLinksBatchBucket>
+  └─ ≤32 content-type requests under one hive; bounded first pages
+get_many_by_content_id_link(Vec<ContentIdLookup>) → Vec<ContentIdResult>
+  └─ ≤64 lookups; mirrors singleton first-target selection; unresolved record=None
+list_by_author_many(Vec<AuthorContentLookup>) → Vec<AuthorBatchBucket>
+  └─ ≤64 lookups; bounded oldest-first page per author
+content_id_exists(ListByContentIdInput) → bool
+  └─ link-set probe; resolves and returns no ciphertext record
+get_latest_memberships_local_many(GetLatestMembershipsLocalManyInput) → Vec<LatestMembershipBucket>
+  └─ ≤64 hives; caller derived from agent_info(); one Local membership-index walk
+list_group_members_many(Vec<ActionHash>) → Vec<GroupMembersBucket>
+  └─ ≤64 groups; complete rosters or a fail-closed aggregate-budget rejection
+list_my_groups_local(()) → Vec<ListedGroup>
+  └─ Local twin of list_my_groups; founded and granted rows keep singleton policy
+list_by_hive_link_local_page(HiveLinkPageInput) → BoundedLinkPage
+  └─ Local twin of list_by_hive_link_page for self-authored recovery
+```
+
+All nine externs are read-only and `Unrestricted`, beside the same-class
+singleton reads in `set_cap_tokens`. Dynamic-link, hive-link, and author batches
+normalize each item's limit (default 100, hard 256) and reject when the sum
+exceeds `BATCH_RESOLVE_BUDGET = 4096`. `list_group_members_many` cannot truncate
+ACL rosters, so it applies a separate 4096 roster-link budget before resolution.
+
+Wave-4 helper spine:
+
+| Helpers | Reason for the shared path |
+|---|---|
+| `resolve_content_link_targets` / `resolve_action_targets` / `resolve_many_encrypted_content` / `resolve_encrypted_content` | One `GetOptions`-threaded resolution policy prevents network and local twins from drifting; repeated input hashes resolve once per call. |
+| `enforce_batch_resolve_budget` | Page batches cannot multiply the singleton's 4096-record resolution ceiling. |
+| `get_typed_entry_with_timestamp`, `membership_index_links`, `my_hive_ids_network`, `cached_hive_display` | Hive reads share tolerant typed fetches, one membership-index shape, and immutable display lookup results while preserving row multiplicity. |
+| `cached_group_genesis`, `group_roster_links`, `resolve_roster` | Group listings reuse immutable genesis values; singleton and batch rosters keep one strict newest-membership policy. |
+| `create_acl_link_at` | Create and reindex paths emit the same validator-pinned base, tag, target, and link type. |
+| integrity `AclByGroupGenesis::groups()` / `validate_expiry_containment` | Bucket walks keep owner-first ordering, and hive/group grant validators share one expiry-containment verdict. |
 
 ## Coordinator Externs — Hive
 
@@ -200,19 +250,26 @@ redeem_invite_grant(RedeemInviteGrantInput) → HiveMembershipResponse
 ## Coordinator Externs — Signals
 
 ```
-send_dm_delete_request(SendDmDeleteRequestInput) → ()    (C6, ephemeral)
+send_dm_delete_request(SendDmDeleteRequestInput) → ()       (C6, ephemeral)
 send_dm_call_init_request(SendDmCallInitRequestInput) → ()  (C7, WebRTC)
 send_dm_call_init_accept(SendDmCallInitAcceptInput) → ()    (C7, WebRTC)
-send_dm_call_sdp_data(SendDmCallSdpDataInput) → ()         (C7, WebRTC)
+send_dm_call_sdp_data(SendDmCallSdpDataInput) → ()          (C7, WebRTC)
+
+emit_content_change(...) [internal]
+  ├─ local emit_signal(EncryptedContentSignal{action_type, data, from_agent=None})
+  └─ remote_signal_acl_readers(EncryptedContentHint{action_type, hash, original_hash})
+initiate_owner_handoff(...) [existing mutator]
+  └─ best-effort OwnerHandoffOfferHint{offer_hash, hive_genesis_hash} to recipient
 ```
 
-All five remote-signal sends — the four `send_dm_*` above plus the
-`remote_signal_acl_readers` content fan-out — funnel through
-`send_encoded_remote_signal` → `remote_signal_payload`, which pre-encodes the
-typed signal with `ExternIO::encode` so the recipient's
-`recv_remote_signal(signal: ExternIO)` param decodes (the `#[hdk_extern]`
-double-decode needs a BIN, not a typed MAP). Never call `send_remote_signal`
-with a typed payload directly.
+Every remote sender passes an `ExternIO`-encoded payload through the shared
+signal funnel before `send_remote_signal`; a typed map would fail the recipient
+extern's second decode. Wave-4 removes ciphertext from the coordinator's remote
+content fan-out while retaining the full `EncryptedContentSignal` for the
+author's local UI. `recv_remote_signal` overwrites each hint's `from_agent` with
+`call_info().provenance` before local emission. Its legacy full-content arm
+remains decodeable, so any delivered signal with `from_agent: Some(_)` is an
+untrusted fetch trigger and clients must resolve and verify the cited DHT entry.
 
 ## Coordinator Externs — Migration
 
@@ -234,40 +291,45 @@ get_messages_since(GetMessagesSinceInput) → Vec<Record>  (source-chain replay;
 
 ## Cap Grant Policy (set_cap_tokens)
 
-Granted `Unrestricted`: all read-only DHT queries + `recv_remote_signal` + the
-pass-5 public-DHT reads (`get_member_hive_role`, `list_member_hive_roles`,
-`get_hive_owner`, `is_ownership_contested`, `content_summary`,
-`list_pending_owner_handoffs`) + the pass-4 rescue's `_local` read twins
-(`list_my_hives_local`, `get_latest_membership_local`).
-NOT granted (local-only): all `create_*/update_*/delete_*` + the owner-handoff /
-revoke / redeem mutators, `get_messages_since`, `get_last_probe`,
-`my_pair_shared_secret_exists`, `changes_since`, `send_dm_*`, `mark_migrated*`.
+Granted `Unrestricted`: public-DHT reads, self-scoped local twins, and
+`recv_remote_signal`. Wave-4 adds all nine read externs:
+`list_encrypted_content_by_dynamic_links`, `list_by_hive_links_many`,
+`get_many_by_content_id_link`, `list_by_author_many`, `content_id_exists`,
+`get_latest_memberships_local_many`, `list_group_members_many`,
+`list_my_groups_local`, and `list_by_hive_link_local_page`.
+
+NOT granted (local AppWebsocket only): source-chain mutators; owner-handoff,
+revoke, and redeem mutators; private/local-chain readers
+`get_messages_since`, `get_last_probe`, `my_pair_shared_secret_exists`, and
+`changes_since`; caller-chosen-recipient `send_dm_*` / `send_blob_pin_signal`;
+and `mark_migrated*`. The owner-offer hint adds no sender extern: it runs inside
+the existing ungranted `initiate_owner_handoff`.
 
 ## Key Files
 
 ```
 coordinator/content/src/
-  lib.rs                          (init, recv_remote_signal, post_commit, cap grants, get_typed_entry + delete_own_links_targeting helpers)
+  lib.rs                          (init, provenance-stamping signal dispatcher, cap grants, get_typed_entry[_with_timestamp])
   encrypted_content/
     mod.rs                        (wire types: EncryptedContentResponse (+latest_action_micros), CreateInput, UpdateInput)
     crud.rs                       (create/get/update/delete externs)
-    queries.rs                    (list_by_*, count, fetch_pair — legacy, wire-stable)
-    paging.rs                     (bounded page externs + link_page/page_links engine + get_my_content_by_id_link)
-    signals/                     (EncryptedContentSignal, DmRemoteSignal, BlobPinSignal (blob_pin.rs), send_dm_* + send_blob_pin_signal externs, ExternIO funnel)
-    get_helpers.rs                (get_eh, get_record, get_latest_typed_from_eh)
+    queries.rs                    (legacy lists + dynamic-link/content-id Wave-4 batches)
+    paging.rs                     (bounded pages + hive/author batches + resolution/budget helpers)
+    signals/                      (full local EncryptedContentSignal; remote EncryptedContentHint; DM + BlobPin families; ExternIO funnel)
+    get_helpers.rs                (get_eh, record reuse, get_latest_typed_from_eh)
     migration/                   (MigrationMarkerV1/V2, mark_migrated*, get_migration_marker*)
   linking/
     hive_link.rs                  (create_hive_link — hive-shape Hive link)
     dynamic_links.rs              (create_dynamic_links — Dynamic links)
-    acl_links.rs                  (create_acl_links — Owner/Admin/Writer/Reader fan-out)
+    acl_links.rs                  (create_acl_links/create_acl_link_at — Owner/Admin/Writer/Reader fan-out)
     humm_content_id_link.rs       (create_humm_content_id_link)
   hive/
     crud.rs                       (create_hive_genesis, create_hive_membership)
-    queries.rs                    (get_latest_membership[_local], list_my_hives[_local], try_decode_hive_genesis EntryType discriminator)
-    owner.rs                      (owner handshake, resolve_current_owner, role reads, is_ownership_contested)
+    queries.rs                    (membership-index reads; latest-membership batch; local/network hive lists; caches)
+    owner.rs                      (owner handshake + OwnerHandoffOfferHint, resolve_current_owner, role reads, contest probe)
   group/
     crud.rs                       (create_group_genesis, create_group_membership, revoke)
-    queries.rs                    (get_latest_group_membership, list_group_members, list_my_groups)
+    queries.rs                    (membership reads, roster batch, local/network group lists, genesis cache)
   inbox/
     crud.rs                       (send_to_inbox, consume_inbox_item, record_probe)
     queries.rs                    (probe_inbox, get_last_probe)
