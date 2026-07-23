@@ -213,3 +213,23 @@ Client hygiene:
 - **Given** the keyring is locked, **when** the lock event fires, **then** the
   `SharedSecretCache` and the decrypt FIFO are cleared — no decrypted key material or
   plaintext survives the lock.
+
+## 7. Privacy & metadata contract (blessing-time surface)
+
+The pass-7 fork widened public relationship metadata; the DHT cannot hide these, so the
+client must not add semantic leakage on top:
+- **`HiveMembershipIndex`** (agent pubkey → membership/genesis targets) exposes hive
+  AFFILIATION enumeration for any agent.
+- **`Lineage`** (plaintext prior-action tag + header lineage) CORRELATES an agent's
+  content across generations.
+- **Discovery paths** hash their bases, but the plaintext link TAGS remain visible — the
+  Dynamic-label tag and the ACL group-hash tag are readable by any DHT observer.
+- **CLIENT RULE (load-bearing):** any sensitive `dynamic_links` value MUST be a
+  high-entropy OPAQUE id (e.g. a random/hashed handle), NEVER a semantic or plaintext
+  label — a label like `"invoices-2026"` leaks its meaning to a passive observer; an
+  opaque id does not. This is a client convention; the zome stores whatever label it is given.
+
+- **Given** a sensitive discovery need (e.g. a private collection), **when** the client
+  publishes content with a `dynamic_links` label, **then** the label is a high-entropy
+  opaque id — a DHT observer scanning the tag learns nothing about the content's meaning,
+  membership, or purpose.
