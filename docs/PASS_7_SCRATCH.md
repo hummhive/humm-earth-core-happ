@@ -357,6 +357,8 @@ sweettest therefore drives `create_group_genesis` directly.
   removed `unreachable!` panic message, and the M21 fall-through (intentionally replaced by
   the 5-family version). ADDED = the eight new batch reject literals + M16 inlined fetcher
   literals + M21 signal/log strings + new extern/cap-token + test-assertion strings.
+- **Wave-4 handoff folded into `HUMM_TAURI_PASS_7_INTEGRATION.md`** (complete
+  branch handoff, M0–M22); WAVE4 file deleted.
 
 ## DEFERRED — H2 sketch (per-entry-type ACL validators; blessing-time co-design)
 
