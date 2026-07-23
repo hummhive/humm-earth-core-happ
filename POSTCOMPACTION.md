@@ -116,6 +116,21 @@ and undistributed: no merge, tag, official-store row, or humm-tauri bundle. The
 shipped `.baseline-hashes.txt` contract remains pass-6 v3.3.0 (`uhC0ksXs…`,
 hApp `b98916f1…`).
 
+**2026-07-23 — complete handoff doc landed (branch-only):**
+`docs/HUMM_TAURI_PASS_7_INTEGRATION.md` now carries the full M0–M22 humm-tauri
+handoff — breaking items (delete response shape, 5-family fall-through,
+hint-only remote fan-out, L1–L23 strictness), the integrity contract delta,
+the "migration moves to the happ" section (find-wins/probe/resolve replacing
+their `remap.json` dedup), Waves 1–3 wire shapes verbatim, the Wave-4
+batch/local + signal surface, cap-grant table, client-adoption map, BDD
+skeletons, and the blessing-time constants bump. It absorbed and REPLACED
+`docs/HUMM_TAURI_WAVE4_INTEGRATION.md` (deleted; ledger line in
+`docs/PASS_7_SCRATCH.md`). Release-identity hashes stay TBD-at-blessing; the
+scratch DNA pin is labeled as such. Literal fidelity + extern-surface
+completeness grep-verified (13 new externs vs main, all covered). Tracking:
+`.newTasks/PASS_7_HANDOFF_DOCS.md`. Doc is BRANCH-ONLY and blessing-gated —
+still nothing distributed to humm-tauri.
+
 Also on `main` post-v3.3.0: B10 opt-in liveness rider (`6a3d428`), B11 declined
 zome-side (`16eac91`), meter doc §5.3 (`d30d4f1`); the mbox crown-fix arc closed
 (role-K FULL downward closure + owner-attested identity choice, both answered
