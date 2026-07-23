@@ -204,15 +204,7 @@ fn link_page(
     source_after_action_hash: Option<String>,
 ) -> ExternResult<BoundedLinkPage> {
     let limit = resolve_page_limit(limit)?;
-    let after_hash = source_after_action_hash
-        .as_deref()
-        .map(decode_cursor_hash)
-        .transpose()?;
-    if after_hash.is_some() && since_ts.is_none() {
-        return Err(wasm_error!(WasmErrorInner::Guest(
-            "source_after_action_hash requires since_ts".into()
-        )));
-    }
+    let after_hash = decode_paired_cursor(source_after_action_hash.as_deref(), since_ts.as_ref())?;
     // `LinkQuery::after` is deliberately NOT used with a composite
     // cursor: its boundary is approximate, and an approximate boundary
     // under the strict composite filter could drop equal-timestamp rows.
@@ -236,7 +228,19 @@ fn link_page(
     })
 }
 
-fn resolve_page_limit(limit: Option<usize>) -> ExternResult<usize> {
+/// One SOURCE-truth position per selected link (present even when the
+/// target never resolves, so callers cursor past poison rows).
+pub(crate) fn source_positions_of(links: &[Link]) -> Vec<SourcePosition> {
+    links
+        .iter()
+        .map(|link| SourcePosition {
+            timestamp_micros: link.timestamp.as_micros(),
+            action_hash: link.create_link_hash.to_string(),
+        })
+        .collect()
+}
+
+pub(crate) fn resolve_page_limit(limit: Option<usize>) -> ExternResult<usize> {
     match limit {
         None => Ok(LINK_PAGE_DEFAULT_LIMIT),
         Some(0) => Err(wasm_error!(WasmErrorInner::Guest(
@@ -244,6 +248,24 @@ fn resolve_page_limit(limit: Option<usize>) -> ExternResult<usize> {
         ))),
         Some(n) => Ok(n.min(LINK_PAGE_HARD_LIMIT)),
     }
+}
+
+/// Decode + pairing-check the composite source cursor: a lone
+/// `source_after_action_hash` cannot be positioned, so it REQUIRES
+/// `since_ts` (shared by the content `*_page` externs and `probe_inbox_page`).
+pub(crate) fn decode_paired_cursor(
+    source_after_action_hash: Option<&str>,
+    since_ts: Option<&Timestamp>,
+) -> ExternResult<Option<ActionHash>> {
+    let after_hash = source_after_action_hash
+        .map(decode_cursor_hash)
+        .transpose()?;
+    if after_hash.is_some() && since_ts.is_none() {
+        return Err(wasm_error!(WasmErrorInner::Guest(
+            "source_after_action_hash requires since_ts".into()
+        )));
+    }
+    Ok(after_hash)
 }
 
 fn decode_cursor_hash(encoded: &str) -> ExternResult<ActionHash> {
@@ -257,7 +279,7 @@ fn decode_cursor_hash(encoded: &str) -> ExternResult<ActionHash> {
 /// Pure cursor core: sort by `(timestamp, create_link_hash)` (raw-byte
 /// hash order is THE deterministic tie-break), apply the cursor filter,
 /// then truncate to `limit`. Returns `(selected page, truncated)`.
-fn page_links(
+pub(crate) fn page_links(
     mut links: Vec<Link>,
     since_ts: Option<Timestamp>,
     after_hash: Option<ActionHash>,

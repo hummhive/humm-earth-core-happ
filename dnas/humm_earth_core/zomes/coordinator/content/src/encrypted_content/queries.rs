@@ -273,6 +273,84 @@ pub fn list_by_author(input: ListByAuthorInput) -> ExternResult<Vec<EncryptedCon
     get_many_encrypted_content(hashes)
 }
 
+pub const CONTENT_ID_BATCH_MAX: usize = 64;
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct ContentIdLookup {
+    pub hive_genesis_hash: ActionHash,
+    pub content_id: String,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct ContentIdResult {
+    pub hive_genesis_hash: ActionHash,
+    pub content_id: String,
+    #[serde(default)]
+    pub record: Option<EncryptedContentResponse>,
+}
+
+/// Batched twin of `get_by_content_id_link`, mirroring its first-target
+/// selection exactly. An unresolvable lookup yields `record: None` rather than
+/// dropping the row, so results stay aligned to the request order.
+#[hdk_extern]
+pub fn get_many_by_content_id_link(
+    lookups: Vec<ContentIdLookup>,
+) -> ExternResult<Vec<ContentIdResult>> {
+    if lookups.len() > CONTENT_ID_BATCH_MAX {
+        return Err(wasm_error!(WasmErrorInner::Guest(
+            "content-id batch accepts at most 64 lookups".into()
+        )));
+    }
+    let mut results = Vec::with_capacity(lookups.len());
+    for lookup in lookups {
+        let path = Path::from(vec![
+            Component::from(lookup.hive_genesis_hash.to_string()),
+            Component::from(lookup.content_id.clone()),
+        ]);
+        let links = get_links(
+            LinkQuery::try_new(path.path_entry_hash()?, LinkTypes::HummContentId)?,
+            GetStrategy::Network,
+        )?;
+        let record = match links
+            .into_iter()
+            .find_map(|link| link.target.into_action_hash())
+        {
+            None => None,
+            Some(action_hash) => match get_encrypted_content(action_hash) {
+                Ok(resolved) => Some(resolved),
+                Err(e) => {
+                    warn!(
+                        "get_many_by_content_id_link: content_id {} target did not resolve: {e:?}",
+                        lookup.content_id
+                    );
+                    None
+                }
+            },
+        };
+        results.push(ContentIdResult {
+            hive_genesis_hash: lookup.hive_genesis_hash,
+            content_id: lookup.content_id,
+            record,
+        });
+    }
+    Ok(results)
+}
+
+/// Existence probe on the content-id path: returns whether any link is present
+/// WITHOUT resolving (and returning) the ciphertext record.
+#[hdk_extern]
+pub fn content_id_exists(input: ListByContentIdInput) -> ExternResult<bool> {
+    let path = Path::from(vec![
+        Component::from(input.hive_genesis_hash.to_string()),
+        Component::from(input.content_id),
+    ]);
+    let links = get_links(
+        LinkQuery::try_new(path.path_entry_hash()?, LinkTypes::HummContentId)?,
+        GetStrategy::Network,
+    )?;
+    Ok(!links.is_empty())
+}
+
 // =============================================================================
 // C4 — `fetch_pair_ss_with_hive_check`
 // =============================================================================

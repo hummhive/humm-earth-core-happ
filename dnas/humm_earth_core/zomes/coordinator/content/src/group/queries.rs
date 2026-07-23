@@ -11,12 +11,14 @@
 //!   unexpired membership. Replaces the forgeable
 //!   `GroupMemberList`-keyed roster lookups in humm-tauri.
 //! - [`list_my_groups`] enumerates every group the local agent
-//!   founded or holds a membership in, derived from the agent's
-//!   `Inbox::GroupInvite` link set — exactly mirroring `list_my_hives`.
+//!   founded (self-Inbox `GroupInvite` links) or holds a membership
+//!   in (durable `AgentToGroupMemberships` index).
 //! - [`list_groups_in_hive`] enumerates every group in a hive, derived
 //!   from the `HiveToGroups` link set on the hive genesis.
 //! - [`get_group_genesis`] resolves a `GroupGenesis` by action hash for
 //!   UI consumption.
+
+use std::collections::{hash_map::Entry, HashMap};
 
 use content_integrity::*;
 use hdk::prelude::*;
@@ -136,19 +138,33 @@ pub fn get_latest_group_membership(
 pub fn list_group_members(
     group_genesis_hash: ActionHash,
 ) -> ExternResult<Vec<GroupMembershipResponse>> {
-    let links = get_links(
+    group_members_of(group_genesis_hash)
+}
+
+pub(crate) fn group_members_of(
+    group_genesis_hash: ActionHash,
+) -> ExternResult<Vec<GroupMembershipResponse>> {
+    let links = group_roster_links(&group_genesis_hash)?;
+    resolve_roster(&group_genesis_hash, links)
+}
+
+fn group_roster_links(group_genesis_hash: &ActionHash) -> ExternResult<Vec<Link>> {
+    get_links(
         LinkQuery::try_new(
             AnyLinkableHash::from(group_genesis_hash.clone()),
             LinkTypes::GroupToGroupMemberships,
         )?,
         GetStrategy::Network,
-    )?;
+    )
+}
+
+fn resolve_roster(
+    group_genesis_hash: &ActionHash,
+    links: Vec<Link>,
+) -> ExternResult<Vec<GroupMembershipResponse>> {
     let now = sys_time()?;
 
-    // Best-per-agent: walk all links, keep latest-timestamped unexpired
-    // membership per `for_agent`. Final pass returns the dedup'd set.
-    let mut best: std::collections::HashMap<AgentPubKey, (Timestamp, GroupMembership, ActionHash)> =
-        std::collections::HashMap::new();
+    let mut best: HashMap<AgentPubKey, (Timestamp, GroupMembership, ActionHash)> = HashMap::new();
     for link in links {
         let Some(target_ah) = link.target.into_action_hash() else {
             continue;
@@ -163,7 +179,7 @@ pub fn list_group_members(
         else {
             continue;
         };
-        if membership.group_genesis_hash != group_genesis_hash {
+        if membership.group_genesis_hash != *group_genesis_hash {
             continue;
         }
         if let Some(expiry) = membership.expiry {
@@ -171,14 +187,14 @@ pub fn list_group_members(
                 continue;
             }
         }
-        let ts = record.action().timestamp();
+        let timestamp = record.action().timestamp();
         let key = membership.for_agent.clone();
         let install = best
             .get(&key)
-            .map(|(prev_ts, _, _)| ts > *prev_ts)
+            .map(|(previous_timestamp, _, _)| timestamp > *previous_timestamp)
             .unwrap_or(true);
         if install {
-            best.insert(key, (ts, membership, target_ah));
+            best.insert(key, (timestamp, membership, target_ah));
         }
     }
 
@@ -186,6 +202,56 @@ pub fn list_group_members(
         .into_values()
         .map(|(_, membership, hash)| GroupMembershipResponse { membership, hash })
         .collect())
+}
+
+pub const GROUP_MEMBERS_BATCH_MAX: usize = 64;
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct GroupMembersBucket {
+    pub group_genesis_hash: ActionHash,
+    pub members: Vec<GroupMembershipResponse>,
+}
+
+pub const GROUP_MEMBERS_LINK_BUDGET: usize = 4096;
+
+/// Rosters stay COMPLETE (ACL derivation needs every member), so an over-budget
+/// batch REJECTS instead of truncating; the caller falls back to per-group calls.
+fn enforce_roster_link_budget(total_links: usize) -> ExternResult<()> {
+    if total_links > GROUP_MEMBERS_LINK_BUDGET {
+        return Err(wasm_error!(WasmErrorInner::Guest(
+            "group-members batch roster links exceed the 4096 budget".into()
+        )));
+    }
+    Ok(())
+}
+
+#[hdk_extern]
+pub fn list_group_members_many(
+    group_genesis_hashes: Vec<ActionHash>,
+) -> ExternResult<Vec<GroupMembersBucket>> {
+    if group_genesis_hashes.len() > GROUP_MEMBERS_BATCH_MAX {
+        return Err(wasm_error!(WasmErrorInner::Guest(
+            "group-members batch accepts at most 64 groups".into()
+        )));
+    }
+    let mut rosters = Vec::with_capacity(group_genesis_hashes.len());
+    let mut total_links: usize = 0;
+    for group_genesis_hash in group_genesis_hashes {
+        let links = group_roster_links(&group_genesis_hash)?;
+        total_links = total_links.saturating_add(links.len());
+        enforce_roster_link_budget(total_links)?;
+        rosters.push((group_genesis_hash, links));
+    }
+    rosters
+        .into_iter()
+        .map(|(group_genesis_hash, links)| {
+            let members = resolve_roster(&group_genesis_hash, links)?;
+            Ok(GroupMembersBucket {
+                group_genesis_hash,
+                members,
+            })
+        })
+        .collect()
 }
 
 // =============================================================================
@@ -212,15 +278,14 @@ pub struct ListedGroup {
 /// (still-valid) membership in. Mirrors `list_my_hives` one level down
 /// the sovereignty hierarchy.
 ///
-/// Walks `Inbox` links tagged `InboxEvent::GroupInvite` on the local
-/// agent's pubkey; for each:
-/// - target = `GroupGenesis` ⇒ agent founded that group (`role: None`),
-///   gated by an author guard (see [`resolve_genesis_invite`]).
-/// - target = `GroupMembership` with `for_agent == me` and unexpired ⇒
-///   surface group genesis + role.
+/// Founded groups come from the agent's self-Inbox `GroupInvite` links
+/// (author-guarded; see [`resolve_genesis_invite`]). Granted groups come
+/// from the durable `AgentToGroupMemberships` index, so a swept or
+/// retracted Inbox no longer erases group discovery; each unexpired
+/// membership for the caller surfaces its group genesis + role.
 ///
 /// **Dedup contract.** When a member's role changes, each
-/// `create_group_membership` writes a fresh `Inbox::GroupInvite` link,
+/// `create_group_membership` writes a fresh `AgentToGroupMemberships` link,
 /// so the same `group_genesis_hash` may appear multiple times in the
 /// output (one entry per membership issuance). humm-tauri SHOULD
 /// deduplicate on `group_genesis_hash` callsite-side and pair with
@@ -228,55 +293,93 @@ pub struct ListedGroup {
 /// group. The mirroring `list_my_hives` carries the same contract.
 #[hdk_extern]
 pub fn list_my_groups(_: ()) -> ExternResult<Vec<ListedGroup>> {
+    list_my_groups_via(GetStrategy::Network, GetOptions::network())
+}
+
+#[hdk_extern]
+pub fn list_my_groups_local(_: ()) -> ExternResult<Vec<ListedGroup>> {
+    list_my_groups_via(GetStrategy::Local, GetOptions::local())
+}
+
+fn list_my_groups_via(
+    link_strategy: GetStrategy,
+    options: GetOptions,
+) -> ExternResult<Vec<ListedGroup>> {
     let my_pubkey = agent_info()?.agent_initial_pubkey;
-    let invite_byte = InboxEvent::GroupInvite.as_byte();
-    let links = get_links(
-        LinkQuery::try_new(AnyLinkableHash::from(my_pubkey.clone()), LinkTypes::Inbox)?,
-        GetStrategy::Network,
-    )?;
-
     let now = sys_time()?;
-    let mut out: Vec<ListedGroup> = Vec::new();
+    let mut out = Vec::new();
+    append_founded_groups(&mut out, &my_pubkey, link_strategy, &options)?;
+    append_membership_groups(&mut out, &my_pubkey, &now, link_strategy, &options)?;
+    Ok(out)
+}
 
-    for link in links {
+fn append_founded_groups(
+    out: &mut Vec<ListedGroup>,
+    my_pubkey: &AgentPubKey,
+    link_strategy: GetStrategy,
+    options: &GetOptions,
+) -> ExternResult<()> {
+    let invite_byte = InboxEvent::GroupInvite.as_byte();
+    let invite_links = get_links(
+        LinkQuery::try_new(AnyLinkableHash::from(my_pubkey.clone()), LinkTypes::Inbox)?,
+        link_strategy,
+    )?;
+    for link in invite_links {
         if link.tag.0.first().copied() != Some(invite_byte) {
             continue;
         }
         let Some(target_ah) = link.target.into_action_hash() else {
             continue;
         };
-        let Some(record) = get(target_ah.clone(), GetOptions::network())? else {
-            continue;
-        };
-        if let Some(listed) = resolve_genesis_invite(&record, &target_ah, &my_pubkey)? {
-            out.push(listed);
-            continue;
-        }
-        if let Some(listed) = resolve_membership_invite(&record, &my_pubkey, &now)? {
+        if let Some(listed) = resolve_genesis_invite(&target_ah, my_pubkey, options)? {
             out.push(listed);
         }
     }
-
-    Ok(out)
+    Ok(())
 }
 
-/// Decode `record` as a [`GroupGenesis`]; if it is one, verify the
-/// record's author matches `my_pubkey` (the open-write Inbox surface
-/// means any peer can target an arbitrary genesis with a GroupInvite
-/// link on the local agent's pubkey, so the author guard is what makes
-/// "I founded this group" a real claim rather than a UI-spoofable
-/// hint). Returns `Some(ListedGroup { role: None })` for a valid
-/// founded group; `None` if the record isn't a genesis or the author
-/// guard fails.
+fn append_membership_groups(
+    out: &mut Vec<ListedGroup>,
+    my_pubkey: &AgentPubKey,
+    now: &Timestamp,
+    link_strategy: GetStrategy,
+    options: &GetOptions,
+) -> ExternResult<()> {
+    let membership_links = get_links(
+        LinkQuery::try_new(
+            AnyLinkableHash::from(my_pubkey.clone()),
+            LinkTypes::AgentToGroupMemberships,
+        )?,
+        link_strategy,
+    )?;
+    let mut group_genesis_cache: HashMap<ActionHash, Option<GroupGenesis>> = HashMap::new();
+    for link in membership_links {
+        let Some(target_ah) = link.target.into_action_hash() else {
+            continue;
+        };
+        if let Some(listed) = resolve_membership_invite(
+            &target_ah,
+            my_pubkey,
+            now,
+            &mut group_genesis_cache,
+            options,
+        )? {
+            out.push(listed);
+        }
+    }
+    Ok(())
+}
+
+/// The author guard prevents open-write Inbox links from spoofing a founder claim.
 fn resolve_genesis_invite(
-    record: &Record,
     target_ah: &ActionHash,
     my_pubkey: &AgentPubKey,
+    options: &GetOptions,
 ) -> ExternResult<Option<ListedGroup>> {
-    // Cross-type tolerant: list_my_groups feeds BOTH GroupGenesis and
-    // GroupMembership inbox targets through here, so a membership target
-    // failing the genesis decode must fall through (Ok(None)) — never
-    // `?`-propagate, which broke the whole list once any group was joined.
+    let Some(record) = get(target_ah.clone(), options.clone())? else {
+        return Ok(None);
+    };
+    // Inbox targets are heterogeneous, so decode mismatches skip instead of failing the list.
     let Some(genesis) = record
         .entry()
         .to_app_option::<GroupGenesis>()
@@ -297,17 +400,38 @@ fn resolve_genesis_invite(
     }))
 }
 
-/// Decode `record` as a [`GroupMembership`]; if it grants `my_pubkey` a
-/// currently-unexpired role, fetch the referenced `GroupGenesis` for
-/// the display fields and return a populated [`ListedGroup`]. Returns
-/// `None` if the record isn't a membership, isn't for `my_pubkey`, has
-/// expired, or its referenced genesis is not resolvable / not a
-/// `GroupGenesis`.
+fn cached_group_genesis<'a>(
+    cache: &'a mut HashMap<ActionHash, Option<GroupGenesis>>,
+    group_genesis_hash: &ActionHash,
+    options: &GetOptions,
+) -> ExternResult<Option<&'a GroupGenesis>> {
+    let cached = match cache.entry(group_genesis_hash.clone()) {
+        Entry::Occupied(entry) => entry.into_mut(),
+        Entry::Vacant(entry) => {
+            let genesis = match get(group_genesis_hash.clone(), options.clone())? {
+                Some(record) => record
+                    .entry()
+                    .to_app_option::<GroupGenesis>()
+                    .ok()
+                    .flatten(),
+                None => None,
+            };
+            entry.insert(genesis)
+        }
+    };
+    Ok(cached.as_ref())
+}
+
 fn resolve_membership_invite(
-    record: &Record,
+    target_ah: &ActionHash,
     my_pubkey: &AgentPubKey,
     now: &Timestamp,
+    group_genesis_cache: &mut HashMap<ActionHash, Option<GroupGenesis>>,
+    options: &GetOptions,
 ) -> ExternResult<Option<ListedGroup>> {
+    let Some(record) = get(target_ah.clone(), options.clone())? else {
+        return Ok(None);
+    };
     let Some(membership) = record
         .entry()
         .to_app_option::<GroupMembership>()
@@ -324,22 +448,15 @@ fn resolve_membership_invite(
             return Ok(None);
         }
     }
-    let Some(genesis_record) = get(membership.group_genesis_hash.clone(), GetOptions::network())?
-    else {
-        return Ok(None);
-    };
-    let Some(genesis) = genesis_record
-        .entry()
-        .to_app_option::<GroupGenesis>()
-        .ok()
-        .flatten()
+    let Some(genesis) =
+        cached_group_genesis(group_genesis_cache, &membership.group_genesis_hash, options)?
     else {
         return Ok(None);
     };
     Ok(Some(ListedGroup {
         group_genesis_hash: membership.group_genesis_hash,
-        hive_genesis_hash: genesis.hive_genesis_hash,
-        display_id: genesis.display_id,
+        hive_genesis_hash: genesis.hive_genesis_hash.clone(),
+        display_id: genesis.display_id.clone(),
         hive_wide_role: genesis.hive_wide_role,
         role: Some(membership.role),
     }))
@@ -397,6 +514,77 @@ pub fn list_groups_in_hive(hive_genesis_hash: ActionHash) -> ExternResult<Vec<Li
 }
 
 // =============================================================================
+// role_key_closure
+// =============================================================================
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct RoleKeyClosureInput {
+    pub hive_genesis_hash: ActionHash,
+    pub granted_role: HiveRole,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct RoleClosureEntry {
+    pub role: HiveRole,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub group_genesis_hash: Option<ActionHash>,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct RoleKeyClosure {
+    pub entries: Vec<RoleClosureEntry>,
+}
+
+/// Owner⊇Admin⊇Writer⊇Reader, ordered highest→lowest. Exhaustive on
+/// purpose: a future role variant must force a compile error here.
+fn dominated_roles(granted: HiveRole) -> Vec<HiveRole> {
+    match granted {
+        HiveRole::Owner => vec![
+            HiveRole::Owner,
+            HiveRole::Admin,
+            HiveRole::Writer,
+            HiveRole::Reader,
+        ],
+        HiveRole::Admin => vec![HiveRole::Admin, HiveRole::Writer, HiveRole::Reader],
+        HiveRole::Writer => vec![HiveRole::Writer, HiveRole::Reader],
+        HiveRole::Reader => vec![HiveRole::Reader],
+    }
+}
+
+/// Downward role-K closure: the dominated role set for `granted_role`,
+/// each paired with the hive's canonical system-role `GroupGenesis`
+/// action hash (`None` = no system-role group for that role is visible
+/// from this node yet — the walk is eventually consistent; a premature
+/// duplicate mint is absorbed by the canonical-pick contract).
+/// Returns owner-attested IDENTITIES only — no key material: the client
+/// holds one INDEPENDENT SharedSecret per returned genesis; no role's K
+/// is ever derived from another's. Cross-agent duplicate system-role
+/// groups resolve deterministically to the lowest b64 action-hash STRING
+/// (the shared canonical-pick contract).
+#[hdk_extern]
+pub fn role_key_closure(input: RoleKeyClosureInput) -> ExternResult<RoleKeyClosure> {
+    let groups = list_groups_in_hive(input.hive_genesis_hash)?;
+    let entries = dominated_roles(input.granted_role)
+        .into_iter()
+        .map(|role| RoleClosureEntry {
+            role,
+            group_genesis_hash: canonical_role_group(&groups, role),
+        })
+        .collect();
+    Ok(RoleKeyClosure { entries })
+}
+
+/// Lowest-b64-STRING pick among the hive's groups carrying `role` (JS
+/// parity — the same contract as `canonical_lowest_hash`).
+fn canonical_role_group(groups: &[ListedGroup], role: HiveRole) -> Option<ActionHash> {
+    groups
+        .iter()
+        .filter(|g| g.hive_wide_role == Some(role))
+        .min_by_key(|g| g.group_genesis_hash.to_string())
+        .map(|g| g.group_genesis_hash.clone())
+}
+
+// =============================================================================
 // get_group_genesis
 // =============================================================================
 
@@ -420,4 +608,77 @@ pub fn get_group_genesis(action_hash: ActionHash) -> ExternResult<Option<GroupGe
         genesis,
         hash: action_hash,
     }))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn roster_link_budget_accepts_at_budget_and_rejects_over() {
+        assert!(enforce_roster_link_budget(GROUP_MEMBERS_LINK_BUDGET).is_ok());
+        let over = enforce_roster_link_budget(GROUP_MEMBERS_LINK_BUDGET + 1)
+            .expect_err("over-budget roster batch must reject");
+        assert!(format!("{over:?}").contains("roster links exceed the 4096 budget"));
+    }
+
+    fn listed_group(role: Option<HiveRole>, hash_byte: u8) -> ListedGroup {
+        ListedGroup {
+            group_genesis_hash: ActionHash::from_raw_36(vec![hash_byte; 36]),
+            hive_genesis_hash: ActionHash::from_raw_36(vec![9; 36]),
+            display_id: format!("group-{hash_byte}"),
+            hive_wide_role: role,
+            role: None,
+        }
+    }
+
+    #[test]
+    fn canonical_role_group_picks_lowest_b64_string() {
+        let first = listed_group(Some(HiveRole::Admin), 1);
+        let second = listed_group(Some(HiveRole::Admin), 2);
+        let expected = [
+            first.group_genesis_hash.to_string(),
+            second.group_genesis_hash.to_string(),
+        ]
+        .iter()
+        .min()
+        .cloned()
+        .expect("two candidates");
+        let picked = canonical_role_group(&[first, second], HiveRole::Admin)
+            .expect("a candidate matches the role");
+        assert_eq!(picked.to_string(), expected);
+    }
+
+    #[test]
+    fn canonical_role_group_ignores_other_roles_and_custom_groups() {
+        let admin = listed_group(Some(HiveRole::Admin), 3);
+        let custom = listed_group(None, 1);
+        assert_eq!(
+            canonical_role_group(&[custom.clone(), admin.clone()], HiveRole::Admin),
+            Some(admin.group_genesis_hash),
+        );
+        assert_eq!(canonical_role_group(&[custom], HiveRole::Writer), None);
+    }
+
+    #[test]
+    fn dominated_roles_encode_downward_closure_highest_first() {
+        assert_eq!(
+            dominated_roles(HiveRole::Owner),
+            vec![
+                HiveRole::Owner,
+                HiveRole::Admin,
+                HiveRole::Writer,
+                HiveRole::Reader,
+            ],
+        );
+        assert_eq!(
+            dominated_roles(HiveRole::Admin),
+            vec![HiveRole::Admin, HiveRole::Writer, HiveRole::Reader],
+        );
+        assert_eq!(
+            dominated_roles(HiveRole::Writer),
+            vec![HiveRole::Writer, HiveRole::Reader],
+        );
+        assert_eq!(dominated_roles(HiveRole::Reader), vec![HiveRole::Reader]);
+    }
 }

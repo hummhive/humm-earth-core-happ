@@ -19,20 +19,59 @@ pub struct InitiateOwnerHandoffInput {
 
 #[hdk_extern]
 pub fn initiate_owner_handoff(input: InitiateOwnerHandoffInput) -> ExternResult<ActionHash> {
+    let hive_genesis_hash = input.hive_genesis_hash.clone();
+    let recipient = input.to_agent.clone();
     let offer = HiveOwnerHandoffOffer {
         hive_genesis_hash: input.hive_genesis_hash,
-        to_agent: input.to_agent.clone(),
+        to_agent: input.to_agent,
         offerer_owner_accept_hash: input.offerer_owner_accept_hash,
         created_at_microseconds: sys_time()?.as_micros() as i64,
     };
     let offer_hash = create_entry(&EntryTypes::HiveOwnerHandoffOffer(offer))?;
     create_link(
-        AnyLinkableHash::from(input.to_agent),
+        AnyLinkableHash::from(recipient.clone()),
         AnyLinkableHash::from(offer_hash.clone()),
         LinkTypes::AgentToOwnerHandoffs,
         LinkTag::new(Vec::new()),
     )?;
+    send_owner_handoff_offer_hint(&offer_hash, &hive_genesis_hash, recipient);
     Ok(offer_hash)
+}
+
+/// Fetch-hint that an owner-handoff offer awaits the recipient, so the
+/// governance panel reacts without polling; carries identifiers only, the
+/// recipient re-reads the durable offer for authority.
+#[hdk_entry_helper]
+#[derive(Clone, PartialEq)]
+pub struct OwnerHandoffOfferHint {
+    pub offer_hash: ActionHash,
+    pub hive_genesis_hash: ActionHash,
+    /// Stamped by recv_remote_signal from call_info().provenance.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub from_agent: Option<AgentPubKey>,
+}
+
+/// Best-effort: a failed hint send never blocks the committed offer.
+fn send_owner_handoff_offer_hint(
+    offer_hash: &ActionHash,
+    hive_genesis_hash: &ActionHash,
+    recipient: AgentPubKey,
+) {
+    let hint = OwnerHandoffOfferHint {
+        offer_hash: offer_hash.clone(),
+        hive_genesis_hash: hive_genesis_hash.clone(),
+        from_agent: None,
+    };
+    let payload = match ExternIO::encode(&hint) {
+        Ok(payload) => payload,
+        Err(err) => {
+            warn!("initiate_owner_handoff: offer hint encode failed (non-fatal): {err:?}");
+            return;
+        }
+    };
+    if let Err(err) = send_remote_signal(payload, vec![recipient]) {
+        warn!("initiate_owner_handoff: offer hint send failed (non-fatal): {err:?}");
+    }
 }
 
 #[hdk_extern]
@@ -268,4 +307,37 @@ pub fn list_member_hive_roles(
 #[hdk_extern]
 pub fn get_hive_owner(hive_genesis_hash: ActionHash) -> ExternResult<AgentPubKey> {
     resolve_current_owner(&hive_genesis_hash)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::encrypted_content::signals::{
+        BlobPinSignal, DmRemoteSignal, EncryptedContentSignal,
+    };
+
+    fn sample_target_hash() -> ActionHash {
+        ActionHash::from_raw_39(
+            vec![0x84u8, 0x29, 0x24]
+                .into_iter()
+                .chain(std::iter::repeat_n(0u8, 36))
+                .collect(),
+        )
+    }
+
+    #[test]
+    fn owner_handoff_offer_hint_roundtrip_and_disjoint() {
+        let hint = OwnerHandoffOfferHint {
+            offer_hash: sample_target_hash(),
+            hive_genesis_hash: sample_target_hash(),
+            from_agent: None,
+        };
+        let io = ExternIO::encode(&hint).expect("encode");
+        let back: OwnerHandoffOfferHint = io.decode().expect("decode");
+        assert_eq!(back.offer_hash, sample_target_hash());
+        assert!(back.from_agent.is_none());
+        assert!(io.decode::<EncryptedContentSignal>().is_err());
+        assert!(io.decode::<DmRemoteSignal>().is_err());
+        assert!(io.decode::<BlobPinSignal>().is_err());
+    }
 }
