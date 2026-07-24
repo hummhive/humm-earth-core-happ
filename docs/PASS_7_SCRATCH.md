@@ -359,6 +359,12 @@ sweettest therefore drives `create_group_genesis` directly.
   literals + M21 signal/log strings + new extern/cap-token + test-assertion strings.
 - **Wave-4 handoff folded into `HUMM_TAURI_PASS_7_INTEGRATION.md`** (complete
   branch handoff, M0–M22); WAVE4 file deleted.
+- **Accepted-keys rotation ported from main v3.4.1 (`7549902` cherry-pick):**
+  `ACCEPTED_APP_SIGNING_KEYS_B64` carries the humm-tauri app signing key
+  `uhCAkyyOe…` so a pass-7 blessing cannot regress attested
+  `publish_node_spec` to `unrecognized app signing key` (the hole v3.4.0
+  shipped with). BLESSING CHECK: re-verify the allowlist against the
+  then-current key set before cutting — keys may have rotated again.
 
 ## DEFERRED — H2 sketch (per-entry-type ACL validators; blessing-time co-design)
 
