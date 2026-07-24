@@ -16,7 +16,8 @@ pub const SERVICE_METER_SCHEMA_TAG: &str = "hummhive-service-meter/1";
 pub const NODE_SPEC_CONTENT_TYPE: &str = "hummhive-core-node-spec-v1";
 pub const NODE_SPEC_CONTENT_ID: &str = "node-spec-v1";
 pub const NODE_SPEC_SCHEMA_TAG: &str = "hummhive-node-spec/1";
-pub(crate) const ACCEPTED_APP_SIGNING_KEYS_B64: &[&str] = &[];
+pub(crate) const ACCEPTED_APP_SIGNING_KEYS_B64: &[&str] =
+    &["uhCAkyyOeMalaAEDiWSFPoywDMtLOB5AaisjAhnQ-9m2y81p9xnJC"];
 
 const MAX_METER_DIMENSIONS: usize = 16;
 const MAX_NODE_SPEC_ENTRIES: usize = 32;

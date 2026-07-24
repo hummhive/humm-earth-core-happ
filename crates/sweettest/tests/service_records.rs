@@ -567,7 +567,7 @@ async fn node_spec_replace_and_noop_semantics() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn node_spec_attestation_rejects_while_no_keys_accepted() {
+async fn node_spec_attestation_rejects_foreign_signing_key() {
     holochain_trace::test_run();
     let (conductor, cell, zome) = single_conductor_cell_app().await;
     let author = cell.agent_pubkey().to_string();
@@ -577,6 +577,8 @@ async fn node_spec_attestation_rejects_while_no_keys_accepted() {
         &author,
         string_map(&[("cpu_cores", "8")]),
         Some(NodeSpecAttestation {
+            // Valid key shape, absent from the allowlist — must fail the
+            // allowlist gate, not the signature gate.
             app_signing_key_b64: author.clone(),
             signature_b64: ZERO_SIGNATURE_B64.to_string(),
         }),
@@ -588,7 +590,37 @@ async fn node_spec_attestation_rejects_while_no_keys_accepted() {
         "publish_node_spec",
         input,
         "unrecognized app signing key",
-        "attestation must reject while accepted-key list is empty",
+        "attestation must reject a key absent from the accepted list",
+    )
+    .await;
+}
+
+/// The ACCEPTED production key with a garbage signature must clear the
+/// allowlist gate and fail at the SIGNATURE gate (catches an empty/mistyped list).
+#[tokio::test(flavor = "multi_thread")]
+async fn node_spec_attestation_accepted_key_fails_at_signature_gate() {
+    holochain_trace::test_run();
+    let (conductor, cell, zome) = single_conductor_cell_app().await;
+    let author = cell.agent_pubkey().to_string();
+    let hive = create_hive(&conductor, &zome, "node-spec-accepted-key-hive").await;
+    let input = node_spec_input(
+        &hive,
+        &author,
+        string_map(&[("cpu_cores", "8")]),
+        Some(NodeSpecAttestation {
+            app_signing_key_b64: "uhCAkyyOeMalaAEDiWSFPoywDMtLOB5AaisjAhnQ-9m2y81p9xnJC"
+                .to_string(),
+            signature_b64: ZERO_SIGNATURE_B64.to_string(),
+        }),
+    );
+
+    assert_call_rejected(
+        &conductor,
+        &zome,
+        "publish_node_spec",
+        input,
+        "app attestation signature invalid",
+        "accepted key with a garbage signature must fail the signature gate, not the allowlist",
     )
     .await;
 }
