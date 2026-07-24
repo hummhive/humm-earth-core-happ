@@ -38,6 +38,7 @@ fn sample_response() -> EncryptedContentResponse {
         hash: "h".into(),
         original_hash: "h".into(),
         latest_action_micros: None,
+        tombstoned: None,
     }
 }
 

@@ -47,6 +47,13 @@ pub struct EncryptedContentResponse {
     /// old consumers deserialize it away, absent decodes to `None`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub latest_action_micros: Option<i64>,
+    /// B10 liveness probe: `Some(true)` = this record's ROOT action
+    /// is tombstoned (probed per-action, so byte-identical duplicate roots
+    /// sharing one entry are distinguished); `Some(false)` = probed live;
+    /// `None` = not probed (default / pre-B10 coordinator). Only list/page
+    /// reads with `include_liveness: true` populate it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tombstoned: Option<bool>,
 }
 
 #[hdk_entry_helper]
@@ -96,6 +103,9 @@ pub use migration::{
     mark_migrated, mark_migrated_v2, MarkMigratedInput, MarkMigratedV2Input, MigrationMarker,
     MigrationMarkerV1, MigrationMarkerV2, MIGRATION_MARKER_CONTENT_TYPE_PREFIX,
     MIGRATION_MARKER_SCHEMA_TAG,
+};
+pub(crate) use paging::{
+    decode_paired_cursor, page_links, resolve_page_limit, source_positions_of,
 };
 pub use paging::{
     get_my_content_by_id_link, list_by_author_page, list_by_dynamic_link_page,

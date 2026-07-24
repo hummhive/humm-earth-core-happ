@@ -501,7 +501,7 @@ async fn blob_pin_signal_dispatch_accepts_family_and_rejects_junk() {
         .await;
     let err = format!("{:?}", rejected.expect_err("junk payload must be rejected"));
     assert!(
-        err.contains("did not decode as EncryptedContentSignal, DmRemoteSignal, or BlobPinSignal"),
+        err.contains("did not decode as EncryptedContentSignal, DmRemoteSignal, BlobPinSignal, or OwnerHandoffOfferHint"),
         "fallthrough must name every family; got: {err}"
     );
 }

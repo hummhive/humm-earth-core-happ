@@ -11,6 +11,7 @@ pub use linking::*;
 use std::collections::HashSet;
 
 use encrypted_content::signals::{BlobPinSignal, DmRemoteSignal, EncryptedContentSignal};
+use hive::OwnerHandoffOfferHint;
 
 /// Fetch + decode a DHT entry, tolerating absence AND an undecodable/wrong-type
 /// target as `None`. Intentional resilience: owner-resolution and inbox scans
@@ -81,6 +82,7 @@ pub fn set_cap_tokens() -> ExternResult<()> {
     fns.insert((zome.clone(), "list_by_hive_link".into()));
     fns.insert((zome.clone(), "get_by_content_id_link".into()));
     fns.insert((zome.clone(), "list_by_acl_link".into()));
+    fns.insert((zome.clone(), "role_key_closure".into()));
     fns.insert((zome.clone(), "list_by_author".into()));
     fns.insert((zome.clone(), "count_links_by_hive".into()));
     fns.insert((zome.clone(), "fetch_pair_ss_with_hive_check".into()));
@@ -150,6 +152,26 @@ pub fn set_cap_tokens() -> ExternResult<()> {
     fns.insert((zome.clone(), "content_summary_many".into()));
     fns.insert((zome.clone(), "is_ownership_contested".into()));
 
+    // Batch read externs: read-only over public DHT link space, same grant
+    // class as their singleton twins above. `content_id_exists` probes the
+    // same link space and returns only a bool.
+    fns.insert((
+        zome.clone(),
+        "list_encrypted_content_by_dynamic_links".into(),
+    ));
+    fns.insert((zome.clone(), "list_by_hive_links_many".into()));
+    fns.insert((zome.clone(), "get_many_by_content_id_link".into()));
+    fns.insert((zome.clone(), "list_by_author_many".into()));
+    fns.insert((zome.clone(), "content_id_exists".into()));
+
+    // Membership/group batch + local read externs. Same grant class as their
+    // singleton twins: `list_my_groups_local` resolves the caller's OWN data
+    // (self-scoped like list_my_hives_local / get_latest_membership_local),
+    // `list_group_members_many` reads the public group roster link space.
+    fns.insert((zome.clone(), "list_group_members_many".into()));
+    fns.insert((zome.clone(), "list_my_groups_local".into()));
+    fns.insert((zome.clone(), "list_by_hive_link_local_page".into()));
+
     // Group-authority read externs (pass-3). Same rationale as the
     // hive read surface above: GroupGenesis and GroupMembership entries
     // are public DHT data and the corresponding link space is public.
@@ -175,6 +197,7 @@ pub fn set_cap_tokens() -> ExternResult<()> {
     // (`probed_at_microseconds` + `last_processed_inbox_link_hash`).
     // Matches the `get_messages_since` treatment (Rule 2 above).
     fns.insert((zome.clone(), "probe_inbox".into()));
+    fns.insert((zome.clone(), "probe_inbox_page".into()));
 
     // `recv_remote_signal` — required by the HDK cap check; see the
     // doc-comment opener for the rationale.
@@ -207,7 +230,7 @@ pub fn init(_: ()) -> ExternResult<InitCallbackResult> {
 /// it is the established, shipped payload — every running humm-tauri
 /// today emits and expects this shape. `DmRemoteSignal` (the C6/C7
 /// envelope) is tried second; `BlobPinSignal` (pass-6-pinned-hosts
-/// blob-pin hints) is tried last — new families always append.
+/// blob-pin hints) is tried third; `OwnerHandoffOfferHint` is tried last.
 ///
 /// **Why the try-decode is safe (vs. structural ambiguity).**
 /// - `EncryptedContentSignal` requires `action_type` (a small enum tag)
@@ -219,12 +242,14 @@ pub fn init(_: ()) -> ExternResult<InitCallbackResult> {
 /// - `BlobPinSignal` is `#[serde(tag = "pin")]` — a third distinct
 ///   discriminator key with hint fields (`blake3`,
 ///   `provider_record_hash`) required by no other family.
+/// - `OwnerHandoffOfferHint` requires `offer_hash` and
+///   `hive_genesis_hash`, a distinct identifier-only shape.
 /// - The shapes share no required field name (the `action_type` /
-///   `kind` / `pin` discriminators differ, and the inner payload
-///   shapes are structurally disjoint), so none can structurally
-///   decode as another under msgpack. The host-side serde round-trip
-///   unit tests in `encrypted_content::signals::tests` empirically pin
-///   this property.
+///   `kind` / `pin` discriminators and `offer_hash` differ, and the
+///   inner payload shapes are structurally disjoint), so none can
+///   structurally decode as another under msgpack. The host-side serde
+///   round-trip unit tests in the signal modules empirically pin this
+///   property.
 ///
 /// **Anti-spoof guarantee** (preserved from the original single-signal
 /// path). Whatever
@@ -301,12 +326,22 @@ pub fn recv_remote_signal(signal: ExternIO) -> ExternResult<()> {
         return emit_signal(payload);
     }
 
-    // 4. Unknown payload shape — explicitly error so misrouted or
+    // 4. Try the owner-handoff offer fetch-hint family.
+    if let Ok(mut payload) = signal.decode::<OwnerHandoffOfferHint>() {
+        info!(
+            "recv_remote_signal[OwnerHandoffOfferHint]: offer_hash={} from_agent={}",
+            payload.offer_hash, caller_agent,
+        );
+        payload.from_agent = Some(caller_agent);
+        return emit_signal(payload);
+    }
+
+    // 5. Unknown payload shape — explicitly error so misrouted or
     //    malformed signals are visible in conductor logs rather than
     //    silently dropped. The cap grant is open so a misbehaving peer
     //    can absolutely send garbage; this is the audit trail.
     Err(wasm_error!(WasmErrorInner::Guest(
-        "recv_remote_signal: payload did not decode as EncryptedContentSignal, DmRemoteSignal, or BlobPinSignal"
+        "recv_remote_signal: payload did not decode as EncryptedContentSignal, DmRemoteSignal, BlobPinSignal, or OwnerHandoffOfferHint"
             .into()
     )))
 }

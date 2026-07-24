@@ -5,7 +5,46 @@
 
 ---
 
-## Latest arc (2026-07-17, evening): pass-6-service-meter shipped (v3.3.0)
+## Latest arc (2026-07-23): pass-6-batch-reads shipped (v3.4.0)
+
+Coordinator-only generation on the HELD pass-6 DNA
+`uhC0ksXsJOTlVvhUn3KWB0nN6j-II_9BxlsRiMqR9ajhFhYS7gSMz` (integrity untouched —
+`hc dna hash` verified held at every gate; happ sha256
+`601fc4499e5d4a5a5553077fe960227318d6036d0aeef9c570e52ce2f81975bc`). Collapses
+humm-tauri's N+1 read loops into bounded batch calls and adds local read twins,
+so boot/feed/decrypt/ACL/DM paths stop multiplying singleton work.
+
+- **10 new cap-granted read externs:** `list_encrypted_content_by_dynamic_links`
+  (≤64 labels), `list_by_hive_links_many` (≤32 requests), `list_by_author_many`
+  (≤64 lookups), `get_many_by_content_id_link` (≤64), `content_id_exists`,
+  `list_group_members_many` (complete rosters, 4096 roster-link budget,
+  reject-not-truncate), `list_my_groups_local`, `list_by_hive_link_local_page`,
+  `probe_inbox_page`, `role_key_closure`. Batch page reads share a 4096 resolve
+  budget (`enforce_batch_resolve_budget`).
+- **B10 liveness rider:** opt-in `include_liveness` on the 7 read externs +
+  `tombstoned: Option<bool>` on `EncryptedContentResponse`, probed per root
+  action (`root_tombstoned`/`apply_liveness`); off the default read path.
+- **Owner-handoff offer hint:** best-effort `OwnerHandoffOfferHint` from
+  `initiate_owner_handoff`; `recv_remote_signal` now decodes 4 families
+  (fall-through literal updated). `list_my_groups` granted-half now walks the
+  durable `AgentToGroupMemberships` index (survives an Inbox sweep).
+- **Resolve path:** memoized tolerant `resolve_many_encrypted_content`, graceful
+  `get_latest_typed_from_eh` (no panic path), early-stop paging, `GetOptions`
+  threaded through the read chain (existing callers pass network — zero behavior
+  change).
+- **Gates:** fmt + `content` host 53/53 + clippy `-D warnings` clean; DNA hash
+  HELD; full sweettest green (63 tests + 1 ignored across 13 binaries, incl.
+  `batch_reads` 17, `role_key_closure`, `signal_hints`, `liveness_and_reindex`,
+  `inbox_and_delete`, and the `pinned_hosts` page-engine regression). Reject-
+  literal superset vs v3.3.0 clean (adds = 8 batch literals + new extern/log
+  strings; only intentional loss = the 3→4-family recv fall-through). Three
+  review lanes (rust/security/silent-failure) APPROVE, nits accepted. Handoff:
+  `docs/HUMM_TAURI_BATCH_READS_INTEGRATION.md`; tracking
+  `.newTasks/PASS6_OPTIMIZATION_HANDOFF.md`. humm-tauri constants bump at adopt:
+  `CURRENT_HAPP_LABEL="pass-6-batch-reads"`, new `CURRENT_HAPP_SHA256`,
+  `COORDINATOR_WASM_VERSION` 11→12.
+
+## Arc (2026-07-17, evening): pass-6-service-meter shipped (v3.3.0)
 
 Coordinator-only generation on the HELD pass-6 DNA, merged `--no-ff` as
 `311e10c`, tag `v3.3.0` on the merge commit (local; owner pushes). Headline

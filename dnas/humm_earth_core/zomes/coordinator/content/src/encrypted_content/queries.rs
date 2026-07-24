@@ -23,7 +23,8 @@ use hdi::hash_path::path::Component;
 use hdk::prelude::*;
 use std::collections::HashSet;
 
-use super::crud::{get_encrypted_content, get_many_encrypted_content};
+use super::crud::get_encrypted_content;
+use super::paging::{enforce_batch_resolve_budget, link_page, resolve_content_link_targets};
 use super::EncryptedContentResponse;
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -31,6 +32,8 @@ pub struct ListByDynamicLinkInput {
     pub hive_genesis_hash: ActionHash,
     pub content_type: String,
     pub dynamic_link: String,
+    #[serde(default)]
+    pub include_liveness: bool,
 }
 
 #[hdk_extern]
@@ -47,11 +50,7 @@ pub fn list_by_dynamic_link(
         LinkQuery::try_new(path.path_entry_hash()?, LinkTypes::Dynamic)?,
         GetStrategy::Network,
     )?;
-    let hashes: Vec<ActionHash> = links
-        .into_iter()
-        .filter_map(|link| link.target.into_action_hash())
-        .collect();
-    get_many_encrypted_content(hashes)
+    resolve_content_link_targets(links, input.include_liveness)
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -72,6 +71,8 @@ pub struct ListByHiveInput {
     /// older entries that arrived after a network partition.
     #[serde(default)]
     pub limit: Option<usize>,
+    #[serde(default)]
+    pub include_liveness: bool,
 }
 
 /// List entries linked off the hive path
@@ -108,11 +109,7 @@ pub fn list_by_hive_link(input: ListByHiveInput) -> ExternResult<Vec<EncryptedCo
         all_links.truncate(limit);
     }
 
-    let hashes: Vec<ActionHash> = all_links
-        .into_iter()
-        .filter_map(|l| l.target.into_action_hash())
-        .collect();
-    get_many_encrypted_content(hashes)
+    resolve_content_link_targets(all_links, input.include_liveness)
 }
 
 /// C3 input. Distinct from `ListByHiveInput` because counting has no
@@ -196,6 +193,8 @@ pub struct ListByAclInput {
     /// string for wire stability.
     pub acl_role: String,
     pub entity_id: String,
+    #[serde(default)]
+    pub include_liveness: bool,
 }
 
 #[hdk_extern]
@@ -230,11 +229,7 @@ pub fn list_by_acl_link(input: ListByAclInput) -> ExternResult<Vec<EncryptedCont
         }
     };
 
-    let hashes: Vec<ActionHash> = links
-        .into_iter()
-        .filter_map(|link| link.target.into_action_hash())
-        .collect();
-    get_many_encrypted_content(hashes)
+    resolve_content_link_targets(links, input.include_liveness)
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -245,6 +240,8 @@ pub struct ListByAuthorInput {
     pub since_ts: Option<Timestamp>,
     #[serde(default)]
     pub limit: Option<usize>,
+    #[serde(default)]
+    pub include_liveness: bool,
 }
 
 /// Author's content of a type, oldest-first. `since_ts`/`limit` page forward;
@@ -266,11 +263,146 @@ pub fn list_by_author(input: ListByAuthorInput) -> ExternResult<Vec<EncryptedCon
     if let Some(limit) = input.limit {
         links.truncate(limit);
     }
-    let hashes: Vec<ActionHash> = links
-        .into_iter()
-        .filter_map(|link| link.target.into_action_hash())
-        .collect();
-    get_many_encrypted_content(hashes)
+    resolve_content_link_targets(links, input.include_liveness)
+}
+
+pub const DYNAMIC_LINKS_BATCH_MAX: usize = 64;
+pub const CONTENT_ID_BATCH_MAX: usize = 64;
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct ListByDynamicLinksInput {
+    pub hive_genesis_hash: ActionHash,
+    pub content_type: String,
+    pub dynamic_links: Vec<String>,
+    #[serde(default)]
+    pub since_ts: Option<Timestamp>,
+    #[serde(default)]
+    pub limit: Option<usize>,
+    #[serde(default)]
+    pub include_liveness: bool,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct DynamicLinkBucket {
+    pub dynamic_link: String,
+    pub records: Vec<EncryptedContentResponse>,
+    pub truncated: bool,
+}
+
+/// Batched twin of `list_by_dynamic_link_page`: a bounded first page per dynamic
+/// label under one (hive, content_type) scope. Buckets key back to each
+/// requested label in request order; deep pagination stays on the singleton
+/// page extern.
+#[hdk_extern]
+pub fn list_encrypted_content_by_dynamic_links(
+    input: ListByDynamicLinksInput,
+) -> ExternResult<Vec<DynamicLinkBucket>> {
+    if input.dynamic_links.len() > DYNAMIC_LINKS_BATCH_MAX {
+        return Err(wasm_error!(WasmErrorInner::Guest(
+            "dynamic_links batch accepts at most 64 labels".into()
+        )));
+    }
+    enforce_batch_resolve_budget(std::iter::repeat_n(input.limit, input.dynamic_links.len()))?;
+    let hive_b64 = input.hive_genesis_hash.to_string();
+    let mut buckets = Vec::with_capacity(input.dynamic_links.len());
+    for dynamic_link in input.dynamic_links {
+        let path = Path::from(vec![
+            Component::from(hive_b64.clone()),
+            Component::from(input.content_type.clone()),
+            Component::from(dynamic_link.clone()),
+        ]);
+        let page = link_page(
+            path.path_entry_hash()?,
+            LinkTypes::Dynamic,
+            input.since_ts,
+            input.limit,
+            None,
+            input.include_liveness,
+            GetOptions::network(),
+        )?;
+        buckets.push(DynamicLinkBucket {
+            dynamic_link,
+            records: page.records,
+            truncated: page.truncated,
+        });
+    }
+    Ok(buckets)
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct ContentIdLookup {
+    pub hive_genesis_hash: ActionHash,
+    pub content_id: String,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct ContentIdResult {
+    pub hive_genesis_hash: ActionHash,
+    pub content_id: String,
+    #[serde(default)]
+    pub record: Option<EncryptedContentResponse>,
+}
+
+/// Batched twin of `get_by_content_id_link`, mirroring its first-target
+/// selection exactly. An unresolvable lookup yields `record: None` rather than
+/// dropping the row, so results stay aligned to the request order.
+#[hdk_extern]
+pub fn get_many_by_content_id_link(
+    lookups: Vec<ContentIdLookup>,
+) -> ExternResult<Vec<ContentIdResult>> {
+    if lookups.len() > CONTENT_ID_BATCH_MAX {
+        return Err(wasm_error!(WasmErrorInner::Guest(
+            "content-id batch accepts at most 64 lookups".into()
+        )));
+    }
+    let mut results = Vec::with_capacity(lookups.len());
+    for lookup in lookups {
+        let path = Path::from(vec![
+            Component::from(lookup.hive_genesis_hash.to_string()),
+            Component::from(lookup.content_id.clone()),
+        ]);
+        let links = get_links(
+            LinkQuery::try_new(path.path_entry_hash()?, LinkTypes::HummContentId)?,
+            GetStrategy::Network,
+        )?;
+        let record = match links
+            .into_iter()
+            .find_map(|link| link.target.into_action_hash())
+        {
+            None => None,
+            Some(action_hash) => match get_encrypted_content(action_hash) {
+                Ok(resolved) => Some(resolved),
+                Err(e) => {
+                    warn!(
+                        "get_many_by_content_id_link: content_id {} target did not resolve: {e:?}",
+                        lookup.content_id
+                    );
+                    None
+                }
+            },
+        };
+        results.push(ContentIdResult {
+            hive_genesis_hash: lookup.hive_genesis_hash,
+            content_id: lookup.content_id,
+            record,
+        });
+    }
+    Ok(results)
+}
+
+/// Existence probe on the content-id path: returns whether any link is present
+/// WITHOUT resolving (and returning) the ciphertext record.
+#[hdk_extern]
+pub fn content_id_exists(input: ListByContentIdInput) -> ExternResult<bool> {
+    let path = Path::from(vec![
+        Component::from(input.hive_genesis_hash.to_string()),
+        Component::from(input.content_id),
+    ]);
+    let links = get_links(
+        LinkQuery::try_new(path.path_entry_hash()?, LinkTypes::HummContentId)?,
+        GetStrategy::Network,
+    )?;
+    Ok(!links.is_empty())
 }
 
 // =============================================================================

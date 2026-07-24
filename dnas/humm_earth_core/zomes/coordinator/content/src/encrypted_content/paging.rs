@@ -14,12 +14,13 @@ use hdi::hash_path::path::Component;
 use hdk::prelude::*;
 use std::collections::HashSet;
 
-use super::crud::get_encrypted_content;
+use super::crud::resolve_many_encrypted_content;
 use super::EncryptedContentResponse;
 
 const LINK_PAGE_DEFAULT_LIMIT: usize = 100;
 const LINK_PAGE_HARD_LIMIT: usize = 256;
 const MY_CONTENT_HARD_LIMIT: usize = 4096;
+pub const BATCH_RESOLVE_BUDGET: usize = 4096;
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub struct SourcePosition {
@@ -49,6 +50,8 @@ pub struct HiveLinkPageInput {
     pub limit: Option<usize>,
     #[serde(default)]
     pub source_after_action_hash: Option<String>,
+    #[serde(default)]
+    pub include_liveness: bool,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -62,6 +65,8 @@ pub struct DynamicLinkPageInput {
     pub limit: Option<usize>,
     #[serde(default)]
     pub source_after_action_hash: Option<String>,
+    #[serde(default)]
+    pub include_liveness: bool,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -74,6 +79,8 @@ pub struct AuthorLinkPageInput {
     pub limit: Option<usize>,
     #[serde(default)]
     pub source_after_action_hash: Option<String>,
+    #[serde(default)]
+    pub include_liveness: bool,
 }
 
 /// Paged twin of `list_by_hive_link` — same path, same link type, plus
@@ -90,6 +97,25 @@ pub fn list_by_hive_link_page(input: HiveLinkPageInput) -> ExternResult<BoundedL
         input.since_ts,
         input.limit,
         input.source_after_action_hash,
+        input.include_liveness,
+        GetOptions::network(),
+    )
+}
+
+#[hdk_extern]
+pub fn list_by_hive_link_local_page(input: HiveLinkPageInput) -> ExternResult<BoundedLinkPage> {
+    let path = Path::from(vec![
+        Component::from(input.hive_genesis_hash.to_string()),
+        Component::from(input.content_type),
+    ]);
+    link_page(
+        path.path_entry_hash()?,
+        LinkTypes::Hive,
+        input.since_ts,
+        input.limit,
+        input.source_after_action_hash,
+        input.include_liveness,
+        GetOptions::local(),
     )
 }
 
@@ -107,6 +133,8 @@ pub fn list_by_dynamic_link_page(input: DynamicLinkPageInput) -> ExternResult<Bo
         input.since_ts,
         input.limit,
         input.source_after_action_hash,
+        input.include_liveness,
+        GetOptions::network(),
     )
 }
 
@@ -126,7 +154,124 @@ pub fn list_by_author_page(input: AuthorLinkPageInput) -> ExternResult<BoundedLi
         input.since_ts,
         input.limit,
         input.source_after_action_hash,
+        input.include_liveness,
+        GetOptions::network(),
     )
+}
+
+pub const HIVE_LINKS_BATCH_MAX: usize = 32;
+pub const AUTHOR_BATCH_MAX: usize = 64;
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct HiveLinkRequest {
+    pub content_type: String,
+    #[serde(default)]
+    pub since_ts: Option<Timestamp>,
+    #[serde(default)]
+    pub limit: Option<usize>,
+    #[serde(default)]
+    pub include_liveness: bool,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct HiveLinksBatchInput {
+    pub hive_genesis_hash: ActionHash,
+    pub requests: Vec<HiveLinkRequest>,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct HiveLinksBatchBucket {
+    pub content_type: String,
+    pub records: Vec<EncryptedContentResponse>,
+    pub truncated: bool,
+}
+
+/// Batched first pages over multiple content types under one hive. Each request
+/// is a cursor-less `list_by_hive_link_page` first page; deep pagination stays
+/// on the singleton page extern.
+#[hdk_extern]
+pub fn list_by_hive_links_many(
+    input: HiveLinksBatchInput,
+) -> ExternResult<Vec<HiveLinksBatchBucket>> {
+    if input.requests.len() > HIVE_LINKS_BATCH_MAX {
+        return Err(wasm_error!(WasmErrorInner::Guest(
+            "hive-link batch accepts at most 32 requests".into()
+        )));
+    }
+    enforce_batch_resolve_budget(input.requests.iter().map(|request| request.limit))?;
+    let hive_b64 = input.hive_genesis_hash.to_string();
+    let mut buckets = Vec::with_capacity(input.requests.len());
+    for request in input.requests {
+        let path = Path::from(vec![
+            Component::from(hive_b64.clone()),
+            Component::from(request.content_type.clone()),
+        ]);
+        let page = link_page(
+            path.path_entry_hash()?,
+            LinkTypes::Hive,
+            request.since_ts,
+            request.limit,
+            None,
+            request.include_liveness,
+            GetOptions::network(),
+        )?;
+        buckets.push(HiveLinksBatchBucket {
+            content_type: request.content_type,
+            records: page.records,
+            truncated: page.truncated,
+        });
+    }
+    Ok(buckets)
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct AuthorContentLookup {
+    pub author: AgentPubKey,
+    pub content_type: String,
+    #[serde(default)]
+    pub limit: Option<usize>,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct AuthorBatchBucket {
+    pub author: AgentPubKey,
+    pub records: Vec<EncryptedContentResponse>,
+    pub truncated: bool,
+}
+
+/// Batched first pages of author-shape content, oldest-first per lookup.
+#[hdk_extern]
+pub fn list_by_author_many(
+    lookups: Vec<AuthorContentLookup>,
+) -> ExternResult<Vec<AuthorBatchBucket>> {
+    if lookups.len() > AUTHOR_BATCH_MAX {
+        return Err(wasm_error!(WasmErrorInner::Guest(
+            "author batch accepts at most 64 lookups".into()
+        )));
+    }
+    enforce_batch_resolve_budget(lookups.iter().map(|lookup| lookup.limit))?;
+    let mut buckets = Vec::with_capacity(lookups.len());
+    for lookup in lookups {
+        let path = Path::from(vec![
+            Component::from(lookup.author.to_string()),
+            Component::from(lookup.content_type.clone()),
+        ]);
+        let page = link_page(
+            path.path_entry_hash()?,
+            LinkTypes::Hive,
+            None,
+            lookup.limit,
+            None,
+            false,
+            GetOptions::network(),
+        )?;
+        buckets.push(AuthorBatchBucket {
+            author: lookup.author,
+            records: page.records,
+            truncated: page.truncated,
+        });
+    }
+    Ok(buckets)
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -180,7 +325,7 @@ pub(crate) fn content_id_records_by_author(
     sort_by_source_position(&mut links);
     let deduped = dedupe_by_target(links);
     let (selected, truncated) = page_links(deduped, None, None, MY_CONTENT_HARD_LIMIT);
-    Ok((resolve_targets(selected), truncated))
+    Ok((resolve_content_link_targets(selected, false)?, truncated))
 }
 
 /// Canonical pick when multiple candidates share a content-id path:
@@ -195,48 +340,88 @@ pub(crate) fn canonical_lowest_hash(
     records.into_iter().min_by(|a, b| a.hash.cmp(&b.hash))
 }
 
-/// Shared page engine behind the three `*_page` externs.
-fn link_page(
+/// Probe a resolved record's ROOT action for tombstoning, per-action so
+/// byte-identical duplicate roots sharing one entry are distinguished
+/// (the B10 bug: entry-level liveness cannot tell a dead root from a live
+/// sibling). Any failure — unparseable hash, absent details, wrong Details
+/// variant, host error — yields `None` (unknown), never dropping the
+/// record or failing the tolerant list read.
+pub(crate) fn root_tombstoned(original_hash_b64: &str, options: GetOptions) -> Option<bool> {
+    let action = ActionHash::try_from(original_hash_b64).ok()?;
+    match get_details(action, options).ok()?? {
+        Details::Record(record_details) => Some(!record_details.deletes.is_empty()),
+        _ => None,
+    }
+}
+
+/// Stamp `tombstoned` on each record when `include_liveness`; otherwise
+/// leave every record's `tombstoned` at `None` (byte-identical pre-B10
+/// behavior). The opt-in gate keeps the +1 `get_details` per record off
+/// the default read path.
+pub(crate) fn apply_liveness(
+    mut records: Vec<EncryptedContentResponse>,
+    include_liveness: bool,
+    options: GetOptions,
+) -> Vec<EncryptedContentResponse> {
+    if include_liveness {
+        for record in &mut records {
+            record.tombstoned = root_tombstoned(&record.original_hash, options.clone());
+        }
+    }
+    records
+}
+
+/// Shared page engine behind the bounded `*_page` externs.
+pub(crate) fn link_page(
     path_hash: EntryHash,
     link_type: LinkTypes,
     since_ts: Option<Timestamp>,
     limit: Option<usize>,
     source_after_action_hash: Option<String>,
+    include_liveness: bool,
+    options: GetOptions,
 ) -> ExternResult<BoundedLinkPage> {
     let limit = resolve_page_limit(limit)?;
-    let after_hash = source_after_action_hash
-        .as_deref()
-        .map(decode_cursor_hash)
-        .transpose()?;
-    if after_hash.is_some() && since_ts.is_none() {
-        return Err(wasm_error!(WasmErrorInner::Guest(
-            "source_after_action_hash requires since_ts".into()
-        )));
-    }
+    let after_hash = decode_paired_cursor(source_after_action_hash.as_deref(), since_ts.as_ref())?;
     // `LinkQuery::after` is deliberately NOT used with a composite
     // cursor: its boundary is approximate, and an approximate boundary
     // under the strict composite filter could drop equal-timestamp rows.
-    let links = get_links(
-        LinkQuery::try_new(path_hash, link_type)?,
-        GetStrategy::Network,
-    )?;
+    let strategy = options.strategy();
+    let links = get_links(LinkQuery::try_new(path_hash, link_type)?, strategy)?;
     let (selected, truncated) = page_links(links, since_ts, after_hash, limit);
-    let source_positions: Vec<SourcePosition> = selected
+    let mut source_positions = Vec::with_capacity(selected.len());
+    let mut targets = Vec::with_capacity(selected.len());
+    for link in selected {
+        source_positions.push(SourcePosition {
+            timestamp_micros: link.timestamp.as_micros(),
+            action_hash: link.create_link_hash.to_string(),
+        });
+        if let Some(target) = link.target.into_action_hash() {
+            targets.push(target);
+        }
+    }
+    let records = resolve_action_targets(targets, include_liveness, options)?;
+    Ok(BoundedLinkPage {
+        source_count: source_positions.len(),
+        source_positions,
+        records,
+        truncated,
+    })
+}
+
+/// One SOURCE-truth position per selected link (present even when the
+/// target never resolves, so callers cursor past poison rows).
+pub(crate) fn source_positions_of(links: &[Link]) -> Vec<SourcePosition> {
+    links
         .iter()
         .map(|link| SourcePosition {
             timestamp_micros: link.timestamp.as_micros(),
             action_hash: link.create_link_hash.to_string(),
         })
-        .collect();
-    Ok(BoundedLinkPage {
-        source_count: source_positions.len(),
-        source_positions,
-        records: resolve_targets(selected),
-        truncated,
-    })
+        .collect()
 }
 
-fn resolve_page_limit(limit: Option<usize>) -> ExternResult<usize> {
+pub(crate) fn resolve_page_limit(limit: Option<usize>) -> ExternResult<usize> {
     match limit {
         None => Ok(LINK_PAGE_DEFAULT_LIMIT),
         Some(0) => Err(wasm_error!(WasmErrorInner::Guest(
@@ -244,6 +429,42 @@ fn resolve_page_limit(limit: Option<usize>) -> ExternResult<usize> {
         ))),
         Some(n) => Ok(n.min(LINK_PAGE_HARD_LIMIT)),
     }
+}
+
+/// Rejects a batch whose summed normalized per-item limits exceed
+/// `BATCH_RESOLVE_BUDGET` (deliberately mirroring `MY_CONTENT_HARD_LIMIT`), so
+/// batch fan-out cannot bypass the single-call resolve ceiling.
+pub(crate) fn enforce_batch_resolve_budget<I: IntoIterator<Item = Option<usize>>>(
+    per_item_limits: I,
+) -> ExternResult<()> {
+    let mut total: usize = 0;
+    for limit in per_item_limits {
+        total = total.saturating_add(resolve_page_limit(limit)?);
+    }
+    if total > BATCH_RESOLVE_BUDGET {
+        return Err(wasm_error!(WasmErrorInner::Guest(
+            "batch total requested records exceed the 4096 budget".into()
+        )));
+    }
+    Ok(())
+}
+
+/// Decode + pairing-check the composite source cursor: a lone
+/// `source_after_action_hash` cannot be positioned, so it REQUIRES
+/// `since_ts` (shared by the content `*_page` externs and `probe_inbox_page`).
+pub(crate) fn decode_paired_cursor(
+    source_after_action_hash: Option<&str>,
+    since_ts: Option<&Timestamp>,
+) -> ExternResult<Option<ActionHash>> {
+    let after_hash = source_after_action_hash
+        .map(decode_cursor_hash)
+        .transpose()?;
+    if after_hash.is_some() && since_ts.is_none() {
+        return Err(wasm_error!(WasmErrorInner::Guest(
+            "source_after_action_hash requires since_ts".into()
+        )));
+    }
+    Ok(after_hash)
 }
 
 fn decode_cursor_hash(encoded: &str) -> ExternResult<ActionHash> {
@@ -257,7 +478,7 @@ fn decode_cursor_hash(encoded: &str) -> ExternResult<ActionHash> {
 /// Pure cursor core: sort by `(timestamp, create_link_hash)` (raw-byte
 /// hash order is THE deterministic tie-break), apply the cursor filter,
 /// then truncate to `limit`. Returns `(selected page, truncated)`.
-fn page_links(
+pub(crate) fn page_links(
     mut links: Vec<Link>,
     since_ts: Option<Timestamp>,
     after_hash: Option<ActionHash>,
@@ -267,6 +488,7 @@ fn page_links(
     let mut selected: Vec<Link> = links
         .into_iter()
         .filter(|link| cursor_admits(link, since_ts.as_ref(), after_hash.as_ref()))
+        .take(limit + 1)
         .collect();
     let truncated = selected.len() > limit;
     selected.truncate(limit);
@@ -304,16 +526,30 @@ fn dedupe_by_target(links: Vec<Link>) -> Vec<Link> {
         .collect()
 }
 
-/// Per-target failure isolation: a malformed, tombstoned, or
-/// gossip-lagged target drops from `records` while its source position
-/// survives, so callers cursor past poison rows. This `.ok()` is the
-/// documented list-read contract (`get_many_encrypted_content` doc).
-fn resolve_targets(links: Vec<Link>) -> Vec<EncryptedContentResponse> {
-    links
+/// Resolve a page's action-hash targets to records via the memoized batch read,
+/// then stamp liveness. Per-target failure isolation is inherited from
+/// `get_many_encrypted_content` (a malformed/tombstoned/gossip-lagged target
+/// drops while its source position survives — the documented list contract).
+fn resolve_action_targets(
+    targets: Vec<ActionHash>,
+    include_liveness: bool,
+    options: GetOptions,
+) -> ExternResult<Vec<EncryptedContentResponse>> {
+    let records = resolve_many_encrypted_content(targets, options.clone())?;
+    Ok(apply_liveness(records, include_liveness, options))
+}
+
+/// Collect each link's action-hash target, then resolve via
+/// [`resolve_action_targets`]. Shared by the legacy list externs.
+pub(crate) fn resolve_content_link_targets(
+    links: Vec<Link>,
+    include_liveness: bool,
+) -> ExternResult<Vec<EncryptedContentResponse>> {
+    let targets = links
         .into_iter()
         .filter_map(|link| link.target.into_action_hash())
-        .filter_map(|ah| get_encrypted_content(ah).ok())
-        .collect()
+        .collect();
+    resolve_action_targets(targets, include_liveness, GetOptions::network())
 }
 
 #[cfg(test)]
@@ -343,6 +579,7 @@ mod tests {
             hash: hash.to_string(),
             original_hash: hash.to_string(),
             latest_action_micros: None,
+            tombstoned: None,
         }
     }
 
