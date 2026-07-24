@@ -5,7 +5,26 @@
 
 ---
 
-## Latest arc (2026-07-23): pass-6-batch-reads shipped (v3.4.0)
+## Latest arc (2026-07-24): pass-6-accepted-keys shipped (v3.4.1, patch)
+
+One-constant coordinator patch on the HELD pass-6 DNA: the humm-tauri app
+signing key `uhCAkyyOeMalaAEDiWSFPoywDMtLOB5AaisjAhnQ-9m2y81p9xnJC` now
+populates `ACCEPTED_APP_SIGNING_KEYS_B64` (service_records.rs) — attested
+`publish_node_spec` stops rejecting `unrecognized app signing key`. This
+closes the accepted-keys rotation promised on the 2026-07-19 mbox thread
+that v3.4.0 shipped without (the item lived in the mbox roll-up ledger, not
+the backport candidate table — process note: sweep BOTH before cutting a
+generation). Key byte-verified against the archived request; sweettest adds
+the accepted-key-fails-at-SIGNATURE-gate trap (catches empty/mistyped list)
+beside the renamed foreign-key reject; service_records 10/10, host 53/53,
+clippy clean, DNA hash HELD, happ sha256
+`a0b8d2bb335001bf70cd55b4277e9829de4e0e5ea2cf08bc8a41a3987754790e`, content
+wasm `454d968f…`. humm-tauri constants at adopt: label `pass-6-accepted-keys`,
+new sha, `COORDINATOR_WASM_VERSION` 12→13. Wire note: the attestation field
+is `app_signing_key_b64` (the 07-19 reply's `app_signing_public_key_b64`
+naming nit was itself wrong).
+
+## Arc (2026-07-23): pass-6-batch-reads shipped (v3.4.0)
 
 Coordinator-only generation on the HELD pass-6 DNA
 `uhC0ksXsJOTlVvhUn3KWB0nN6j-II_9BxlsRiMqR9ajhFhYS7gSMz` (integrity untouched —
